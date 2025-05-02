@@ -1,0 +1,329 @@
+"""
+Endpoints for interacting with the agentic components of the connected vehicle platform.
+"""
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import Dict, Any, List, Optional
+import uuid
+import logging
+import json
+
+# Import the Agent Manager
+from agents.agent_manager import agent_manager
+    
+from utils.agent_tools import (
+    search_vehicle_database,
+    recommend_services,
+    validate_command,
+    analyze_vehicle_data,
+    format_notification
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create router
+router = APIRouter()
+
+# Define request models
+class AgentQueryRequest(BaseModel):
+    query: str
+    context: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
+    stream: Optional[bool] = False
+
+class AnalysisRequest(BaseModel):
+    vehicle_id: str
+    time_period: Optional[str] = "7d"
+    metrics: Optional[List[str]] = None
+
+class ServiceRecommendationRequest(BaseModel):
+    vehicle_id: str
+    mileage: Optional[int] = None
+    last_service_date: Optional[str] = None
+
+# Define tool handlers (kept for backward compatibility)
+tool_handlers = {
+    "search_vehicle_database": search_vehicle_database,
+    "recommend_services": recommend_services,
+    "validate_command": validate_command,
+    "analyze_vehicle_data": analyze_vehicle_data,
+    "format_notification": format_notification
+}
+
+# Agent system entry point with streaming support
+@router.post("/agent/ask")
+async def ask_agent(request: AgentQueryRequest):
+    """General agent system entry point to ask any question, with optional streaming"""
+    try:
+        # Ensure we have a session ID
+        session_id = request.session_id or str(uuid.uuid4())
+        context = request.context or {}
+        context["session_id"] = session_id
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            # Regular non-streaming response
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = session_id
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in agent ask: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Direct access to specialized agents
+@router.post("/agent/remote-access")
+async def query_remote_access(request: AgentQueryRequest):
+    """Query the Remote Access Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "remote_access"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in remote access agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/safety-emergency")
+async def query_safety_emergency(request: AgentQueryRequest):
+    """Query the Safety & Emergency Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "safety_emergency"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in safety emergency agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/charging-energy")
+async def query_charging_energy(request: AgentQueryRequest):
+    """Query the Charging & Energy Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "charging_energy"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in charging energy agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/information-services")
+async def query_information_services(request: AgentQueryRequest):
+    """Query the Information Services Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "information_services"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in information services agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/feature-control")
+async def query_feature_control(request: AgentQueryRequest):
+    """Query the Vehicle Feature Control Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "vehicle_feature_control"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in feature control agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/diagnostics-battery")
+async def query_diagnostics_battery(request: AgentQueryRequest):
+    """Query the Diagnostics & Battery Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "diagnostics_battery"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in diagnostics battery agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/alerts-notifications")
+async def query_alerts_notifications(request: AgentQueryRequest):
+    """Query the Alerts & Notifications Agent directly"""
+    try:
+        # Set context for the specific agent type
+        context = request.context or {}
+        context["agent_type"] = "alerts_notifications"
+        context["session_id"] = request.session_id or str(uuid.uuid4())
+        
+        # Handle streaming if requested
+        if request.stream:
+            async def stream_generator():
+                async for chunk in agent_manager.process_request_stream(request.query, context):
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+            return StreamingResponse(
+                stream_generator(), 
+                media_type="text/event-stream"
+            )
+        else:
+            response = await agent_manager.process_request(request.query, context)
+            response["session_id"] = context["session_id"]
+            return response
+            
+    except Exception as e:
+        logger.error(f"Error in alerts notifications agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Analytics endpoints that use agent capabilities
+@router.post("/analyze/vehicle-data")
+async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
+    """Analyze vehicle data using the Diagnostics & Battery Agent"""
+    try:
+        session_id = str(uuid.uuid4())
+        context = {
+            "agent_type": "diagnostics_battery",
+            "vehicle_id": request.vehicle_id,
+            "time_period": request.time_period,
+            "metrics": request.metrics,
+            "session_id": session_id
+        }
+        
+        response = await agent_manager.process_request(
+            "Run a full diagnostic analysis on my vehicle",
+            context
+        )
+        
+        response["session_id"] = session_id
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in vehicle data analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/recommend/services")
+async def recommend_services_endpoint(request: ServiceRecommendationRequest):
+    """Get service recommendations using the Feature Control Agent"""
+    try:
+        context = {
+            "agent_type": "vehicle_feature_control",
+            "vehicle_id": request.vehicle_id,
+            "mileage": request.mileage,
+            "last_service_date": request.last_service_date
+        }
+        
+        response = await agent_manager.process_request(
+            "Recommend vehicle services based on my vehicle condition",
+            context
+        )
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error in service recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
