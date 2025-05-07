@@ -14,6 +14,9 @@ if exist .env.azure (
     echo Please run utils\azure_init.py first or create .env.azure manually
 )
 
+REM Set logging level
+set LOG_LEVEL=INFO
+
 REM Start the FastAPI server
 echo Starting FastAPI server...
 uvicorn main:app --reload --host 0.0.0.0 --port 8000

@@ -2,7 +2,6 @@
 Base Agent class for the Connected Car Platform specialized agents.
 """
 
-import logging
 import os
 from typing import Dict, Any, Optional, AsyncIterable
 from semantic_kernel.agents import ChatCompletionAgent
@@ -17,9 +16,11 @@ from semantic_kernel.contents import (
 )
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Replace standard logging with loguru
+from utils.logging_config import get_logger
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 class BaseAgent:
     """

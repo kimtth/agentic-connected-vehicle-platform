@@ -1,29 +1,14 @@
 """
-Agent Manager for the Connected Car Platform.
-
-This module manages the routing of user requests to specialized agents based on intent.
+Agent Manager for the Connected Vehicle Platform.
+Integrates with Cosmos DB for real data access.
 """
 
-import logging
 import os
-from typing import Dict, Any, List, Optional, Type, AsyncIterable
-
-import semantic_kernel as sk
-from semantic_kernel.agents import ChatCompletionAgent
-from semantic_kernel.connectors.ai.open_ai import (
-    AzureChatCompletion,
-    AzureChatPromptExecutionSettings
-)
-from semantic_kernel.functions.kernel_arguments import KernelArguments
-
-# Import specialized agents
-from agents.remote_access_agent import RemoteAccessAgent
-from agents.safety_emergency_agent import SafetyEmergencyAgent
-from agents.charging_energy_agent import ChargingEnergyAgent
-from agents.information_services_agent import InformationServicesAgent
-from agents.vehicle_feature_control_agent import VehicleFeatureControlAgent
-from agents.diagnostics_battery_agent import DiagnosticsBatteryAgent
-from agents.alerts_notifications_agent import AlertsNotificationsAgent
+import logging
+import asyncio
+import json
+from typing import Dict, Any, List, Optional, AsyncGenerator
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,194 +16,229 @@ logger = logging.getLogger(__name__)
 
 class AgentManager:
     """
-    AgentManager class interprets user intent and delegates tasks to specialized agents.
+    Agent manager to handle agent requests and coordinate with Cosmos DB
     """
     
     def __init__(self):
-        """Initialize the AgentManager with specialized agents."""
-        # Initialize specialized agents
-        self.agents = {
-            "remote_access": RemoteAccessAgent(),
-            "safety_emergency": SafetyEmergencyAgent(),
-            "charging_energy": ChargingEnergyAgent(),
-            "information_services": InformationServicesAgent(),
-            "vehicle_feature_control": VehicleFeatureControlAgent(),
-            "diagnostics_battery": DiagnosticsBatteryAgent(),
-            "alerts_notifications": AlertsNotificationsAgent(),
-        }
-        
-        # Create a Semantic Kernel-based orchestrator agent
-        self.orchestrator = self._create_orchestrator()
-        
-        logger.info("AgentManager initialized with specialized agents and orchestrator")
+        """Initialize the agent manager"""
+        logger.info("Agent Manager initialized")
     
-    def _create_orchestrator(self) -> ChatCompletionAgent:
-        """Create and configure a Semantic Kernel orchestrator agent."""
+    async def process_request(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process a request from an agent
+        
+        Args:
+            query: User query
+            context: Request context
+            
+        Returns:
+            Response to the agent request
+        """
         try:
-            # Get Azure OpenAI credentials from environment
-            deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-            api_key = os.getenv("AZURE_OPENAI_API_KEY")
-            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            agent_type = context.get("agent_type", "general")
+            vehicle_id = context.get("vehicle_id")
             
-            # Create the orchestrator with all specialized agents as plugins
-            orchestrator = ChatCompletionAgent(
-                service=AzureChatCompletion(
-                    deployment_name=deployment_name,
-                    endpoint=endpoint,
-                    api_key=api_key,
-                    api_version=api_version
-                ),
-                name="VehicleOrchestratorAgent",
-                instructions=(
-                    "Your role is to analyze the user's request and route it to the appropriate specialized agent. "
-                    "Here are the specialized agents available:\n"
-                    "- Remote Access Agent: For controlling vehicle access including doors, engine, and data sync.\n"
-                    "- Safety Emergency Agent: For handling emergencies, collisions, theft, and SOS.\n"
-                    "- Charging Energy Agent: For EV charging, stations, and energy management.\n"
-                    "- Information Services Agent: For weather, traffic, POIs, and navigation.\n"
-                    "- Vehicle Feature Control Agent: For climate, features, and subscriptions.\n"
-                    "- Diagnostics Battery Agent: For diagnostics, system health, and battery status.\n"
-                    "- Alerts Notifications Agent: For alerts, speed violations, and notifications.\n\n"
-                    "Analyze the request and route it to the most appropriate agent. "
-                    "If you're not sure, route to Information Services Agent as the default."
-                ),
-                arguments=KernelArguments(
-                    settings=AzureChatPromptExecutionSettings(
-                        temperature=0.3,
-                        max_tokens=1000
-                    )
-                )
-            )
+            # Enrich context with vehicle data if available
+            if vehicle_id:
+                try:
+                    # Get vehicle data from Cosmos DB
+                    vehicle_data = await self._get_vehicle_data(vehicle_id)
+                    if vehicle_data:
+                        context["vehicle_data"] = vehicle_data
+                        
+                    # Get vehicle status
+                    vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+                    if vehicle_status:
+                        context["vehicle_status"] = vehicle_status
+                except Exception as e:
+                    logger.error(f"Error getting vehicle data: {str(e)}")
             
-            # Add all specialized agents as plugins
-            for agent_type, agent in self.agents.items():
-                orchestrator.add_plugin(agent)
-            
-            return orchestrator
+            # Process based on agent type
+            if agent_type == "remote_access":
+                return await self._handle_remote_access(query, context)
+            elif agent_type == "safety_emergency":
+                return await self._handle_safety_emergency(query, context)
+            elif agent_type == "charging_energy":
+                return await self._handle_charging_energy(query, context)
+            elif agent_type == "information_services":
+                return await self._handle_information_services(query, context)
+            elif agent_type == "vehicle_feature_control":
+                return await self._handle_vehicle_feature_control(query, context)
+            elif agent_type == "diagnostics_battery":
+                return await self._handle_diagnostics_battery(query, context)
+            elif agent_type == "alerts_notifications":
+                return await self._handle_alerts_notifications(query, context)
+            else:
+                # General purpose handling
+                return await self._handle_general(query, context)
+                
         except Exception as e:
-            logger.error(f"Error creating orchestrator agent: {str(e)}")
-            raise
+            logger.error(f"Error processing agent request: {str(e)}")
+            return {
+                "response": f"I encountered an error processing your request: {str(e)}",
+                "success": False
+            }
     
-    async def process_request(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def process_request_stream(self, query: str, context: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Process a user request by interpreting intent and delegating to the appropriate agent.
+        Process a request with streaming response
         
         Args:
-            query: User query string
-            context: Additional context for the query
+            query: User query
+            context: Request context
             
-        Returns:
-            The response from the appropriate specialized agent
+        Yields:
+            Response chunks
         """
-        context = context or {}
-        
-        # If context already has an agent_type, use it directly
-        if "agent_type" in context and context["agent_type"] in self.agents:
-            agent_type = context["agent_type"]
-            logger.info(f"Using specified agent type from context: {agent_type}")
-            return await self.agents[agent_type].process(query, context)
-        
-        # Create a session ID for the thread if not provided
-        session_id = context.get("session_id", "default_session")
-        
-        # Use simple keyword matching for now
-        agent_keywords = {
-            "remote_access": ["lock", "unlock", "start", "stop", "engine", "door", "sync", "personal", "data", "remote", "access"],
-            "safety_emergency": ["emergency", "crash", "collision", "alert", "ecall", "theft", "safety", "accident", "sos"],
-            "charging_energy": ["charge", "charging", "battery", "energy", "station", "range", "electric", "ev"],
-            "information_services": ["weather", "traffic", "poi", "points of interest", "navigation", "map", "info"],
-            "vehicle_feature_control": ["climate", "temperature", "ac", "heat", "subscription", "feature", "control", "settings"],
-            "diagnostics_battery": ["diagnostic", "health", "system", "status", "check", "battery", "level"],
-            "alerts_notifications": ["alert", "notification", "speed", "violation", "curfew", "warning"]
-        }
-        
-        query_lower = query.lower()
-        
-        # Count keyword matches for each agent type
-        agent_scores = {}
-        for agent_type, keywords in agent_keywords.items():
-            score = sum(1 for keyword in keywords if keyword in query_lower)
-            agent_scores[agent_type] = score
-        
-        # Find the agent with the highest score
-        if not agent_scores or max(agent_scores.values()) == 0:
-            # Default to information services if no clear match
-            agent_type = "information_services"
-        else:
-            agent_type = max(agent_scores.items(), key=lambda x: x[1])[0]
-        
-        logger.info(f"Routing to agent: {agent_type}")
-        
-        # Process the request with the identified agent
-        response = await self.agents[agent_type].process(query, {**context, "session_id": session_id})
-        
-        # Add agent type to the response
-        if "meta" not in response:
-            response["meta"] = {}
-        response["meta"]["agent_type"] = agent_type
-        
-        return response
+        try:
+            # Initial response
+            yield {"response": "Processing your request...", "complete": False}
+            
+            # Get full response
+            response = await self.process_request(query, context)
+            
+            # Split response into chunks for streaming
+            full_response = response.get("response", "")
+            
+            # Simple chunking by sentences
+            sentences = full_response.split('. ')
+            
+            for i, sentence in enumerate(sentences):
+                # Last chunk should end with period if original did
+                if i < len(sentences) - 1:
+                    sentence += '.'
+                    
+                yield {
+                    "response": sentence,
+                    "complete": i == len(sentences) - 1,
+                    "plugins_used": response.get("plugins_used", []) if i == len(sentences) - 1 else []
+                }
+                
+                # Small delay for realistic streaming
+                await asyncio.sleep(0.2)
+                
+        except Exception as e:
+            logger.error(f"Error in streaming response: {str(e)}")
+            yield {"response": f"Error: {str(e)}", "complete": True}
     
-    async def process_request_stream(self, query: str, context: Optional[Dict[str, Any]] = None) -> AsyncIterable[Dict[str, Any]]:
+    async def _get_vehicle_data(self, vehicle_id: str) -> Optional[Dict[str, Any]]:
         """
-        Process a user request and stream the response.
+        Get vehicle data from Cosmos DB
         
         Args:
-            query: User query string
-            context: Additional context for the query
+            vehicle_id: ID of the vehicle
             
         Returns:
-            An async iterable of response dictionaries
+            Vehicle data or None if not found
         """
-        context = context or {}
-        
-        # If context already has an agent_type, use it directly
-        if "agent_type" in context and context["agent_type"] in self.agents:
-            agent_type = context["agent_type"]
-            logger.info(f"Using specified agent type from context for streaming: {agent_type}")
-            async for response in self.agents[agent_type].process_stream(query, context):
-                yield response
-            return
-        
-        # Create a session ID for the thread if not provided
-        session_id = context.get("session_id", "default_session")
-        
-        # Simple agent selection (same as non-streaming for now)
-        agent_keywords = {
-            "remote_access": ["lock", "unlock", "start", "stop", "engine", "door", "sync", "personal", "data", "remote", "access"],
-            "safety_emergency": ["emergency", "crash", "collision", "alert", "ecall", "theft", "safety", "accident", "sos"],
-            "charging_energy": ["charge", "charging", "battery", "energy", "station", "range", "electric", "ev"],
-            "information_services": ["weather", "traffic", "poi", "points of interest", "navigation", "map", "info"],
-            "vehicle_feature_control": ["climate", "temperature", "ac", "heat", "subscription", "feature", "control", "settings"],
-            "diagnostics_battery": ["diagnostic", "health", "system", "status", "check", "battery", "level"],
-            "alerts_notifications": ["alert", "notification", "speed", "violation", "curfew", "warning"]
+        try:
+            # Get all vehicles
+            vehicles = await cosmos_client.list_vehicles()
+            
+            # Find the vehicle with matching ID
+            for vehicle in vehicles:
+                if vehicle.get("VehicleId") == vehicle_id:
+                    return vehicle
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error getting vehicle data: {str(e)}")
+            return None
+    
+    # Handler methods for different agent types
+    
+    async def _handle_remote_access(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle remote access agent requests"""
+        # Remote access sample response
+        return {
+            "response": f"I'll help you with remote access to your vehicle. Your query: {query}",
+            "success": True,
+            "plugins_used": ["remote_access"]
         }
+    
+    async def _handle_safety_emergency(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle safety and emergency agent requests"""
+        return {
+            "response": f"I'm here to assist with safety and emergency situations. Your query: {query}",
+            "success": True,
+            "plugins_used": ["safety_emergency"]
+        }
+    
+    async def _handle_charging_energy(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle charging and energy agent requests"""
+        # Get vehicle status if available
+        vehicle_status = context.get("vehicle_status", {})
+        battery_level = vehicle_status.get("Battery", "unknown")
         
-        query_lower = query.lower()
+        if "battery" in query.lower() and battery_level != "unknown":
+            return {
+                "response": f"Your vehicle's current battery level is {battery_level}%.",
+                "success": True,
+                "plugins_used": ["charging_energy"],
+                "data": {"battery_level": battery_level}
+            }
         
-        # Count keyword matches for each agent type
-        agent_scores = {}
-        for agent_type, keywords in agent_keywords.items():
-            score = sum(1 for keyword in keywords if keyword in query_lower)
-            agent_scores[agent_type] = score
+        return {
+            "response": f"I'll help you with charging and energy management. Your query: {query}",
+            "success": True,
+            "plugins_used": ["charging_energy"]
+        }
+    
+    async def _handle_information_services(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle information services agent requests"""
+        return {
+            "response": f"I'll provide information services for your vehicle. Your query: {query}",
+            "success": True,
+            "plugins_used": ["information_services"]
+        }
+    
+    async def _handle_vehicle_feature_control(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle vehicle feature control agent requests"""
+        return {
+            "response": f"I'll help you control your vehicle features. Your query: {query}",
+            "success": True,
+            "plugins_used": ["vehicle_feature_control"]
+        }
+    
+    async def _handle_diagnostics_battery(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle diagnostics and battery agent requests"""
+        # Get vehicle status if available
+        vehicle_status = context.get("vehicle_status", {})
         
-        # Find the agent with the highest score
-        if not agent_scores or max(agent_scores.values()) == 0:
-            # Default to information services if no clear match
-            agent_type = "information_services"
-        else:
-            agent_type = max(agent_scores.items(), key=lambda x: x[1])[0]
+        if vehicle_status:
+            battery = vehicle_status.get("Battery", "N/A")
+            temperature = vehicle_status.get("Temperature", "N/A")
+            speed = vehicle_status.get("Speed", "N/A")
+            oil = vehicle_status.get("OilRemaining", "N/A")
+            
+            return {
+                "response": f"Based on diagnostics, your vehicle's status is: Battery: {battery}%, Temperature: {temperature}°C, Current Speed: {speed} km/h, Oil: {oil}%",
+                "success": True,
+                "plugins_used": ["diagnostics_battery"],
+                "data": vehicle_status
+            }
         
-        logger.info(f"Routing to agent for streaming: {agent_type}")
-        
-        # Begin streaming responses from the selected agent
-        async for response in self.agents[agent_type].process_stream(query, {**context, "session_id": session_id}):
-            # Add agent type to each streamed response
-            if "meta" not in response:
-                response["meta"] = {}
-            response["meta"]["agent_type"] = agent_type
-            yield response
+        return {
+            "response": f"I'll help you with vehicle diagnostics and battery monitoring. Your query: {query}",
+            "success": True,
+            "plugins_used": ["diagnostics_battery"]
+        }
+    
+    async def _handle_alerts_notifications(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle alerts and notifications agent requests"""
+        return {
+            "response": f"I'll manage alerts and notifications for your vehicle. Your query: {query}",
+            "success": True,
+            "plugins_used": ["alerts_notifications"]
+        }
+    
+    async def _handle_general(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle general agent requests"""
+        return {
+            "response": f"I'll assist you with your connected vehicle needs. Your query: {query}",
+            "success": True,
+            "plugins_used": ["general"]
+        }
 
-# Create a singleton instance of the agent manager
+# Create a singleton instance
 agent_manager = AgentManager()

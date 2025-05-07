@@ -1,12 +1,14 @@
 """
 Main application for the connected vehicle platform.
 """
+import os
 import uuid
 import datetime
+import json
 import logging
-
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from models.command import Command
 from models.notification import Notification
@@ -14,32 +16,65 @@ from models.vehicle import VehicleProfile
 from models.service import Service
 from simulator.car_simulator import CarSimulator
 from dotenv import load_dotenv
+
+# Configure loguru first, before importing any Azure modules
+from utils.logging_config import logger, configure_logging
+
+# Configure loguru with environment variable or default to INFO
+log_level = os.getenv("LOG_LEVEL", "INFO")
+configure_logging(log_level)
+
+# Explicitly set Azure logging to lower verbosity
+logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.ERROR)
+
+# Now import Azure modules after configuring logging
 from azure.cosmos_db import cosmos_client
-from azure.azure_vehicle_agent import azure_vehicle_agent
-from agents.agent_routes import router as agent_router
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load environment variables - prioritize .env.azure
-load_dotenv()
-load_dotenv(".env.azure", override=True)
-logger.info("Loaded environment configuration")
 
 # Initialize the car simulator
 car_simulator = CarSimulator()
+
+# Import azure_vehicle_agent after environment setup
+# Wrapped in try/except to handle initialization errors
+try:
+    from azure.azure_vehicle_agent import azure_vehicle_agent
+    logger.info("Azure Vehicle Agent imported successfully")
+except Exception as e:
+    logger.error(f"Error importing Azure Vehicle Agent: {str(e)}")
+    # Create a stub agent for fallback
+    class StubAgent:
+        async def ask(self, query, context_vars=None):
+            return {
+                "response": "The AI agent is currently unavailable due to configuration issues.",
+                "plugins_used": []
+            }
+    azure_vehicle_agent = StubAgent()
+
+# Import agent routes
+try:
+    from agents.agent_routes import router as agent_router
+    logger.info("Agent routes imported successfully")
+except Exception as e:
+    logger.error(f"Error importing agent routes: {str(e)}")
+    # Create an empty router for fallback
+    from fastapi import APIRouter
+    agent_router = APIRouter()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: initialize resources
     logger.info("Starting up the application...")
     
+    # Initialize Cosmos DB connection here, within the async context
+    await cosmos_client.connect()
+    
     # Yield control to the application
     yield
     
     # Shutdown: cleanup resources
     logger.info("Shutting down the application...")
+    # Close Cosmos DB connection
+    await cosmos_client.close()
 
 app = FastAPI(title="Connected Car Platform", lifespan=lifespan)
 
@@ -58,15 +93,22 @@ app.include_router(agent_router, prefix="/api", tags=["Agents"])
 @app.get("/")
 def get_status():
     """Get the status of the application"""
+    agent_available = hasattr(azure_vehicle_agent, "is_available") and azure_vehicle_agent.is_available
+    
     return {
         "status": "Connected Car Platform running", 
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "azure_cosmos_enabled": bool(cosmos_client.endpoint and cosmos_client.key),
+        "azure_agent_enabled": agent_available
     }
 
 # Submit a command (simulate external system)
 @app.post("/command")
 async def submit_command(command: Command, background_tasks: BackgroundTasks):
     """Submit a command to a vehicle"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
+    
     command_id = str(uuid.uuid4())
     command.commandId = command_id
     command.status = "pending"
@@ -86,13 +128,43 @@ async def submit_command(command: Command, background_tasks: BackgroundTasks):
 @app.get("/commands")
 async def get_commands():
     """Get all commands"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
     return await cosmos_client.list_commands()
 
-# Get vehicle status (from simulator)
+# Get vehicle status (from simulator or Cosmos DB)
 @app.get("/vehicle/{vehicle_id}/status")
-def get_vehicle_status(vehicle_id: str):
+async def get_vehicle_status(vehicle_id: str):
     """Get the status of a vehicle"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
+    
+    # Try to fetch from Cosmos DB first, fall back to simulator
+    try:
+        cosmos_status = await cosmos_client.get_vehicle_status(vehicle_id)
+        if cosmos_status:
+            return cosmos_status
+    except Exception as e:
+        logger.warning(f"Failed to get status from Cosmos DB, falling back to simulator: {str(e)}")
+    
+    # Fallback to simulator
     return car_simulator.get_status(vehicle_id)
+
+# Stream vehicle status updates
+@app.get("/vehicle/{vehicle_id}/status/stream")
+async def stream_vehicle_status(vehicle_id: str):
+    """Stream real-time status updates for a vehicle"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
+    
+    async def status_stream_generator():
+        async for status in cosmos_client.subscribe_to_vehicle_status(vehicle_id):
+            yield f"data: {json.dumps(status)}\n\n"
+    
+    return StreamingResponse(
+        status_stream_generator(),
+        media_type="text/event-stream"
+    )
 
 # Add a new endpoint to get all simulated vehicles
 @app.get("/simulator/vehicles")
@@ -105,27 +177,36 @@ def get_simulated_vehicles():
 @app.get("/notifications")
 async def get_notifications():
     """Get all notifications"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
     return await cosmos_client.list_notifications()
 
 # Add a vehicle profile
 @app.post("/vehicle")
 async def add_vehicle(profile: VehicleProfile):
     """Add a new vehicle profile"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
     vehicle_id = profile.VehicleId
-    await cosmos_client.create_vehicle(profile.dict())
-    return {"vehicleId": vehicle_id}
+    # Also add to simulator for immediate testing
+    car_simulator.add_vehicle(vehicle_id)
+    return await cosmos_client.create_vehicle(profile.dict())
 
 # List all vehicles
 @app.get("/vehicles")
 async def list_vehicles():
     """List all vehicles"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
     return await cosmos_client.list_vehicles()
 
 # Add a service to a vehicle
 @app.post("/vehicle/{vehicle_id}/service")
 async def add_service(vehicle_id: str, service: Service):
     """Add a service record to a vehicle"""
-    service_data = service.dict()
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
+    service_data = service.model_dump()
     service_data["vehicleId"] = vehicle_id
     service_data["id"] = str(uuid.uuid4())  # Generate unique ID for the service
     
@@ -135,6 +216,8 @@ async def add_service(vehicle_id: str, service: Service):
 @app.get("/vehicle/{vehicle_id}/services")
 async def list_services(vehicle_id: str):
     """List all services for a vehicle"""
+    # Ensure Cosmos DB is connected
+    await cosmos_client.ensure_connected()
     return await cosmos_client.list_services(vehicle_id)
 
 # Azure Agent API
@@ -156,6 +239,9 @@ async def ask_agent(request: dict):
 async def process_command_async(command):
     """Process a command asynchronously"""
     try:
+        # Ensure Cosmos DB is connected
+        await cosmos_client.ensure_connected()
+        
         # Extract command details
         command_id = command["commandId"]
         vehicle_id = command["vehicleId"]
@@ -237,3 +323,11 @@ async def process_command_async(command):
                     "error": str(e)
                 }
                 await cosmos_client.create_notification(notification)
+
+# Entry point for running the application
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", 8000))
+    logger.info(f"Starting server at http://{host}:{port}")
+    uvicorn.run("main:app", host=host, port=port, reload=True)

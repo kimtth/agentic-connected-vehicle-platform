@@ -316,3 +316,4 @@ dist
 poetry.lock
 /backend/a2a_sk/samples
 /backend/a2a_sk/semantic_kernel_(framework)
+*.lock

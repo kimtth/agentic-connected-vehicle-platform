@@ -1,5 +1,8 @@
 # Vehicle API/Command Executor Agent
 import asyncio
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class VehicleAPIExecutor:
     def __init__(self):

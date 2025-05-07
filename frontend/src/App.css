@@ -49,3 +49,38 @@
 .send-command-button {
   margin-top: 16px !important;
 }
+
+/* Vehicle Dashboard styles */
+.vehicle-gauge {
+  position: relative;
+  text-align: center;
+  width: 180px;
+  height: 180px;
+  margin: 0 auto;
+}
+
+.dashboard-control-panel {
+  background-color: #222;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  color: white;
+}
+
+.dashboard-slider .MuiSlider-thumb {
+  background-color: #1976d2;
+}
+
+.dashboard-slider .MuiSlider-track {
+  background-color: #1976d2;
+}
+
+.dashboard-button {
+  background-color: #333;
+  color: white;
+  margin: 4px;
+}
+
+.dashboard-button:hover {
+  background-color: #444;
+}

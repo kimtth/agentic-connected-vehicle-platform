@@ -6,11 +6,13 @@ and integrates with the agent system to provide both direct API access and
 agent-mediated natural language interactions.
 """
 
-import logging
 from typing import Dict, Any, Optional, List
 import uuid
 import datetime
 import asyncio
+
+# Replace standard logging with loguru
+from utils.logging_config import get_logger
 
 # Import existing handlers
 from vehicle_handler.vehicle_profile_manager import VehicleProfileManager
@@ -19,9 +21,8 @@ from vehicle_handler.vehicle_api_executor import VehicleAPIExecutor
 from vehicle_handler.vehicle_data_manager import VehicleDataManager
 from vehicle_handler.vehicle_notification_handler import VehicleNotificationHandler
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Get logger for this module
+logger = get_logger(__name__)
 
 class VehicleHandler:
     """

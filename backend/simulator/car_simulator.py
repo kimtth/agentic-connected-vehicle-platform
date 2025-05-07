@@ -1,10 +1,12 @@
 # Car Simulator (PCU) - Simulates receiving and acknowledging commands for multiple vehicles
 import asyncio
-import logging
 import random
 from typing import Dict, List, Any
 
-logger = logging.getLogger(__name__)
+# Replace standard logging with loguru
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class CarSimulator:
     def __init__(self):

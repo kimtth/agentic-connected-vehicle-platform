@@ -6,11 +6,13 @@ and service subscriptions.
 """
 
 import logging
-import random
-from typing import Dict
+import datetime
+import uuid
+from typing import Dict, Any, List, Optional
 from agents.base_agent import BaseAgent
-from utils.agent_tools import validate_command
+from utils.agent_tools import validate_command, get_latest_status_from_cosmos
 from semantic_kernel.functions import kernel_function
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,139 +37,150 @@ class VehicleFeatureControlAgent(BaseAgent):
         
         # Register tools/plugins with the SK agent
         self.sk_agent.add_plugin(self)
-        
-        # Mock data for demonstration
-        self.mock_subscriptions = [
-            {"id": "sub001", "name": "Premium Navigation", "status": "active", "expiry": "2026-01-15"},
-            {"id": "sub002", "name": "Remote Access", "status": "active", "expiry": "2025-12-31"},
-            {"id": "sub003", "name": "In-Car WiFi", "status": "inactive", "expiry": None},
-            {"id": "sub004", "name": "Advanced Driver Assistance", "status": "active", "expiry": "2025-09-30"},
-            {"id": "sub005", "name": "Entertainment Package", "status": "trial", "expiry": "2025-06-01"},
-        ]
     
     @kernel_function(
         description="Adjust climate control settings in the vehicle",
         name="adjust_climate_control"
     )
-    def adjust_climate_control(
+    async def adjust_climate_control(
         self, 
         vehicle_id: str, 
         temperature: float = 22.0, 
-        fan_speed: str = "medium"
+        fan_speed: str = "medium",
+        ac_on: bool = None,
+        heating_on: bool = None
     ) -> str:
         """Adjust the climate control settings in the vehicle."""
-        # Validate the command
-        command_type = "ACTIVATE_CLIMATE"
-        validation = validate_command(
-            command_id="feature_control_climate",
-            command_type=command_type,
-            parameters={"temperature": temperature, "fan_speed": fan_speed}
-        )
-        
-        if not validation["valid"]:
-            return f"Failed to adjust the climate control: {validation.get('error', 'Unknown error')}"
-        
-        # In a real implementation, this would send a command to the vehicle
-        return (
-            f"Climate control settings adjusted. Temperature is now set to {temperature}°C "
-            f"with {fan_speed} fan speed."
-        )
+        try:
+            # Validate input parameters
+            if fan_speed.lower() not in ["low", "medium", "high"]:
+                return f"Invalid fan speed: {fan_speed}. Must be one of: low, medium, high."
+            
+            if temperature < 16 or temperature > 30:
+                return f"Temperature {temperature}°C is outside the acceptable range (16-30°C)."
+            
+            # Get current climate settings to determine which values to update
+            current_status = await get_latest_status_from_cosmos(vehicle_id)
+            if not current_status:
+                logger.warning(f"No status found for vehicle {vehicle_id}")
+            
+            # Prepare command parameters
+            parameters = {
+                "temperature": temperature,
+                "fan_speed": fan_speed.lower()
+            }
+            
+            # Only include AC and heating settings if explicitly provided
+            if ac_on is not None:
+                parameters["isAirConditioningOn"] = ac_on
+            
+            if heating_on is not None:
+                parameters["isHeatingOn"] = heating_on
+            
+            # Create command
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": f"climate-{str(uuid.uuid4())[:8]}",
+                "vehicleId": vehicle_id,
+                "commandType": "SET_CLIMATE",
+                "parameters": parameters,
+                "status": "pending",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "priority": "Normal"
+            }
+            
+            # Store in Cosmos DB
+            await cosmos_client.create_command(command)
+            
+            # Format response based on what was adjusted
+            response_parts = [
+                f"Temperature set to {temperature}°C",
+                f"Fan speed set to {fan_speed}"
+            ]
+            
+            if ac_on is not None:
+                response_parts.append(f"Air conditioning {'turned on' if ac_on else 'turned off'}")
+            
+            if heating_on is not None:
+                response_parts.append(f"Heating {'turned on' if heating_on else 'turned off'}")
+            
+            # Return success message
+            return f"Climate control adjusted: {', '.join(response_parts)}."
+        except Exception as e:
+            logger.error(f"Failed to adjust climate control: {str(e)}")
+            return "Failed to adjust the climate control due to a system error."
     
     @kernel_function(
         description="Get active subscriptions for the vehicle",
         name="get_subscriptions"
     )
-    def get_subscriptions(self, vehicle_id: str) -> str:
+    async def get_subscriptions(self, vehicle_id: str) -> str:
         """Get active subscriptions for the vehicle."""
-        # In a real implementation, this would query the vehicle's subscription database
-        active_subscriptions = [sub for sub in self.mock_subscriptions if sub["status"] in ["active", "trial"]]
-        
-        if not active_subscriptions:
-            return "You don't have any active subscriptions for this vehicle."
-        
-        # Format the response
-        subscriptions_text = "\n".join([
-            f"• {sub['name']}: {sub['status'].title()}{f', expires on {sub['expiry']}' if sub['expiry'] else ''}"
-            for sub in active_subscriptions
-        ])
-        
-        return f"Here are your current vehicle subscriptions:\n\n{subscriptions_text}"
+        try:
+            # Get subscriptions from Cosmos DB
+            services = await cosmos_client.list_services(vehicle_id)
+            
+            active_services = [
+                service for service in services 
+                if not service.get("EndDate") or 
+                datetime.datetime.fromisoformat(service.get("EndDate")) > datetime.datetime.now()
+            ]
+            
+            if not active_services:
+                return "You don't have any active subscriptions for this vehicle."
+            
+            # Format the response
+            subscriptions_text = "\n".join([
+                f"• {service.get('Description')}: Active since {service.get('StartDate').split('T')[0]}"
+                f"{', expires on ' + service.get('EndDate').split('T')[0] if service.get('EndDate') else ''}"
+                for service in active_services
+            ])
+            
+            return f"Here are your current vehicle subscriptions:\n\n{subscriptions_text}"
+        except Exception as e:
+            logger.error(f"Failed to get subscriptions: {str(e)}")
+            return "I couldn't retrieve your subscription information at this time."
     
     @kernel_function(
         description="Get settings for a specific vehicle feature",
         name="get_feature_settings"
     )
-    def get_feature_settings(self, vehicle_id: str, feature: str = "") -> str:
+    async def get_feature_settings(self, vehicle_id: str, feature: str = "") -> str:
         """Get settings for a specific vehicle feature."""
-        # Mock data for demonstration
-        feature_settings = {
-            "climate": {"temperature": 22.0, "fan_speed": "medium", "mode": "auto"},
-            "lighting": {"interior_brightness": 70, "exterior_mode": "auto"},
-            "seats": {"driver_position": "preset1", "heating_level": "off"},
-            "display": {"brightness": 80, "theme": "default"},
-            "audio": {"volume": 12, "equalizer": "balanced"}
-        }
-        
-        if not feature:
-            # Return all settings
-            settings_text = "\n".join([
-                f"• {feat.title()}: {', '.join([f'{k}={v}' for k, v in settings.items()])}"
-                for feat, settings in feature_settings.items()
-            ])
+        try:
+            # Get vehicle status from Cosmos DB to extract settings
+            status = await get_latest_status_from_cosmos(vehicle_id)
             
-            return f"Here are all your vehicle feature settings:\n\n{settings_text}"
-        
-        feature = feature.lower()
-        if feature not in feature_settings:
-            return f"I don't have information about {feature} settings."
-        
-        # Format the response
-        settings_text = ", ".join([f"{k}: {v}" for k, v in feature_settings[feature].items()])
-        
-        return f"Here are your {feature} settings: {settings_text}"
-    
-    @kernel_function(
-        description="Activate a vehicle feature",
-        name="activate_feature"
-    )
-    def activate_feature(self, vehicle_id: str, feature: str) -> str:
-        """Activate a vehicle feature."""
-        # In a real implementation, this would send a command to activate the feature
-        # Mock success for demonstration
-        success = random.choice([True, False])
-        
-        if success:
-            return f"I've activated the {feature.replace('_', ' ')} feature for you."
-        else:
-            return (
-                f"I couldn't activate the {feature.replace('_', ' ')} feature. "
-                "It may not be available for your vehicle or requires a subscription."
-            )
-    
-    @kernel_function(
-        description="Deactivate a vehicle feature",
-        name="deactivate_feature"
-    )
-    def deactivate_feature(self, vehicle_id: str, feature: str) -> str:
-        """Deactivate a vehicle feature."""
-        # In a real implementation, this would send a command to deactivate the feature
-        # Mock success for demonstration
-        success = random.choice([True, False])
-        
-        if success:
-            return f"I've deactivated the {feature.replace('_', ' ')} feature for you."
-        else:
-            return (
-                f"I couldn't deactivate the {feature.replace('_', ' ')} feature. "
-                "It may not be currently active."
-            )
-    
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
-        return {
-            "climate_control": "Adjust climate settings including temperature and fan speed",
-            "feature_activation": "Activate vehicle features like seat heating, parking assist, etc.",
-            "feature_deactivation": "Deactivate vehicle features",
-            "feature_settings": "View and adjust vehicle feature settings",
-            "subscriptions": "Manage vehicle service subscriptions"
-        }
+            if not status:
+                return f"I couldn't find settings information for vehicle {vehicle_id}."
+            
+            # Extract feature settings from status
+            if feature.lower() == "climate" or feature.lower() == "temperature":
+                if "ClimateSettings" in status:
+                    climate = status["ClimateSettings"]
+                    settings_text = (
+                        f"Temperature: {climate.get('temperature')}°C, "
+                        f"Fan Speed: {climate.get('fanSpeed')}, "
+                        f"AC: {'On' if climate.get('isAirConditioningOn') else 'Off'}, "
+                        f"Heating: {'On' if climate.get('isHeatingOn') else 'Off'}"
+                    )
+                    return f"Current climate settings: {settings_text}"
+                else:
+                    return "Climate settings information is not available."
+            elif feature.lower() == "doors" or feature.lower() == "locks":
+                if "DoorStatus" in status:
+                    doors = status["DoorStatus"]
+                    settings_text = (
+                        f"Driver: {doors.get('driver', 'unknown')}, "
+                        f"Passenger: {doors.get('passenger', 'unknown')}, "
+                        f"Rear Left: {doors.get('rearLeft', 'unknown')}, "
+                        f"Rear Right: {doors.get('rearRight', 'unknown')}"
+                    )
+                    return f"Current door status: {settings_text}"
+                else:
+                    return "Door status information is not available."
+            else:
+                return f"Feature '{feature}' is not recognized or not supported."
+        except Exception as e:
+            logger.error(f"Failed to get feature settings: {str(e)}")
+            return "I couldn't retrieve the feature settings due to a system error."

@@ -4,7 +4,8 @@ import {
   AppBar, Toolbar, Typography, IconButton, 
   Drawer, Box, Divider, List, ListItem, 
   ListItemIcon, ListItemText, ListItemButton,
-  FormControl, InputLabel, Select, MenuItem
+  FormControl, InputLabel, Select, MenuItem,
+  useMediaQuery, useTheme
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -13,13 +14,34 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import BuildIcon from '@mui/icons-material/Build';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatIcon from '@mui/icons-material/Chat';
+import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import { Link } from 'react-router-dom';
 
 const drawerWidth = 240;
 
+// AppBar styled component that shifts when drawer is open
+const AppBarStyled = styled(AppBar, { shouldForwardProp: (prop) => prop !== 'open' })(
+  ({ theme, open }) => ({
+    transition: theme.transitions.create(['margin', 'width'], {
+      easing: theme.transitions.easing.sharp,
+      duration: theme.transitions.duration.leavingScreen,
+    }),
+    ...(open && {
+      width: `calc(100% - ${drawerWidth}px)`,
+      marginLeft: `${drawerWidth}px`,
+      transition: theme.transitions.create(['margin', 'width'], {
+        easing: theme.transitions.easing.easeOut,
+        duration: theme.transitions.duration.enteringScreen,
+      }),
+    }),
+  }),
+);
+
+// Main content area that shifts when drawer is open
 const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
   ({ theme, open }) => ({
     flexGrow: 1,
+    padding: theme.spacing(3),
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
@@ -35,8 +57,21 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
   }),
 );
 
+// Offset content below AppBar
+const DrawerHeader = styled('div')(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  padding: theme.spacing(0, 1),
+  // necessary for content to be below app bar
+  ...theme.mixins.toolbar,
+  justifyContent: 'flex-end',
+}));
+
 const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const theme = useTheme();
+  // On mobile, we want the drawer to be temporarily displayed over content instead of pushing content
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const handleDrawerToggle = () => {
     setDrawerOpen(!drawerOpen);
@@ -52,7 +87,7 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
 
   return (
     <Box sx={{ display: 'flex' }}>
-      <AppBar position="fixed" className="dashboard-header">
+      <AppBarStyled position="fixed" open={drawerOpen && !isMobile} className="dashboard-header">
         <Toolbar>
           <IconButton
             color="inherit"
@@ -85,12 +120,13 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
             </FormControl>
           )}
         </Toolbar>
-      </AppBar>
+      </AppBarStyled>
       
       <Drawer
-        variant="persistent"
+        variant={isMobile ? "temporary" : "persistent"}
         anchor="left"
         open={drawerOpen}
+        onClose={isMobile ? handleDrawerToggle : undefined}
         sx={{
           width: drawerWidth,
           flexShrink: 0,
@@ -100,10 +136,11 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
           },
         }}
       >
-        <Toolbar />
+        <DrawerHeader />
         <Box sx={{ overflow: 'auto' }}>
-          <List>            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/">
+          <List>            
+            <ListItem disablePadding>
+              <ListItemButton component={Link} to="/" onClick={isMobile ? handleDrawerToggle : undefined}>
                 <ListItemIcon>
                   <DashboardIcon />
                 </ListItemIcon>
@@ -111,7 +148,7 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton component={Link} to="/car-simulator">
+              <ListItemButton component={Link} to="/car-simulator" onClick={isMobile ? handleDrawerToggle : undefined}>
                 <ListItemIcon>
                   <DirectionsCarIcon />
                 </ListItemIcon>
@@ -119,7 +156,15 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton>
+              <ListItemButton component={Link} to="/vehicle-dashboard" onClick={isMobile ? handleDrawerToggle : undefined}>
+                <ListItemIcon>
+                  <DisplaySettingsIcon />
+                </ListItemIcon>
+                <ListItemText primary="Vehicle Display" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem disablePadding>
+              <ListItemButton component={Link} to="/services" onClick={isMobile ? handleDrawerToggle : undefined}>
                 <ListItemIcon>
                   <BuildIcon />
                 </ListItemIcon>
@@ -127,7 +172,7 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton>
+              <ListItemButton component={Link} to="/notifications" onClick={isMobile ? handleDrawerToggle : undefined}>
                 <ListItemIcon>
                   <NotificationsIcon />
                 </ListItemIcon>
@@ -135,7 +180,7 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
-              <ListItemButton component={Link} to="/agent-chat">
+              <ListItemButton component={Link} to="/agent-chat" onClick={isMobile ? handleDrawerToggle : undefined}>
                 <ListItemIcon>
                   <ChatIcon />
                 </ListItemIcon>
@@ -157,8 +202,8 @@ const Dashboard = ({ children, vehicles = [], selectedVehicle, onVehicleChange }
         </Box>
       </Drawer>
       
-      <Main open={drawerOpen} className="dashboard-content">
-        <Toolbar />
+      <Main open={drawerOpen && !isMobile} className="dashboard-content">
+        <DrawerHeader />
         {children}
       </Main>
     </Box>

@@ -14,13 +14,8 @@ const VehicleCard = ({ vehicle, onRefresh }) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadStatus();
-    const interval = setInterval(loadStatus, 5000);
-    return () => clearInterval(interval);
-  }, [vehicle.VehicleId]);
-
-  const loadStatus = async () => {
+  // Define loadStatus with useCallback before using it in useEffect
+  const loadStatus = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get(`/vehicle/status/${vehicle.VehicleId}`);
@@ -30,7 +25,13 @@ const VehicleCard = ({ vehicle, onRefresh }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [vehicle.VehicleId]); // Add proper dependency here
+
+  useEffect(() => {
+    loadStatus();
+    const interval = setInterval(loadStatus, 5000);
+    return () => clearInterval(interval);
+  }, [loadStatus]);
 
   const handleSendCommand = async (commandType, payload = {}) => {
     try {

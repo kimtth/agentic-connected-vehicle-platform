@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Grid } from '@mui/material';
 import { Battery90, Thermostat, Speed, LocalGasStation } from '@mui/icons-material';
-import { fetchVehicleStatus } from '../api/status';
+import { fetchVehicleStatus, subscribeToVehicleStatus } from '../api/status';
 
 const StatusGauge = ({ value, max, icon, label, color }) => {
   // Calculate progress value and use it in the component styling
@@ -40,12 +40,23 @@ const CarStatus = ({ vehicleId }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadStatus = async () => {
+    let subscription = null;
+    
+    const initializeStatus = async () => {
       try {
         setLoading(true);
-        const data = await fetchVehicleStatus(vehicleId);
-        setStatus(data);
-        setError(null);
+        // Get initial data
+        const initialData = await fetchVehicleStatus(vehicleId);
+        setStatus(initialData);
+        
+        // Start the real-time subscription to Cosmos DB Change Feed
+        subscription = await subscribeToVehicleStatus(vehicleId, (newStatus) => {
+          setStatus(newStatus);
+          setError(null);
+        }, (err) => {
+          setError('Error with real-time connection: ' + err.message);
+          console.error('Subscription error:', err);
+        });
       } catch (err) {
         setError('Error loading vehicle status');
         console.error(err);
@@ -54,10 +65,14 @@ const CarStatus = ({ vehicleId }) => {
       }
     };
 
-    loadStatus();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadStatus, 5000);
-    return () => clearInterval(interval);
+    initializeStatus();
+    
+    // Cleanup: close subscription when component unmounts
+    return () => {
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
   }, [vehicleId]);
 
   if (loading && !status) {

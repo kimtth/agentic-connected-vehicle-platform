@@ -12,6 +12,9 @@ else
     echo "Please run utils/azure_init.py first or create .env.azure manually"
 fi
 
+# Set logging level - add LOG_LEVEL environment variable
+export LOG_LEVEL=INFO
+
 # Start the FastAPI server
 echo "Starting FastAPI server..."
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
