@@ -23,13 +23,12 @@ The platform provides two primary modes of interaction:
 The platform implements a purpose-driven agent system that delegates tasks based on user intent. Each agent specializes in a specific domain:
 
 - **AgentManager** – Interprets user intent and delegates tasks to the appropriate specialized agent
-- **Remote Access Agent** – Controls vehicle access and remote operations
-- **Safety & Emergency Agent** – Handles emergency-related features
-- **Charging & Energy Agent** – Manages electric vehicle charging operations
-- **Information Services Agent** – Provides real-time vehicle-related information
-- **Vehicle Feature Control Agent** – Manages in-car features and service subscriptions
-- **Diagnostics & Battery Agent** – Oversees vehicle diagnostics and health reports
-- **Alerts & Notifications Agent** – Sends critical alerts and manages notification preferences
+- **Remote Access Agent** – Controls vehicle access and remote operations such as door locking, engine start, and syncing personal data
+- **Safety & Emergency Agent** – Handles emergency-related features including collision alerts, eCalls, and theft notifications
+- **Information Services Agent** – Provides real-time vehicle-related information such as weather, traffic, points of interest, and navigation assistance
+- **Vehicle Feature Control Agent** – Manages in-car features like climate settings, temperature control, and service subscriptions
+- **Diagnostics & Battery Agent** – Oversees vehicle diagnostics, battery status, and system health reports
+- **Alerts & Notifications Agent** – Manages critical alerts and notification preferences
 
 ## System Architecture
 
@@ -72,17 +71,30 @@ graph TD
 sequenceDiagram
     participant User
     participant API as REST API
+    participant CmdStore as Command Store
     participant Executor as Command Executor
     participant Vehicle
+    participant NotifStore as Notification Store
     participant Notifier as Notification System
     
     User->>API: Submit Command
-    API->>Executor: Process Command
-    Executor->>Vehicle: Execute Command
-    Vehicle->>Executor: Command Received
+    API->>CmdStore: Store Command
+    CmdStore-->>API: Return Command ID
+    API-->>User: Return Command ID
     
-    Vehicle->>Executor: Execution Result
-    Executor->>Notifier: Generate Notification
+    Executor->>CmdStore: Poll for New Commands
+    CmdStore-->>Executor: Retrieve Command
+    Executor->>Vehicle: Execute Command
+    Vehicle-->>Executor: Acknowledge Receipt
+    
+    Note over Executor,Vehicle: Asynchronous Processing
+    
+    Vehicle->>Executor: Send Execution Result
+    Executor->>CmdStore: Update Command Status
+    Executor->>NotifStore: Store Notification
+    
+    Notifier->>NotifStore: Poll for New Notifications
+    NotifStore-->>Notifier: Retrieve Notification
     Notifier->>User: Deliver Notification
 ```
 
@@ -111,74 +123,47 @@ sequenceDiagram
     API->>User: Display Response
 ```
 
-## Current Project Structure
+## Project Structure
 
 The platform is organized with the following directory structure:
 
 ```
-backend/
-├── main.py                   # Application entry point
-├── agents/                   # Agent system
-│   ├── __init__.py           # Agent initialization
-│   ├── agent_manager.py      # Central agent manager
-│   ├── agent_routes.py       # Agent API endpoints
-│   ├── base_agent.py         # Base agent class
-│   ├── remote_access_agent.py         # Remote access functionality
-│   ├── safety_emergency_agent.py      # Safety & emergency functionality
-│   ├── charging_energy_agent.py       # Charging & energy management
-│   ├── information_services_agent.py  # Information services
-│   ├── vehicle_feature_control_agent.py # Vehicle feature control
-│   ├── diagnostics_battery_agent.py   # Diagnostics & battery management
-│   └── alerts_notifications_agent.py  # Alerts & notifications handling
-├── azure/                    # Azure integrations
-│   ├── azure_auth.py         # Azure authentication
-│   ├── azure_init.py         # Azure resources initialization
-│   ├── azure_vehicle_agent.py # Azure-based vehicle agent
-│   └── cosmos_db.py          # Cosmos DB client
-├── models/                   # Domain models
-│   ├── command.py            # Command model
-│   ├── notification.py       # Notification model
-│   ├── service.py            # Service model
-│   └── vehicle.py            # Vehicle model
-├── simulator/                # Vehicle simulator
-│   ├── __init__.py
-│   └── car_simulator.py      # Car simulator implementation
-├── utils/                    # Utilities
-│   ├── agent_tools.py        # Agent tool implementations
-│   └── semantic_kernel_manager.py # Semantic Kernel integration
-└── vehicle_handler/          # Vehicle handlers
-    ├── __init__.py
-    ├── vehicle_api_executor.py        # API/command execution
-    ├── vehicle_data_manager.py        # Vehicle data management
-    ├── vehicle_handler.py             # Main vehicle handler
-    ├── vehicle_notification_handler.py # Notification handling
-    ├── vehicle_profile_manager.py     # Profile management
-    └── vehicle_service_manager.py     # Service management
-    
-frontend/
-├── public/                   # Publicly accessible files
-│   └── index.html            # Main HTML file
-├── src/                      # Source code
-│   ├── api/                  # API clients
-│   │   ├── apiClient.js      # Centralized API client
-│   │   ├── commands.js       # Command API
-│   │   ├── notifications.js  # Notifications API
-│   │   ├── services.js       # Services API
-│   │   ├── status.js         # Status API
-│   │   └── vehicles.js       # Vehicles API
-│   ├── auth/                 # Authentication
-│   │   └── msalConfig.js     # Microsoft authentication
-│   └── components/           # UI components
-│       ├── AgentChat.js      # Agent chat interface
-│       ├── CarSimulator.js   # Car simulator UI
-│       ├── CarStatus.js      # Vehicle status display
-│       ├── CommandLog.js     # Command log display
-│       ├── Dashboard.js      # Main dashboard
-│       ├── NotificationLog.js # Notification display
-│       └── ServiceInfo.js    # Service information display
+├── api/              # Backend API code (Python)
+│   ├── models/       # Data models
+│   ├── agents/       # Agent implementations
+│   │   ├── remote_access_agent.py        # Remote vehicle access operations
+│   │   ├── safety_emergency_agent.py     # Safety and emergency features
+│   │   ├── information_services_agent.py # Vehicle information services
+│   │   ├── vehicle_feature_control_agent.py # Vehicle feature control
+│   ├── azure/        # Azure services integration
+│   │   ├── cosmos_db.py                  # Cosmos DB client  
+│   │   ├── cosmos_data_generator.py      # Sample data generator
+│   │   ├── azure_auth.py                 # AAD authentication middleware
+│   │   ├── azure_init.py                 # Azure resource initialization
+│   ├── simulator/    # Vehicle simulator
+│   │   ├── car_simulator.py              # Simulates vehicle behavior
+│   ├── utils/        # Utility functions
+│   │   ├── agent_tools.py                # Shared agent utilities
+│   ├── tests/        # Backend tests
+│   │   ├── test_azure_integration.py     # Azure integration tests
+├── web/              # Frontend web application (JavaScript/React)
+│   ├── components/   # React components
+│   │   ├── NotificationLog.js            # Notification display component
+│   │   ├── CommandLog.js                 # Command history component
+│   ├── api/          # API client code
+│   │   ├── vehicles.js                   # Vehicle API client
+│   │   ├── services.js                   # Services API client 
+│   │   ├── status.js                     # Status updates API client
+│   │   ├── notifications.js              # Notifications API client
+│   │   ├── commands.js                   # Commands API client
+│   ├── public/       # Static assets
+│   │   ├── index.html                    # Main HTML template
+├── scripts/          # Utility scripts for setup and maintenance
+│   ├── start.sh                          # Linux/Mac startup script
+│   ├── start.bat                         # Windows startup script
 ```
 
-### Implementation Notes
+## Implementation Notes
 
 1. **Core Features vs. Agent System**:
    - The core platform features function independently of the agent system
@@ -186,97 +171,94 @@ frontend/
    - The agent system enhances the user experience with natural language processing
 
 2. **Agent-Core Integration**:
-   - Agents do not implement business logic directly
-   - They interpret user intent and delegate to the appropriate core feature
+   - Agents interpret user intent and delegate to the appropriate core feature
    - This ensures business logic remains in one place and agents focus on interpretation and communication
 
 3. **API Layer Integration**:
    - The frontend uses a centralized API client for all API calls
    - Backend implements a clean separation between direct API endpoints and agent routes
 
-### Integration Approach
-
-The platform allows seamless switching between direct API operations and natural language interactions:
-
-- **Frontend Applications** can use standard REST APIs for programmatic access
-- **Natural Language Interfaces** (chatbots, voice assistants) can utilize the agent system
-- **Combined Interfaces** can offer both options, enhancing traditional UI with conversational features
+4. **Azure Integration**:
+   - Cosmos DB for data storage and real-time updates via Change Feed
+   - Azure AD authentication support for secure access
+   - Azure OpenAI integration for agent intelligence
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.12+
 - Node.js 14+
-- Azure subscription (for Azure OpenAI, optional)
+- Azure subscription (for Azure OpenAI, Cosmos DB)
+- Azure CLI login (if using AAD authentication with Cosmos DB)
 
 ### Backend Setup
 
-1. Create Azure OpenAI/Cosmos DB in the Azure portal
+1. **Create Azure resources** (or use local development setup)
+   - Cosmos DB account
+   - Azure OpenAI service (optional)
 
-1. Navigate to the backend directory:
+2. **Configure environment variables**
    ```
-   cd backend
-   ```
-
-1. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+   # Create a .env file in the vehicle directory
+   COSMOS_DB_ENDPOINT=your_cosmos_endpoint
+   COSMOS_DB_KEY=your_cosmos_key
+   # For AAD auth instead of key-based auth
+   COSMOS_DB_USE_AAD=true
    
-   Or using Poetry:
+   # OpenAI settings (if using Azure OpenAI)
+   AZURE_OPENAI_ENDPOINT=your_openai_endpoint
+   AZURE_OPENAI_API_KEY=your_openai_key
+   AZURE_OPENAI_DEPLOYMENT_NAME=your_deployment_name
    ```
+
+3. **Install backend dependencies**
+   ```bash
+   cd src/api
+   pip install -e .
+   # Or using Poetry
    poetry install
    ```
 
-1. Configure environment variables:
-   - For Azure integration: `cp .env.azure.example .env.azure`
-
-1. Start the backend server:
+4. **Generate test data** (Optional)
+   ```bash
+   # Generate static test data with master key auth
+   python azure/cosmos_data_generator.py --vehicles 10 --services 5 --commands 8 --notifications 12 --status-updates 20
+   
+   # Or use AAD authentication
+   python azure/cosmos_data_generator.py --vehicles 10 --use-aad
+   
+   # Generate live-updating data
+   python azure/cosmos_data_generator.py --live --duration 60 --interval 30
    ```
+
+5. **Start the backend server**
+   ```bash
    # Standard mode
    python main.py
-
-   Or
    
-   # Windows batch file
-   start.bat
+   # Or using startup scripts
+   # Windows:
+   scripts/start.bat
    
-   # Linux/Mac
-   ./start.sh
+   # Linux/Mac:
+   scripts/start.sh
    ```
 
 ### Frontend Setup
 
-1. Navigate to the frontend directory:
-   ```
-   cd frontend
-   ```
-
-2. Install dependencies:
-   ```
+1. **Install frontend dependencies**
+   ```bash
+   cd src/web
    npm install
    ```
 
-   Or using yarn:
-   ```
-   yarn install
-   ```
-
-3. Ensure the public directory exists with required files:
-   ```
-   mkdir -p public
-   ```
-
-4. Start the development server:
-   ```
+2. **Start the development server**
+   ```bash
    npm start
    ```
-
-   Or using yarn:
-   ```
-   yarn start
-   ```
+   
+   The frontend will be available at http://localhost:3000
 
 ## API Reference
 
@@ -286,6 +268,7 @@ The platform allows seamless switching between direct API operations and natural
 - `GET /vehicles` - List all vehicles
 - `POST /vehicle` - Add a new vehicle profile
 - `GET /vehicle/{vehicle_id}/status` - Get vehicle status
+- `GET /vehicle/{vehicle_id}/status/stream` - Stream real-time vehicle status updates
 - `GET /vehicle/{vehicle_id}/services` - List services for a vehicle
 - `POST /vehicle/{vehicle_id}/service` - Add service to a vehicle
 
@@ -298,112 +281,76 @@ The platform allows seamless switching between direct API operations and natural
 
 ### Agent System APIs
 
-#### Agent System Entry Point
 - `POST /api/agent/ask` - General agent system entry point for any natural language query
 
-#### Specialized Agent Endpoints
-- `POST /api/agent/remote-access` - Remote vehicle access operations
-- `POST /api/agent/safety-emergency` - Safety and emergency features
-- `POST /api/agent/charging-energy` - Charging and energy management
-- `POST /api/agent/information-services` - Vehicle information services
-- `POST /api/agent/feature-control` - Vehicle feature control
-- `POST /api/agent/diagnostics-battery` - Diagnostics and battery management
-- `POST /api/agent/alerts-notifications` - Alerts and notification settings
+## Security Notes
 
-#### Analysis Endpoints
-- `POST /api/analyze/vehicle-data` - Analyze vehicle diagnostic data
-- `POST /api/recommend/services` - Get service recommendations
+### CORS Configuration
+The API currently allows all origins (`*`) for CORS. In production, you should restrict this to specific trusted origins:
 
-## Usage Examples
-
-### Direct API Interaction
-
-```javascript
-// Send a command to lock doors
-const response = await fetch('/command', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    vehicleId: 'v123',
-    commandType: 'LOCK_DOORS',
-    parameters: { doors: 'all' }
-  })
-});
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-production-frontend.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ```
 
-### Agent Interaction
-
-```javascript
-// Ask the agent system to handle a natural language request
-const response = await fetch('/api/agent/ask', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    query: "Lock all doors on my car and turn on the climate control to 22 degrees",
-    context: { vehicle_id: 'v123' }
-  })
-});
+### Azure AD Authentication
+For production usage, enable Azure AD authentication by setting:
+```
+AZURE_AUTH_REQUIRED=true
 ```
 
-## Implementation Plan
+## Azure Resources Management
 
-### Current Implementation Status
+When your Cosmos DB account doesn't allow key-based authentication, follow these steps to set up role-based access control:
 
-The project includes these key components:
+### 🔑 Get Role Definition ID
 
-1. **Backend Architecture**
-   - Specialized agents for different domains (Remote Access, Safety & Emergency, etc.)
-   - Agent Manager for orchestrating user requests
-   - Vehicle simulation for testing
-   - Azure integration with Semantic Kernel and Cosmos DB
-   - REST API endpoints for direct interaction
+```bash
+az cosmosdb sql role definition list \
+  --resource-group "<resource-group>" \
+  --account-name "<cosmos-account>"
+```
 
-2. **Frontend Components**
-   - Centralized API client for consistent backend communication
-   - Car Simulator UI
-   - Command and notification logs
-   - Vehicle status display
-   - Agent chat interface
+### 📍 Get Scope
 
-3. **Recent Refactoring Changes**
-   - Fixed import paths for Azure modules
-   - Removed obsolete and unused utility files
-   - Standardized frontend API layer with a centralized client
-   - Improved code organization and reduced technical debt
+```bash
+az cosmosdb show \
+  --resource-group "<resource-group>" \
+  --name "<cosmos-account>" \
+  --query "{id:id}"
+```
 
-### Next Steps
+### 👤 Get Principal ID
 
-The following improvements are planned for future development:
+For local development (user identity):
+```bash
+az ad signed-in-user show --query id -o tsv
+```
 
-1. **Enhanced Agent Capabilities**
-   - Improve natural language processing capabilities
-   - Expand the range of vehicle commands and queries supported
-   - Implement more sophisticated intent recognition
+For managed identity:
+```bash
+az cosmosdb identity show \
+  --resource-group "<resource-group>" \
+  --name "<cosmos-account>" \
+  --query principalId \
+  --output tsv
+```
 
-2. **Architecture Improvements**
-   - Continue refactoring toward a cleaner, feature-based organization
-   - Implement proper error handling and retries for API calls
-   - Add comprehensive logging throughout the system
+### ✅ Assign Role
 
-3. **Testing Enhancements**
-   - Expand test coverage for agent interactions
-   - Add integration tests for the complete command flow
-   - Implement automated UI testing for frontend components
-
-4. **Security Enhancements**
-   - Implement proper authentication and authorization
-   - Add input validation throughout API endpoints
-   - Secure sensitive operations with additional verification
-
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Commit your changes: `git commit -m 'Add some feature'`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a pull request
+```bash
+az cosmosdb sql role assignment create \
+  --resource-group "<resource-group>" \
+  --account-name "<cosmos-account>" \
+  --role-definition-id "<role-definition-id>" \
+  --principal-id "<principal-id>" \
+  --scope "<scope>"
+```
 
 ## License
 
