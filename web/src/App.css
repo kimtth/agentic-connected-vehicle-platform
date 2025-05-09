@@ -1,0 +1,86 @@
+.App {
+  display: flex;
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  background-color: #1976d2 !important;
+  color: white !important;
+}
+
+.dashboard-title {
+  flex-grow: 1;
+}
+
+.dashboard-content {
+  flex-grow: 1;
+  height: 100vh;
+  overflow: auto;
+  padding-top: 64px;
+}
+
+.card-title {
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.command-log-table, .notification-log-table {
+  min-width: 650px;
+}
+
+.gauge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+}
+
+.gauge-label {
+  font-size: 14px;
+  color: #555;
+  margin-top: 5px;
+}
+
+.service-item {
+  margin-bottom: 16px;
+}
+
+.send-command-button {
+  margin-top: 16px !important;
+}
+
+/* Vehicle Dashboard styles */
+.vehicle-gauge {
+  position: relative;
+  text-align: center;
+  width: 180px;
+  height: 180px;
+  margin: 0 auto;
+}
+
+.dashboard-control-panel {
+  background-color: #222;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  color: white;
+}
+
+.dashboard-slider .MuiSlider-thumb {
+  background-color: #1976d2;
+}
+
+.dashboard-slider .MuiSlider-track {
+  background-color: #1976d2;
+}
+
+.dashboard-button {
+  background-color: #333;
+  color: white;
+  margin: 4px;
+}
+
+.dashboard-button:hover {
+  background-color: #444;
+}
