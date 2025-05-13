@@ -6,12 +6,13 @@ and battery warnings.
 """
 
 import logging
-import random
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
 from agents.base_agent import BaseAgent
 from utils.agent_tools import format_notification
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -80,72 +81,49 @@ class AlertsNotificationsAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's alert database
-        # Mock data for demonstration
-        alerts = [
-            {
-                "id": f"alert-{random.randint(1000, 9999)}",
-                "type": "battery_low",
-                "severity": "medium",
-                "timestamp": (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
-                "message": "Battery level below 20%",
-                "acknowledged": random.choice([True, False])
-            } if random.random() > 0.7 else None,
-            {
-                "id": f"alert-{random.randint(1000, 9999)}",
-                "type": "speed_violation",
-                "severity": "high",
-                "timestamp": (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
-                "message": f"Speed limit exceeded by {random.randint(10, 30)} km/h",
-                "acknowledged": random.choice([True, False])
-            } if random.random() > 0.7 else None,
-            {
-                "id": f"alert-{random.randint(1000, 9999)}",
-                "type": "curfew_breach",
-                "severity": "medium",
-                "timestamp": (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
-                "message": "Vehicle used outside allowed hours",
-                "acknowledged": random.choice([True, False])
-            } if random.random() > 0.7 else None,
-            {
-                "id": f"alert-{random.randint(1000, 9999)}",
-                "type": "maintenance_due",
-                "severity": "low",
-                "timestamp": (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
-                "message": "Maintenance service due soon",
-                "acknowledged": random.choice([True, False])
-            } if random.random() > 0.7 else None
-        ]
-        
-        # Clean up None values
-        alerts = [alert for alert in alerts if alert]
-        
-        if not alerts:
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Get alerts from Cosmos DB notifications container
+            alerts = await cosmos_client.list_notifications(vehicle_id)
+            
+            # Filter for alert-type notifications
+            alerts = [alert for alert in alerts if alert.get("type", "").endswith("_alert") 
+                      or alert.get("severity", "") in ["high", "critical"]]
+            
+            if not alerts:
+                return self._format_response(
+                    "There are no active alerts for your vehicle at this time.",
+                    data={
+                        "alerts": [],
+                        "vehicle_id": vehicle_id
+                    }
+                )
+            
+            # Format the response
+            unacknowledged = [alert for alert in alerts if not alert.get("read", False)]
+            
+            alerts_text = "\n".join([
+                f"• {alert.get('type', '').replace('_', ' ').title()}: {alert.get('message', 'No message')} "
+                f"({alert.get('severity', 'medium')} severity, {'unacknowledged' if not alert.get('read', False) else 'acknowledged'})"
+                for alert in alerts
+            ])
+            
             return self._format_response(
-                "There are no active alerts for your vehicle at this time.",
+                f"Alert status: {len(alerts)} alerts, {len(unacknowledged)} unacknowledged.\n\n{alerts_text}",
                 data={
-                    "alerts": [],
+                    "alerts": alerts,
+                    "unacknowledged_count": len(unacknowledged),
                     "vehicle_id": vehicle_id
                 }
             )
-        
-        # Format the response
-        unacknowledged = [alert for alert in alerts if not alert["acknowledged"]]
-        
-        alerts_text = "\n".join([
-            f"• {alert['type'].replace('_', ' ').title()}: {alert['message']} "
-            f"({alert['severity']} severity, {'unacknowledged' if not alert['acknowledged'] else 'acknowledged'})"
-            for alert in alerts
-        ])
-        
-        return self._format_response(
-            f"Alert status: {len(alerts)} alerts, {len(unacknowledged)} unacknowledged.\n\n{alerts_text}",
-            data={
-                "alerts": alerts,
-                "unacknowledged_count": len(unacknowledged),
-                "vehicle_id": vehicle_id
-            }
-        )
+        except Exception as e:
+            logger.error(f"Error retrieving vehicle alerts: {str(e)}")
+            return self._format_response(
+                "I'm having trouble retrieving your vehicle's alert information. Please try again later.",
+                success=False
+            )
     
     async def _handle_speed_alert(self, vehicle_id: Optional[str], query: str, 
                                  context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -175,23 +153,51 @@ class AlertsNotificationsAgent(BaseAgent):
         if not speed_limit:
             speed_limit = 120.0  # Default highway speed
         
-        # In a real implementation, this would set a speed alert in the vehicle
-        notification = format_notification(
-            notification_type="system_alert",
-            message=f"Speed alert set for {speed_limit} km/h",
-            severity="medium"
-        )
-        
-        return self._format_response(
-            f"I've set a speed alert for {speed_limit} km/h. "
-            "You'll receive a notification if the vehicle exceeds this speed.",
-            data={
-                "action": "set_speed_alert",
-                "vehicle_id": vehicle_id,
-                "speed_limit": speed_limit,
-                "notification": notification
+        # Create a notification in Cosmos DB
+        try:
+            await cosmos_client.ensure_connected()
+            
+            notification = {
+                "id": str(await self._generate_uuid()),
+                "notificationId": str(await self._generate_uuid()),
+                "vehicleId": vehicle_id,
+                "type": "speed_alert",
+                "message": f"Speed alert set for {speed_limit} km/h",
+                "timestamp": datetime.now().isoformat(),
+                "readTime": None,
+                "read": False,
+                "severity": "medium",
+                "source": "System",
+                "actionRequired": False,
+                "parameters": {
+                    "speed_limit": speed_limit
+                }
             }
-        )
+            
+            await cosmos_client.create_notification(notification)
+            
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message=f"Speed alert set for {speed_limit} km/h",
+                severity="medium"
+            )
+            
+            return self._format_response(
+                f"I've set a speed alert for {speed_limit} km/h. "
+                "You'll receive a notification if the vehicle exceeds this speed.",
+                data={
+                    "action": "set_speed_alert",
+                    "vehicle_id": vehicle_id,
+                    "speed_limit": speed_limit,
+                    "notification": formatted_notification
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error setting speed alert: {str(e)}")
+            return self._format_response(
+                "I encountered an error when trying to set the speed alert. Please try again later.",
+                success=False
+            )
     
     async def _handle_curfew_alert(self, vehicle_id: Optional[str], query: str,
                                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -212,24 +218,53 @@ class AlertsNotificationsAgent(BaseAgent):
         if not end_time:
             end_time = "06:00"
         
-        # In a real implementation, this would set a curfew alert in the vehicle
-        notification = format_notification(
-            notification_type="system_alert",
-            message=f"Curfew alert set from {start_time} to {end_time}",
-            severity="medium"
-        )
-        
-        return self._format_response(
-            f"I've set a curfew alert from {start_time} to {end_time}. "
-            "You'll receive a notification if the vehicle is used during these hours.",
-            data={
-                "action": "set_curfew_alert",
-                "vehicle_id": vehicle_id,
-                "start_time": start_time,
-                "end_time": end_time,
-                "notification": notification
+        # Create a notification in Cosmos DB
+        try:
+            await cosmos_client.ensure_connected()
+            
+            notification = {
+                "id": str(await self._generate_uuid()),
+                "notificationId": str(await self._generate_uuid()),
+                "vehicleId": vehicle_id,
+                "type": "curfew_alert",
+                "message": f"Curfew alert set from {start_time} to {end_time}",
+                "timestamp": datetime.now().isoformat(),
+                "readTime": None,
+                "read": False,
+                "severity": "medium",
+                "source": "System",
+                "actionRequired": False,
+                "parameters": {
+                    "start_time": start_time,
+                    "end_time": end_time
+                }
             }
-        )
+            
+            await cosmos_client.create_notification(notification)
+            
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message=f"Curfew alert set from {start_time} to {end_time}",
+                severity="medium"
+            )
+            
+            return self._format_response(
+                f"I've set a curfew alert from {start_time} to {end_time}. "
+                "You'll receive a notification if the vehicle is used during these hours.",
+                data={
+                    "action": "set_curfew_alert",
+                    "vehicle_id": vehicle_id,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "notification": formatted_notification
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error setting curfew alert: {str(e)}")
+            return self._format_response(
+                "I encountered an error when trying to set the curfew alert. Please try again later.",
+                success=False
+            )
     
     async def _handle_battery_alert(self, vehicle_id: Optional[str], query: str,
                                    context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -259,23 +294,51 @@ class AlertsNotificationsAgent(BaseAgent):
         if not threshold:
             threshold = 20.0  # Default 20% battery threshold
         
-        # In a real implementation, this would set a battery alert in the vehicle
-        notification = format_notification(
-            notification_type="system_alert",
-            message=f"Battery alert set for {threshold}%",
-            severity="medium"
-        )
-        
-        return self._format_response(
-            f"I've set a battery alert for {threshold}%. "
-            "You'll receive a notification if the battery level falls below this threshold.",
-            data={
-                "action": "set_battery_alert",
-                "vehicle_id": vehicle_id,
-                "threshold": threshold,
-                "notification": notification
+        # Create a notification in Cosmos DB
+        try:
+            await cosmos_client.ensure_connected()
+            
+            notification = {
+                "id": str(await self._generate_uuid()),
+                "notificationId": str(await self._generate_uuid()),
+                "vehicleId": vehicle_id,
+                "type": "battery_alert",
+                "message": f"Battery alert set for {threshold}%",
+                "timestamp": datetime.now().isoformat(),
+                "readTime": None,
+                "read": False,
+                "severity": "medium",
+                "source": "System",
+                "actionRequired": False,
+                "parameters": {
+                    "threshold": threshold
+                }
             }
-        )
+            
+            await cosmos_client.create_notification(notification)
+            
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message=f"Battery alert set for {threshold}%",
+                severity="medium"
+            )
+            
+            return self._format_response(
+                f"I've set a battery alert for {threshold}%. "
+                "You'll receive a notification if the battery level falls below this threshold.",
+                data={
+                    "action": "set_battery_alert",
+                    "vehicle_id": vehicle_id,
+                    "threshold": threshold,
+                    "notification": formatted_notification
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error setting battery alert: {str(e)}")
+            return self._format_response(
+                "I encountered an error when trying to set the battery alert. Please try again later.",
+                success=False
+            )
     
     async def _handle_notification_settings(self, vehicle_id: Optional[str], 
                                           context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -286,34 +349,57 @@ class AlertsNotificationsAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's notification settings
-        # Mock data for demonstration
-        settings = {
-            "speed_alerts": random.choice([True, False]),
-            "curfew_alerts": random.choice([True, False]),
-            "battery_alerts": random.choice([True, False]),
-            "maintenance_alerts": random.choice([True, False]),
-            "geofence_alerts": random.choice([True, False]),
-            "notification_channels": {
-                "email": random.choice([True, False]),
-                "push": random.choice([True, False]),
-                "sms": random.choice([True, False])
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Get notification settings from database
+            # This would typically come from a user settings table
+            # For now, try to infer from existing notifications
+            
+            notifications = await cosmos_client.list_notifications(vehicle_id)
+            
+            # Extract types of notifications that exist
+            notification_types = set()
+            for notification in notifications:
+                notification_type = notification.get("type", "")
+                if notification_type:
+                    if notification_type.endswith("_alert"):
+                        notification_types.add(notification_type)
+            
+            # Build settings based on existing notification types
+            settings = {
+                "speed_alerts": "speed_alert" in notification_types,
+                "curfew_alerts": "curfew_alert" in notification_types,
+                "battery_alerts": "battery_alert" in notification_types,
+                "maintenance_alerts": "maintenance_alert" in notification_types or "service_alert" in notification_types,
+                "geofence_alerts": "geofence_alert" in notification_types,
+                "notification_channels": {
+                    "email": True,  # Default channels
+                    "push": True,
+                    "sms": False
+                }
             }
-        }
-        
-        # Format the response
-        enabled = [k.replace("_", " ").title() for k, v in settings.items() if v and k != "notification_channels"]
-        channels = [k for k, v in settings["notification_channels"].items() if v]
-        
-        settings_text = f"Enabled alerts: {', '.join(enabled)}\nNotification channels: {', '.join(channels)}"
-        
-        return self._format_response(
-            f"Notification settings for your vehicle:\n\n{settings_text}",
-            data={
-                "settings": settings,
-                "vehicle_id": vehicle_id
-            }
-        )
+            
+            # Format the response
+            enabled = [k.replace("_", " ").title() for k, v in settings.items() if v and k != "notification_channels"]
+            channels = [k for k, v in settings["notification_channels"].items() if v]
+            
+            settings_text = f"Enabled alerts: {', '.join(enabled) if enabled else 'None'}\nNotification channels: {', '.join(channels)}"
+            
+            return self._format_response(
+                f"Notification settings for your vehicle:\n\n{settings_text}",
+                data={
+                    "settings": settings,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving notification settings: {str(e)}")
+            return self._format_response(
+                "I'm having trouble retrieving your notification settings. Please try again later.",
+                success=False
+            )
     
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""
@@ -324,3 +410,8 @@ class AlertsNotificationsAgent(BaseAgent):
             "battery_alert": "Set alerts for low battery levels",
             "notification_settings": "View and adjust notification preferences"
         }
+        
+    async def _generate_uuid(self):
+        """Generate a UUID for notifications"""
+        import uuid
+        return uuid.uuid4()

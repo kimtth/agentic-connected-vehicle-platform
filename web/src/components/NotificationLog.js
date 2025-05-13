@@ -29,6 +29,11 @@ const NotificationLog = ({ vehicleId }) => {
     }
   };
 
+  // Helper function to safely get substring
+  const safeSubstring = (str, start, end) => {
+    return str ? str.substring(start, end) : 'N/A';
+  };
+
   return (
     <>
       <Typography variant="h6" component="h2" gutterBottom>
@@ -55,13 +60,13 @@ const NotificationLog = ({ vehicleId }) => {
             <TableBody>
               {notifications.length > 0 ? (
                 notifications.map((notification) => (
-                  <TableRow key={notification.notificationId}>
-                    <TableCell>{notification.notificationId.substring(0, 8)}</TableCell>
-                    <TableCell>{notification.commandId.substring(0, 8)}</TableCell>
-                    <TableCell>{notification.vehicleId}</TableCell>
-                    <TableCell>{notification.message}</TableCell>
-                    <TableCell>{notification.status}</TableCell>
-                    <TableCell>{new Date(notification.timestamp).toLocaleTimeString()}</TableCell>
+                  <TableRow key={notification.id || notification.notificationId || Math.random()}>
+                    <TableCell>{safeSubstring(notification.notificationId, 0, 8)}</TableCell>
+                    <TableCell>{safeSubstring(notification.commandId, 0, 8)}</TableCell>
+                    <TableCell>{notification.vehicleId || 'N/A'}</TableCell>
+                    <TableCell>{notification.message || 'N/A'}</TableCell>
+                    <TableCell>{notification.status || 'N/A'}</TableCell>
+                    <TableCell>{notification.timestamp ? new Date(notification.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
                   </TableRow>
                 ))
               ) : (

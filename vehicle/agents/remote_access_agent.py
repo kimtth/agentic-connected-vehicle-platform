@@ -6,10 +6,13 @@ engine start, and syncing personal data.
 """
 
 import logging
+import datetime
+import uuid
 from typing import Dict, Any, Optional
 
 from agents.base_agent import BaseAgent
 from utils.agent_tools import validate_command, format_notification
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,31 +77,112 @@ class RemoteAccessAgent(BaseAgent):
                 success=False
             )
         
-        action = "lock" if lock else "unlock"
-        
-        # Validate the command
-        command_type = "LOCK_DOORS" if lock else "UNLOCK_DOORS"
-        validation = validate_command(
-            command_id="remote_access_" + action,
-            command_type=command_type,
-            parameters={"doors": "all"}
-        )
-        
-        if not validation["valid"]:
+        try:
+            action = "lock" if lock else "unlock"
+            
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Validate the command
+            command_type = "LOCK_DOORS" if lock else "UNLOCK_DOORS"
+            command_id = f"remote_access_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            validation = await validate_command(
+                command_id=command_id,
+                command_type=command_type,
+                parameters={"doors": "all"}
+            )
+            
+            if not validation.get("valid", False):
+                return self._format_response(
+                    f"I couldn't {action} the doors: {validation.get('error', 'Unknown error')}",
+                    success=False
+                )
+            
+            # Create the command in Cosmos DB
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": command_type,
+                "parameters": {"doors": "all"},
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "Normal"
+            }
+            
+            await cosmos_client.create_command(command)
+            
+            # Update vehicle status in Cosmos DB
+            current_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            if current_status:
+                # Create updated status with locked doors
+                new_status = current_status.copy()
+                
+                # Update door status
+                if "doorStatus" in new_status:
+                    door_status = new_status["doorStatus"]
+                    for door in door_status:
+                        door_status[door] = "locked" if lock else "unlocked"
+                else:
+                    # Create door status if it doesn't exist
+                    new_status["doorStatus"] = {
+                        "driver": "locked" if lock else "unlocked",
+                        "passenger": "locked" if lock else "unlocked",
+                        "rearLeft": "locked" if lock else "unlocked",
+                        "rearRight": "locked" if lock else "unlocked"
+                    }
+                
+                # Update timestamp
+                new_status["timestamp"] = datetime.datetime.now().isoformat()
+                
+                # Create a new status document (don't update existing to maintain history)
+                new_status["id"] = str(uuid.uuid4())
+                await cosmos_client.create_vehicle_status(new_status)
+            
+            # Create a notification for the action
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": str(uuid.uuid4()),
+                "vehicleId": vehicle_id,
+                "type": "door_operation",
+                "message": f"Vehicle doors have been {action}ed remotely",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "low",
+                "source": "System",
+                "actionRequired": False
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
             return self._format_response(
-                f"I couldn't {action} the doors: {validation.get('error', 'Unknown error')}",
+                f"I've sent a request to {action} all doors on your vehicle.",
+                data={
+                    "command_type": command_type,
+                    "vehicle_id": vehicle_id,
+                    "status": "sent",
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling door {action}: {str(e)}")
+            return self._format_response(
+                f"I encountered an error while trying to {action} the doors. Please try again later.",
                 success=False
             )
-        
-        # In a real implementation, this would send the command to the vehicle
-        return self._format_response(
-            f"I've sent a request to {action} all doors on your vehicle.",
-            data={
-                "command_type": command_type,
-                "vehicle_id": vehicle_id,
-                "status": "sent"
-            }
-        )
     
     async def _handle_engine_control(self, vehicle_id: Optional[str], start: bool, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle an engine start/stop request."""
@@ -108,32 +192,121 @@ class RemoteAccessAgent(BaseAgent):
                 success=False
             )
         
-        action = "start" if start else "stop"
-        
-        # Validate the command
-        command_type = "START_ENGINE" if start else "STOP_ENGINE"
-        parameters = {"ignition_level": "run"} if start else {}
-        validation = validate_command(
-            command_id="remote_access_" + action,
-            command_type=command_type,
-            parameters=parameters
-        )
-        
-        if not validation["valid"]:
+        try:
+            action = "start" if start else "stop"
+            
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Get current status to check if engine is already in the requested state
+            current_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            if current_status:
+                current_engine_status = current_status.get("engineStatus", "unknown")
+                
+                if (start and current_engine_status == "on") or (not start and current_engine_status == "off"):
+                    status_text = "already running" if start else "already off"
+                    return self._format_response(
+                        f"The engine is {status_text}.",
+                        success=True,
+                        data={
+                            "command_type": "ENGINE_CONTROL",
+                            "vehicle_id": vehicle_id,
+                            "status": "no_action_needed"
+                        }
+                    )
+            
+            # Validate the command
+            command_type = "START_ENGINE" if start else "STOP_ENGINE"
+            command_id = f"remote_access_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            parameters = {"ignition_level": "run"} if start else {}
+            
+            validation = await validate_command(
+                command_id=command_id,
+                command_type=command_type,
+                parameters=parameters
+            )
+            
+            if not validation.get("valid", False):
+                return self._format_response(
+                    f"I couldn't {action} the engine: {validation.get('error', 'Unknown error')}",
+                    success=False
+                )
+            
+            # Create the command in Cosmos DB
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": command_type,
+                "parameters": parameters,
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "High"
+            }
+            
+            await cosmos_client.create_command(command)
+            
+            # Update vehicle status in Cosmos DB
+            if current_status:
+                # Create updated status with new engine state
+                new_status = current_status.copy()
+                
+                # Update engine status
+                new_status["engineStatus"] = "on" if start else "off"
+                
+                # If engine starting, set initial speed to 0
+                if start:
+                    new_status["speed"] = 0
+                
+                # Update timestamp
+                new_status["timestamp"] = datetime.datetime.now().isoformat()
+                
+                # Create a new status document (don't update existing to maintain history)
+                new_status["id"] = str(uuid.uuid4())
+                await cosmos_client.create_vehicle_status(new_status)
+            
+            # Create a notification for the action
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": str(uuid.uuid4()),
+                "vehicleId": vehicle_id,
+                "type": "engine_operation",
+                "message": f"Vehicle engine has been {action}ed remotely",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "medium",
+                "source": "System",
+                "actionRequired": False
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
             return self._format_response(
-                f"I couldn't {action} the engine: {validation.get('error', 'Unknown error')}",
+                f"I've sent a request to {action} the engine on your vehicle.",
+                data={
+                    "command_type": command_type,
+                    "vehicle_id": vehicle_id,
+                    "status": "sent",
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling engine {action}: {str(e)}")
+            return self._format_response(
+                f"I encountered an error while trying to {action} the engine. Please try again later.",
                 success=False
             )
-        
-        # In a real implementation, this would send the command to the vehicle
-        return self._format_response(
-            f"I've sent a request to {action} the engine on your vehicle.",
-            data={
-                "command_type": command_type,
-                "vehicle_id": vehicle_id,
-                "status": "sent"
-            }
-        )
     
     async def _handle_data_sync(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a data sync request."""
@@ -143,16 +316,72 @@ class RemoteAccessAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would sync personal data with the vehicle
-        return self._format_response(
-            "I've initiated a sync of your personal data with the vehicle. "
-            "Your preferences, contacts, and settings will be updated shortly.",
-            data={
-                "sync_type": "personal_data",
-                "vehicle_id": vehicle_id,
-                "status": "initiated"
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Create a sync command in Cosmos DB
+            command_id = f"data_sync_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": "SYNC_DATA",
+                "parameters": {
+                    "sync_type": "personal_data",
+                    "timestamp": datetime.datetime.now().isoformat()
+                },
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "Low"
             }
-        )
+            
+            await cosmos_client.create_command(command)
+            
+            # Create a notification for the action
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": str(uuid.uuid4()),
+                "vehicleId": vehicle_id,
+                "type": "data_sync",
+                "message": "Personal data synchronization initiated",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "low",
+                "source": "System",
+                "actionRequired": False
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
+            return self._format_response(
+                "I've initiated a sync of your personal data with the vehicle. "
+                "Your preferences, contacts, and settings will be updated shortly.",
+                data={
+                    "sync_type": "personal_data",
+                    "vehicle_id": vehicle_id,
+                    "status": "initiated",
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling data sync: {str(e)}")
+            return self._format_response(
+                "I encountered an error while trying to sync your data. Please try again later.",
+                success=False
+            )
     
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""

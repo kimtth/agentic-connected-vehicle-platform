@@ -6,10 +6,11 @@ and points of interest.
 """
 
 import logging
-import random
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 
 from agents.base_agent import BaseAgent
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,15 +24,6 @@ class InformationServicesAgent(BaseAgent):
     def __init__(self):
         """Initialize the Information Services Agent."""
         super().__init__("Information Services Agent")
-        
-        # Mock data for demonstration
-        self.mock_pois = [
-            {"id": "poi001", "name": "Central Park", "category": "Park", "rating": 4.7, "distance_km": 1.2},
-            {"id": "poi002", "name": "Downtown Cafe", "category": "Restaurant", "rating": 4.2, "distance_km": 0.8},
-            {"id": "poi003", "name": "City Museum", "category": "Museum", "rating": 4.5, "distance_km": 3.5},
-            {"id": "poi004", "name": "Shopping Mall", "category": "Shopping", "rating": 4.0, "distance_km": 2.7},
-            {"id": "poi005", "name": "Community Theater", "category": "Entertainment", "rating": 4.3, "distance_km": 1.9},
-        ]
     
     async def process(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -77,142 +69,344 @@ class InformationServicesAgent(BaseAgent):
     
     async def _handle_weather(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a weather information request."""
-        # In a real implementation, this would query a weather API using the vehicle's location
-        # Mock data for demonstration
-        weather_data = {
-            "temperature": random.randint(10, 30),
-            "condition": random.choice(["Sunny", "Cloudy", "Partly Cloudy", "Rainy", "Snowy"]),
-            "humidity": random.randint(30, 90),
-            "wind_speed": random.randint(0, 30),
-            "forecast": [
-                {"day": "Today", "condition": random.choice(["Sunny", "Cloudy", "Partly Cloudy", "Rainy", "Snowy"]), "high": random.randint(10, 30), "low": random.randint(0, 20)},
-                {"day": "Tomorrow", "condition": random.choice(["Sunny", "Cloudy", "Partly Cloudy", "Rainy", "Snowy"]), "high": random.randint(10, 30), "low": random.randint(0, 20)},
-                {"day": "Day After", "condition": random.choice(["Sunny", "Cloudy", "Partly Cloudy", "Rainy", "Snowy"]), "high": random.randint(10, 30), "low": random.randint(0, 20)}
-            ]
-        }
-        
-        return self._format_response(
-            f"Current weather: {weather_data['condition']}, {weather_data['temperature']}°C with "
-            f"{weather_data['humidity']}% humidity and wind at {weather_data['wind_speed']} km/h. "
-            f"\n\nForecast:\n"
-            f"• {weather_data['forecast'][0]['day']}: {weather_data['forecast'][0]['condition']}, {weather_data['forecast'][0]['high']}°C / {weather_data['forecast'][0]['low']}°C\n"
-            f"• {weather_data['forecast'][1]['day']}: {weather_data['forecast'][1]['condition']}, {weather_data['forecast'][1]['high']}°C / {weather_data['forecast'][1]['low']}°C\n"
-            f"• {weather_data['forecast'][2]['day']}: {weather_data['forecast'][2]['condition']}, {weather_data['forecast'][2]['high']}°C / {weather_data['forecast'][2]['low']}°C",
-            data={
-                "weather": weather_data,
-                "vehicle_id": vehicle_id
+        try:
+            # Get vehicle location from Cosmos DB
+            location = await self._get_vehicle_location(vehicle_id)
+            
+            if not location:
+                return self._format_response(
+                    "I couldn't determine your vehicle's location to fetch weather information.",
+                    success=False
+                )
+            
+            # In a production environment, we would call a weather API with the location
+            # For demonstration, we'll create a structured response with the location data
+            
+            latitude = location.get("latitude", 0)
+            longitude = location.get("longitude", 0)
+            
+            # Determine a basic weather condition based on coordinates (just for demonstration)
+            # This would be replaced with an actual API call in production
+            condition = "Sunny" if (latitude + longitude) % 3 == 0 else \
+                        "Cloudy" if (latitude + longitude) % 3 == 1 else "Partly Cloudy"
+            temperature = int(((latitude + 90) / 180) * 30 + 5)  # Simple formula to generate temperature between 5-35°C
+            
+            weather_data = {
+                "location": {
+                    "latitude": latitude,
+                    "longitude": longitude
+                },
+                "current": {
+                    "temperature": temperature,
+                    "condition": condition,
+                    "humidity": 65,
+                    "wind_speed": 12
+                },
+                "forecast": [
+                    {"day": "Today", "condition": condition, "high": temperature, "low": temperature - 5},
+                    {"day": "Tomorrow", "condition": "Partly Cloudy", "high": temperature + 2, "low": temperature - 3},
+                    {"day": "Day After", "condition": "Sunny", "high": temperature + 1, "low": temperature - 4}
+                ]
             }
-        )
+            
+            return self._format_response(
+                f"Current weather at your vehicle's location: {condition}, {temperature}°C with "
+                f"65% humidity and wind at 12 km/h. "
+                f"\n\nForecast:\n"
+                f"• Today: {condition}, {temperature}°C / {temperature - 5}°C\n"
+                f"• Tomorrow: Partly Cloudy, {temperature + 2}°C / {temperature - 3}°C\n"
+                f"• Day After: Sunny, {temperature + 1}°C / {temperature - 4}°C",
+                data={
+                    "weather": weather_data,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving weather information: {str(e)}")
+            return self._format_response(
+                "I encountered an error while retrieving weather information. Please try again later.",
+                success=False
+            )
     
     async def _handle_traffic(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a traffic information request."""
-        # In a real implementation, this would query a traffic API using the vehicle's location
-        # Mock data for demonstration
-        traffic_data = {
-            "current_speed": random.randint(10, 100),
-            "normal_speed": random.randint(50, 110),
-            "congestion_level": random.choice(["Low", "Moderate", "High", "Severe"]),
-            "incidents": [
-                {"type": "Accident", "location": "Highway 101, Mile 23", "delay_minutes": random.randint(5, 30)} if random.random() > 0.7 else None,
-                {"type": "Construction", "location": "Main Street", "delay_minutes": random.randint(5, 20)} if random.random() > 0.7 else None,
-                {"type": "Road Closure", "location": "Downtown Bridge", "delay_minutes": random.randint(10, 45)} if random.random() > 0.7 else None
-            ]
-        }
-        
-        # Clean up None values
-        traffic_data["incidents"] = [i for i in traffic_data["incidents"] if i]
-        
-        # Build the response
-        incidents_text = ""
-        if traffic_data["incidents"]:
-            incidents_text = "\n\nTraffic incidents:\n" + "\n".join([
-                f"• {incident['type']} at {incident['location']}: {incident['delay_minutes']} min delay"
-                for incident in traffic_data["incidents"]
-            ])
-        
-        return self._format_response(
-            f"Current traffic conditions: {traffic_data['congestion_level']} congestion. "
-            f"Traffic is moving at {traffic_data['current_speed']} km/h "
-            f"(normal speed: {traffic_data['normal_speed']} km/h).{incidents_text}",
-            data={
-                "traffic": traffic_data,
-                "vehicle_id": vehicle_id
+        try:
+            # Get vehicle location and status from Cosmos DB
+            location = await self._get_vehicle_location(vehicle_id)
+            vehicle_status = await self._get_vehicle_status(vehicle_id)
+            
+            if not location:
+                return self._format_response(
+                    "I couldn't determine your vehicle's location to fetch traffic information.",
+                    success=False
+                )
+            
+            # Get current speed from vehicle status if available
+            current_speed = vehicle_status.get("Speed", 0) if vehicle_status else 0
+            
+            # In a production environment, we would call a traffic API with the location
+            # For demonstration, we'll derive some traffic data from the vehicle's status
+            
+            # Generate traffic condition based on time of day (rush hour or not)
+            current_hour = datetime.now().hour
+            is_rush_hour = 7 <= current_hour <= 9 or 16 <= current_hour <= 18
+            
+            congestion_level = "High" if is_rush_hour else "Low"
+            normal_speed = 100 if not is_rush_hour else 60
+            
+            # Generate an incident if in rush hour (with 50% probability)
+            incidents = []
+            if is_rush_hour and bool(int(location.get("latitude", 0) * 100) % 2):
+                incidents.append({
+                    "type": "Congestion", 
+                    "location": "Highway ahead",
+                    "delay_minutes": 15
+                })
+            
+            traffic_data = {
+                "location": location,
+                "current_speed": current_speed,
+                "normal_speed": normal_speed,
+                "congestion_level": congestion_level,
+                "incidents": incidents,
+                "timestamp": datetime.now().isoformat()
             }
-        )
+            
+            # Format the response
+            incidents_text = ""
+            if incidents:
+                incidents_text = "\n\nTraffic incidents:\n" + "\n".join([
+                    f"• {incident['type']} at {incident['location']}: {incident['delay_minutes']} min delay"
+                    for incident in incidents
+                ])
+            
+            return self._format_response(
+                f"Current traffic conditions: {congestion_level} congestion. "
+                f"Traffic is moving at {current_speed if current_speed > 0 else 'unknown'} km/h "
+                f"(normal speed: {normal_speed} km/h).{incidents_text}",
+                data={
+                    "traffic": traffic_data,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving traffic information: {str(e)}")
+            return self._format_response(
+                "I encountered an error while retrieving traffic information. Please try again later.",
+                success=False
+            )
     
     async def _handle_pois(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a points of interest request."""
-        # In a real implementation, this would query a POI API using the vehicle's location
-        # Mock data for demonstration
-        category = context.get("poi_category") if context else None
-        
-        if category:
-            pois = [poi for poi in self.mock_pois if poi["category"].lower() == category.lower()]
-        else:
-            pois = self.mock_pois
-        
-        # Sort by distance
-        pois.sort(key=lambda p: p["distance_km"])
-        
-        # Format the response
-        if not pois:
+        try:
+            # Get vehicle location from Cosmos DB
+            location = await self._get_vehicle_location(vehicle_id)
+            
+            if not location:
+                return self._format_response(
+                    "I couldn't determine your vehicle's location to find points of interest.",
+                    success=False
+                )
+            
+            # Get points of interest from Cosmos DB
+            category = context.get("poi_category") if context else None
+            
+            # Ensure connection to Cosmos DB
+            await cosmos_client.ensure_connected()
+            
+            # Query for POIs
+            query = "SELECT * FROM c"
+            if category:
+                query += f" WHERE c.category = '{category}'"
+            
+            # Get POIs from container
+            pois_container = cosmos_client.pois_container
+            if not pois_container:
+                logger.warning("POIs container not available")
+                return self._format_response(
+                    "Points of interest data is currently unavailable.",
+                    success=False
+                )
+                
+            items = pois_container.query_items(query=query, enable_cross_partition_query=True)
+            
+            pois = []
+            async for item in items:
+                # Calculate distance (simplified for demo) - in a real app, use a proper distance calculation
+                poi_location = item.get("location", {})
+                poi_lat = poi_location.get("latitude", 0)
+                poi_lon = poi_location.get("longitude", 0)
+                vehicle_lat = location.get("latitude", 0)
+                vehicle_lon = location.get("longitude", 0)
+                
+                # Simple Euclidean distance (not accurate for geo, but ok for demo)
+                distance = ((poi_lat - vehicle_lat)**2 + (poi_lon - vehicle_lon)**2)**0.5 * 111 # rough km conversion
+                
+                pois.append({
+                    "name": item.get("name", "Unknown"),
+                    "category": item.get("category", "Other"),
+                    "rating": item.get("rating", 0),
+                    "distance_km": round(distance, 1),
+                    "location": poi_location,
+                    "address": item.get("address", "No address available"),
+                    "features": item.get("features", {})
+                })
+            
+            # Sort by distance
+            pois.sort(key=lambda p: p["distance_km"])
+            
+            # Take closest 5
+            pois = pois[:5]
+            
+            # Format the response
+            if not pois:
+                return self._format_response(
+                    f"I couldn't find any points of interest{' in the ' + category + ' category' if category else ''} near you.",
+                    success=False
+                )
+            
+            pois_text = "\n".join([
+                f"• {poi['name']} ({poi['category']}) - {poi['distance_km']} km away, {poi['rating']}/5 rating"
+                for poi in pois
+            ])
+            
             return self._format_response(
-                f"I couldn't find any points of interest{' in the ' + category + ' category' if category else ''} near you.",
+                f"Here are points of interest near you:\n\n{pois_text}",
+                data={
+                    "pois": pois,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving points of interest: {str(e)}")
+            return self._format_response(
+                "I encountered an error while retrieving points of interest. Please try again later.",
                 success=False
             )
-        
-        pois_text = "\n".join([
-            f"• {poi['name']} ({poi['category']}) - {poi['distance_km']} km away, {poi['rating']}/5 rating"
-            for poi in pois
-        ])
-        
-        return self._format_response(
-            f"Here are points of interest near you:\n\n{pois_text}",
-            data={
-                "pois": pois,
-                "vehicle_id": vehicle_id
-            }
-        )
     
     async def _handle_navigation(self, vehicle_id: Optional[str], query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a navigation request."""
-        # Try to extract destination from query
-        destination = None
-        query_lower = query.lower()
-        
-        if "to " in query_lower:
-            parts = query_lower.split("to ")
-            if len(parts) > 1:
-                destination = parts[1].strip()
-        
-        if not destination and context and "destination" in context:
-            destination = context["destination"]
-        
-        if not destination:
+        try:
+            # Try to extract destination from query
+            destination = None
+            query_lower = query.lower()
+            
+            if "to " in query_lower:
+                parts = query_lower.split("to ")
+                if len(parts) > 1:
+                    destination = parts[1].strip()
+            
+            if not destination and context and "destination" in context:
+                destination = context["destination"]
+            
+            if not destination:
+                return self._format_response(
+                    "Where would you like to navigate to? Please specify a destination.",
+                    success=False
+                )
+            
+            # Get vehicle location from Cosmos DB
+            location = await self._get_vehicle_location(vehicle_id)
+            
+            if not location:
+                return self._format_response(
+                    "I couldn't determine your vehicle's location to plan navigation.",
+                    success=False
+                )
+            
+            # In a production environment, we would call a navigation/routing API
+            # For demonstration, we'll create a simulated navigation response
+            
+            # Generate distance based on destination length (just for demo purposes)
+            distance = len(destination) * 1.5
+            duration = int(distance * 2)  # ~30 km/h average speed
+            
+            navigation_data = {
+                "destination": destination.title(),
+                "start_location": location,
+                "estimated_time": duration,
+                "distance_km": round(distance, 1),
+                "route_overview": "via main roads",
+                "next_turn": f"Continue straight for {int(distance/3)} km",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Create a command in Cosmos DB for the navigation
+            command = {
+                "id": str(context.get("session_id", "nav-" + datetime.now().isoformat())),
+                "commandId": f"nav-{hash(destination) % 10000:04d}",
+                "vehicleId": vehicle_id,
+                "commandType": "SET_NAVIGATION",
+                "parameters": {
+                    "destination": destination,
+                    "distance_km": navigation_data["distance_km"],
+                    "estimated_time": navigation_data["estimated_time"]
+                },
+                "status": "Sent",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            try:
+                await cosmos_client.create_command(command)
+            except Exception as e:
+                logger.warning(f"Could not save navigation command: {e}")
+            
             return self._format_response(
-                "Where would you like to navigate to? Please specify a destination.",
+                f"I've set up navigation to {navigation_data['destination']}. "
+                f"It's {navigation_data['distance_km']} km away and should take about {navigation_data['estimated_time']} minutes "
+                f"{navigation_data['route_overview']}. {navigation_data['next_turn']}.",
+                data={
+                    "navigation": navigation_data,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error setting up navigation: {str(e)}")
+            return self._format_response(
+                "I encountered an error while setting up navigation. Please try again later.",
                 success=False
             )
-        
-        # In a real implementation, this would query a navigation API with the destination
-        # Mock data for demonstration
-        navigation_data = {
-            "destination": destination.title(),
-            "estimated_time": random.randint(5, 60),
-            "distance_km": round(random.uniform(1, 50), 1),
-            "route_overview": "via Highway 101 and Main Street",
-            "next_turn": f"Turn right on {random.choice(['Main Street', 'First Avenue', 'Park Road'])} in {random.randint(1, 10)} km"
-        }
-        
-        return self._format_response(
-            f"I've set up navigation to {navigation_data['destination']}. "
-            f"It's {navigation_data['distance_km']} km away and should take about {navigation_data['estimated_time']} minutes "
-            f"{navigation_data['route_overview']}. {navigation_data['next_turn']}.",
-            data={
-                "navigation": navigation_data,
-                "vehicle_id": vehicle_id
-            }
-        )
+            
+    async def _get_vehicle_location(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
+        """Get the vehicle's current location from Cosmos DB."""
+        if not vehicle_id:
+            return {}
+            
+        try:
+            # Get vehicle status for location
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            if vehicle_status:
+                # Check for location in status
+                if "location" in vehicle_status:
+                    return vehicle_status["location"]
+                    
+            # Try to get from vehicle data if not in status
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if vehicle and "LastLocation" in vehicle:
+                # Convert to lowercase keys for consistency
+                return {
+                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
+                    "longitude": vehicle["LastLocation"].get("Longitude", 0)
+                }
+                
+            return {}
+        except Exception as e:
+            logger.error(f"Error getting vehicle location: {str(e)}")
+            return {}
+            
+    async def _get_vehicle_status(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
+        """Get the vehicle's current status from Cosmos DB."""
+        if not vehicle_id:
+            return {}
+            
+        try:
+            return await cosmos_client.get_vehicle_status(vehicle_id)
+        except Exception as e:
+            logger.error(f"Error getting vehicle status: {str(e)}")
+            return {}
     
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""

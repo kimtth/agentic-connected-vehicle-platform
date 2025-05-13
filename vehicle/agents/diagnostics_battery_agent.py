@@ -5,12 +5,12 @@ This agent oversees vehicle diagnostics, battery status, and system health repor
 """
 
 import logging
-import random
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
 from agents.base_agent import BaseAgent
 from utils.agent_tools import analyze_vehicle_data
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,56 +74,104 @@ class DiagnosticsBatteryAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's diagnostic systems
-        # Use the analyze_vehicle_data tool with mock data
-        metrics = ["battery_health", "tire_pressure", "brake_wear", "oil_level", "engine_health"]
-        diagnostics_data = analyze_vehicle_data(vehicle_id, "1d", metrics)
-        
-        # Create a simplified summary of the diagnostic results
-        issues = []
-        status = "All systems normal"
-        
-        # Check for issues
-        if "metrics" in diagnostics_data:
-            if "tire_pressure" in diagnostics_data["metrics"]:
-                tire_status = random.choice(["normal", "low", "normal", "normal"])
-                if tire_status == "low":
-                    issues.append("Low tire pressure detected")
+        try:
+            # Get vehicle data from Cosmos DB
+            await cosmos_client.ensure_connected()
             
-            if "brake_wear" in diagnostics_data["metrics"]:
-                brake_status = random.choice(["normal", "worn", "normal", "normal"])
-                if brake_status == "worn":
-                    issues.append("Brake pads showing signs of wear")
+            # Get vehicle status from Cosmos DB
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            if not vehicle_status:
+                return self._format_response(
+                    "No recent vehicle status data is available for diagnostics.",
+                    success=False
+                )
+                
+            # Get vehicle details to check specs
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            if not vehicle:
+                return self._format_response(
+                    "Vehicle details are not available for diagnostics.",
+                    success=False
+                )
+                
+            # Use the analyze_vehicle_data tool with real data
+            metrics = ["battery_health", "tire_pressure", "brake_wear", "oil_level", "engine_health"]
+            diagnostics_data = await analyze_vehicle_data(vehicle_id, "1d", metrics)
             
-            if "oil_level" in diagnostics_data["metrics"]:
-                oil_status = random.choice(["normal", "low", "normal", "normal"])
-                if oil_status == "low":
-                    issues.append("Oil level is low")
+            # Create a summary of the diagnostic results based on actual data
+            issues = []
             
-            if "engine_health" in diagnostics_data["metrics"]:
-                engine_status = random.choice(["normal", "check", "normal", "normal"])
-                if engine_status == "check":
-                    issues.append("Engine requires inspection")
-        
-        if issues:
-            status = "Issues detected"
-        
-        # Format the response
-        if issues:
-            issues_text = "\n".join([f"• {issue}" for issue in issues])
-            response_text = f"Diagnostic check complete. Issues detected:\n\n{issues_text}\n\nI recommend scheduling a service appointment."
-        else:
-            response_text = "Diagnostic check complete. All vehicle systems are operating normally."
-        
-        return self._format_response(
-            response_text,
-            data={
-                "diagnostics": diagnostics_data,
-                "issues": issues,
-                "status": status,
-                "vehicle_id": vehicle_id
-            }
-        )
+            # Check battery level
+            battery_level = vehicle_status.get("batteryLevel", vehicle_status.get("Battery", 0))
+            if battery_level < 20:
+                issues.append("Low battery level detected")
+                
+            # Check temperature 
+            temperature = vehicle_status.get("temperature", vehicle_status.get("Temperature", 0))
+            if temperature > 90:
+                issues.append("High engine/system temperature detected")
+                
+            # Check tire pressure from telemetry if available
+            telemetry = vehicle.get("CurrentTelemetry", {})
+            tire_pressure = telemetry.get("TirePressure", {})
+            
+            for tire_position, pressure in tire_pressure.items():
+                if pressure < 30:
+                    issues.append(f"Low tire pressure detected ({tire_position}: {pressure} PSI)")
+                    
+            # Check if the vehicle is electric
+            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
+            
+            # For non-electric vehicles, check oil level
+            if not is_electric:
+                oil_level = vehicle_status.get("oilLevel", vehicle_status.get("OilLevel", 0))
+                if oil_level < 25:
+                    issues.append("Low oil level detected")
+                    
+            # Get service history to check maintenance status
+            services = await cosmos_client.list_services(vehicle_id)
+            if services:
+                # Find most recent service
+                sorted_services = sorted(services, key=lambda s: s.get("StartDate", ""), reverse=True)
+                if sorted_services:
+                    last_service = sorted_services[0]
+                    last_service_date = last_service.get("StartDate", "")
+                    
+                    try:
+                        service_date = datetime.fromisoformat(last_service_date.replace("Z", "+00:00"))
+                        months_since = (datetime.now() - service_date).days // 30
+                        
+                        if months_since > 6:
+                            issues.append(f"Regular maintenance due (last service: {months_since} months ago)")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not parse service date: {e}")
+            
+            # Determine overall status
+            status = "Issues detected" if issues else "All systems normal"
+            
+            # Format the response
+            if issues:
+                issues_text = "\n".join([f"• {issue}" for issue in issues])
+                response_text = f"Diagnostic check complete. Issues detected:\n\n{issues_text}\n\nI recommend scheduling a service appointment."
+            else:
+                response_text = "Diagnostic check complete. All vehicle systems are operating normally."
+            
+            return self._format_response(
+                response_text,
+                data={
+                    "diagnostics": diagnostics_data,
+                    "issues": issues,
+                    "status": status,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error running diagnostics: {str(e)}")
+            return self._format_response(
+                "I encountered an error while running diagnostics. Please try again later.",
+                success=False
+            )
     
     async def _handle_battery_status(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a battery status request."""
@@ -133,57 +181,142 @@ class DiagnosticsBatteryAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's battery management system
-        # Mock data for demonstration
-        is_electric = random.choice([True, False])
+        try:
+            # Get vehicle data from Cosmos DB
+            await cosmos_client.ensure_connected()
+            
+            # Get vehicle status
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            if not vehicle_status:
+                return self._format_response(
+                    "No recent battery status data is available.",
+                    success=False
+                )
+                
+            # Get vehicle details
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            if not vehicle:
+                return self._format_response(
+                    "Vehicle details are not available for battery status.",
+                    success=False
+                )
+                
+            # Check if the vehicle is electric
+            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
+            
+            if is_electric:
+                # For electric vehicles, get battery data
+                battery_level = vehicle_status.get("batteryLevel", vehicle_status.get("Battery", vehicle.get("BatteryLevel", 0)))
+                
+                # Calculate range based on battery level and vehicle type
+                # This is a simplified model; a real system would have more precise data
+                base_range = 400  # Default range for a full battery in km
+                
+                # Adjust for vehicle make/model
+                make = vehicle.get("Brand", "")
+                model = vehicle.get("VehicleModel", "")
+                
+                if make == "Tesla":
+                    base_range = 500
+                elif "e-tron" in model or "EQS" in model:
+                    base_range = 450
+                elif "iX" in model or "Taycan" in model:
+                    base_range = 420
+                
+                # Calculate estimated range
+                range_km = int(base_range * (battery_level / 100))
+                
+                # Check charging status - in a real system, this would be explicitly tracked
+                charging = False
+                charge_rate = 0
+                
+                # Looking at status history can help determine if charging is happening
+                status_history = await cosmos_client.list_vehicle_status(vehicle_id, limit=5)
+                if len(status_history) > 1:
+                    # If the battery level has increased over time, the vehicle might be charging
+                    sorted_history = sorted(status_history, key=lambda x: x.get("timestamp", ""), reverse=True)
+                    latest = sorted_history[0]
+                    previous = sorted_history[-1]
+                    
+                    latest_level = latest.get("batteryLevel", latest.get("Battery", 0))
+                    previous_level = previous.get("batteryLevel", previous.get("Battery", 0))
+                    
+                    if latest_level > previous_level:
+                        charging = True
+                        # Rough estimate of charge rate
+                        charge_rate = 11  # Standard charge rate in kW
+                
+                # Build the response data
+                battery_data = {
+                    "level": battery_level,
+                    "range_km": range_km,
+                    "health": 100 - max(0, min(15, (vehicle.get("Year", datetime.now().year) - datetime.now().year + 10) * 1.5)),
+                    "charging": charging,
+                    "charge_rate_kw": charge_rate if charging else 0,
+                    "estimated_replacement": f"{max(1, 8 - (datetime.now().year - vehicle.get('Year', datetime.now().year)))} years"
+                }
+                
+                charging_status = "currently charging" if battery_data["charging"] else "not charging"
+                charging_info = f" and {charging_status}" if battery_data["charge_rate_kw"] > 0 else ""
+                
+                return self._format_response(
+                    f"Battery status: {battery_data['level']}% charge level with an estimated range of {battery_data['range_km']} km. "
+                    f"The battery health is {battery_data['health']}%{charging_info}. "
+                    f"Estimated battery replacement in {battery_data['estimated_replacement']}.",
+                    data={
+                        "battery": battery_data,
+                        "vehicle_id": vehicle_id,
+                        "vehicle_type": "electric"
+                    }
+                )
+            else:
+                # For combustion engine vehicles, get 12V battery status
+                # This is often not explicitly tracked, so we'll estimate based on vehicle age
+                vehicle_age = datetime.now().year - vehicle.get("Year", datetime.now().year)
+                
+                # Battery voltage typically declines with age
+                voltage = max(11.8, min(14.2, 13.0 - (vehicle_age * 0.1)))
+                
+                # Health declines with age
+                health = max(70, 100 - (vehicle_age * 5))
+                
+                # Estimate replacement timeline based on health
+                replacement = "Not needed"
+                if health < 75:
+                    replacement = "Within 6 months"
+                if health < 70:
+                    replacement = "Soon"
+                
+                battery_data = {
+                    "voltage": round(voltage, 1),
+                    "health": health,
+                    "last_replaced": f"{max(1, min(48, vehicle_age * 12))} months ago",
+                    "estimated_replacement": replacement
+                }
+                
+                voltage_status = "normal"
+                if battery_data["voltage"] < 12.2:
+                    voltage_status = "low"
+                elif battery_data["voltage"] > 14.0:
+                    voltage_status = "high"
+                
+                return self._format_response(
+                    f"12V battery status: Voltage is {battery_data['voltage']}V ({voltage_status}), health is {battery_data['health']}%. "
+                    f"Battery was last replaced {battery_data['last_replaced']}. "
+                    f"Recommendation: {battery_data['estimated_replacement']}.",
+                    data={
+                        "battery": battery_data,
+                        "vehicle_id": vehicle_id,
+                        "vehicle_type": "combustion"
+                    }
+                )
         
-        if is_electric:
-            battery_data = {
-                "level": random.randint(10, 100),
-                "range_km": random.randint(50, 450),
-                "health": random.randint(85, 100),
-                "charging": random.choice([True, False]),
-                "charge_rate_kw": random.choice([0, 7.2, 11, 22, 50, 150]),
-                "estimated_replacement": f"{random.randint(1, 8)} years"
-            }
-            
-            charging_status = "currently charging" if battery_data["charging"] else "not charging"
-            charging_info = f" and {charging_status}" if battery_data["charge_rate_kw"] > 0 else ""
-            
+        except Exception as e:
+            logger.error(f"Error checking battery status: {str(e)}")
             return self._format_response(
-                f"Battery status: {battery_data['level']}% charge level with an estimated range of {battery_data['range_km']} km. "
-                f"The battery health is {battery_data['health']}%{charging_info}. "
-                f"Estimated battery replacement in {battery_data['estimated_replacement']}.",
-                data={
-                    "battery": battery_data,
-                    "vehicle_id": vehicle_id,
-                    "vehicle_type": "electric"
-                }
-            )
-        else:
-            # For combustion engine cars, return 12V battery status
-            battery_data = {
-                "voltage": round(random.uniform(11.8, 14.2), 1),
-                "health": random.randint(70, 100),
-                "last_replaced": f"{random.randint(1, 48)} months ago",
-                "estimated_replacement": random.choice(["Not needed", "Within 6 months", "Soon"])
-            }
-            
-            voltage_status = "normal"
-            if battery_data["voltage"] < 12.2:
-                voltage_status = "low"
-            elif battery_data["voltage"] > 14.0:
-                voltage_status = "high"
-            
-            return self._format_response(
-                f"12V battery status: Voltage is {battery_data['voltage']}V ({voltage_status}), health is {battery_data['health']}%. "
-                f"Battery was last replaced {battery_data['last_replaced']}. "
-                f"Recommendation: {battery_data['estimated_replacement']}.",
-                data={
-                    "battery": battery_data,
-                    "vehicle_id": vehicle_id,
-                    "vehicle_type": "combustion"
-                }
+                "I encountered an error while checking battery status. Please try again later.",
+                success=False
             )
     
     async def _handle_system_health(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -194,43 +327,100 @@ class DiagnosticsBatteryAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's system health
-        # Mock data for demonstration
-        systems = [
-            {"name": "Engine Control Module", "status": random.choice(["Normal", "Normal", "Warning", "Normal"])},
-            {"name": "Transmission Control", "status": random.choice(["Normal", "Normal", "Normal", "Warning"])},
-            {"name": "Brake Control System", "status": random.choice(["Normal", "Normal", "Normal", "Normal"])},
-            {"name": "Battery Management System", "status": random.choice(["Normal", "Normal", "Normal", "Warning"])},
-            {"name": "Infotainment System", "status": random.choice(["Normal", "Normal", "Normal", "Error"])},
-            {"name": "Climate Control System", "status": random.choice(["Normal", "Normal", "Normal", "Normal"])},
-            {"name": "Driver Assistance Systems", "status": random.choice(["Normal", "Normal", "Warning", "Normal"])},
-        ]
-        
-        # Determine overall status
-        if any(system["status"] == "Error" for system in systems):
-            overall_status = "Error"
-        elif any(system["status"] == "Warning" for system in systems):
-            overall_status = "Warning"
-        else:
-            overall_status = "Normal"
-        
-        # Build the response
-        issues = [system for system in systems if system["status"] != "Normal"]
-        
-        if issues:
-            issues_text = "\n".join([f"• {issue['name']}: {issue['status']}" for issue in issues])
-            response_text = f"System health report: {overall_status}. The following systems require attention:\n\n{issues_text}"
-        else:
-            response_text = "System health report: All systems are functioning normally."
-        
-        return self._format_response(
-            response_text,
-            data={
-                "systems": systems,
-                "overall_status": overall_status,
-                "vehicle_id": vehicle_id
-            }
-        )
+        try:
+            # Get vehicle data from Cosmos DB
+            await cosmos_client.ensure_connected()
+            
+            # Get vehicle status
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            if not vehicle_status:
+                return self._format_response(
+                    "No recent vehicle status data is available for system health check.",
+                    success=False
+                )
+                
+            # Get vehicle details
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            if not vehicle:
+                return self._format_response(
+                    "Vehicle details are not available for system health check.",
+                    success=False
+                )
+            
+            # Get command history to check for any failed commands
+            commands = await cosmos_client.list_commands(vehicle_id)
+            recent_commands = sorted(commands, key=lambda c: c.get("timestamp", ""), reverse=True)[:10]
+            failed_commands = [cmd for cmd in recent_commands if cmd.get("status", "") == "Failed"]
+            
+            # System components to check
+            systems = [
+                {"name": "Engine Control Module", "status": "Normal"},
+                {"name": "Transmission Control", "status": "Normal"},
+                {"name": "Brake Control System", "status": "Normal"},
+                {"name": "Battery Management System", "status": "Normal"},
+                {"name": "Infotainment System", "status": "Normal"},
+                {"name": "Climate Control System", "status": "Normal"},
+                {"name": "Driver Assistance Systems", "status": "Normal"},
+            ]
+            
+            # Update system statuses based on real data
+            # Engine control module issues
+            if vehicle_status.get("engineStatus", "") == "error" or vehicle_status.get("EngineStatus", "") == "error":
+                systems[0]["status"] = "Error"
+                
+            # Battery management system issues for electric vehicles
+            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
+            battery_level = vehicle_status.get("batteryLevel", vehicle_status.get("Battery", 0))
+            if is_electric and battery_level < 10:
+                systems[3]["status"] = "Warning"
+                
+            # Check climate control
+            climate_settings = vehicle_status.get("climateSettings", {})
+            if climate_settings and "error" in str(climate_settings).lower():
+                systems[5]["status"] = "Warning"
+                
+            # Check for failed commands related to specific systems
+            for cmd in failed_commands:
+                cmd_type = cmd.get("commandType", "").lower()
+                if "engine" in cmd_type or "start" in cmd_type:
+                    systems[0]["status"] = "Warning"
+                elif "temperature" in cmd_type or "climate" in cmd_type:
+                    systems[5]["status"] = "Warning"
+                elif "entertainment" in cmd_type or "media" in cmd_type:
+                    systems[4]["status"] = "Error"
+            
+            # Determine overall status
+            if any(system["status"] == "Error" for system in systems):
+                overall_status = "Error"
+            elif any(system["status"] == "Warning" for system in systems):
+                overall_status = "Warning"
+            else:
+                overall_status = "Normal"
+            
+            # Build the response
+            issues = [system for system in systems if system["status"] != "Normal"]
+            
+            if issues:
+                issues_text = "\n".join([f"• {issue['name']}: {issue['status']}" for issue in issues])
+                response_text = f"System health report: {overall_status}. The following systems require attention:\n\n{issues_text}"
+            else:
+                response_text = "System health report: All systems are functioning normally."
+            
+            return self._format_response(
+                response_text,
+                data={
+                    "systems": systems,
+                    "overall_status": overall_status,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error checking system health: {str(e)}")
+            return self._format_response(
+                "I encountered an error while checking system health. Please try again later.",
+                success=False
+            )
     
     async def _handle_maintenance_check(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a maintenance check request."""
@@ -240,61 +430,147 @@ class DiagnosticsBatteryAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would query the vehicle's maintenance schedule
-        # Mock data for demonstration
-        today = datetime.now()
-        maintenance_items = [
-            {
-                "type": "Oil Change",
-                "last_service": (today - timedelta(days=random.randint(30, 180))).strftime("%Y-%m-%d"),
-                "next_due": (today + timedelta(days=random.randint(-30, 180))).strftime("%Y-%m-%d"),
-                "status": random.choice(["OK", "Due Soon", "Overdue", "OK"])
-            },
-            {
-                "type": "Tire Rotation",
-                "last_service": (today - timedelta(days=random.randint(30, 180))).strftime("%Y-%m-%d"),
-                "next_due": (today + timedelta(days=random.randint(-30, 180))).strftime("%Y-%m-%d"),
-                "status": random.choice(["OK", "Due Soon", "OK", "OK"])
-            },
-            {
-                "type": "Brake Inspection",
-                "last_service": (today - timedelta(days=random.randint(90, 270))).strftime("%Y-%m-%d"),
-                "next_due": (today + timedelta(days=random.randint(-30, 180))).strftime("%Y-%m-%d"),
-                "status": random.choice(["OK", "Due Soon", "Overdue", "OK"])
-            },
-            {
-                "type": "Air Filter",
-                "last_service": (today - timedelta(days=random.randint(180, 365))).strftime("%Y-%m-%d"),
-                "next_due": (today + timedelta(days=random.randint(-30, 180))).strftime("%Y-%m-%d"),
-                "status": random.choice(["OK", "Due Soon", "OK", "OK"])
-            },
-            {
-                "type": "Cabin Filter",
-                "last_service": (today - timedelta(days=random.randint(180, 365))).strftime("%Y-%m-%d"),
-                "next_due": (today + timedelta(days=random.randint(-30, 180))).strftime("%Y-%m-%d"),
-                "status": random.choice(["OK", "Due Soon", "OK", "OK"])
-            }
-        ]
-        
-        # Build the response
-        attention_items = [item for item in maintenance_items if item["status"] != "OK"]
-        
-        if attention_items:
-            items_text = "\n".join([
-                f"• {item['type']}: {item['status']}, next due {item['next_due']}"
-                for item in attention_items
+        try:
+            # Get vehicle data from Cosmos DB
+            await cosmos_client.ensure_connected()
+            
+            # Get vehicle details
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            if not vehicle:
+                return self._format_response(
+                    "Vehicle details are not available for maintenance check.",
+                    success=False
+                )
+                
+            # Get service history
+            services = await cosmos_client.list_services(vehicle_id)
+            
+            # Check vehicle properties
+            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
+            mileage = vehicle.get("Mileage", 0)
+            
+            today = datetime.now()
+            
+            # Define maintenance items
+            maintenance_items = []
+            
+            # Add relevant maintenance items based on vehicle type
+            if not is_electric:
+                maintenance_items.append({
+                    "type": "Oil Change",
+                    "interval_miles": 5000,
+                    "interval_months": 6
+                })
+            
+            # Common maintenance items for all vehicles
+            maintenance_items.extend([
+                {
+                    "type": "Tire Rotation",
+                    "interval_miles": 6000,
+                    "interval_months": 6
+                },
+                {
+                    "type": "Brake Inspection",
+                    "interval_miles": 12000,
+                    "interval_months": 12
+                },
+                {
+                    "type": "Air Filter",
+                    "interval_miles": 15000,
+                    "interval_months": 12
+                },
+                {
+                    "type": "Cabin Filter",
+                    "interval_miles": 15000,
+                    "interval_months": 12
+                }
             ])
-            response_text = f"Maintenance check: The following items require attention:\n\n{items_text}"
-        else:
-            response_text = "Maintenance check: All maintenance items are up to date."
-        
-        return self._format_response(
-            response_text,
-            data={
-                "maintenance_items": maintenance_items,
-                "vehicle_id": vehicle_id
-            }
-        )
+            
+            # Add electric vehicle specific maintenance
+            if is_electric:
+                maintenance_items.append({
+                    "type": "Battery Health Check",
+                    "interval_miles": 10000,
+                    "interval_months": 12
+                })
+            
+            # Process each maintenance item
+            for item in maintenance_items:
+                # Find relevant past services
+                matching_services = [
+                    s for s in services 
+                    if s.get("ServiceCode", "").lower().replace("_", " ") == item["type"].lower()
+                ]
+                
+                # Set default values
+                item["last_service"] = "Never"
+                item["next_due"] = "Soon"
+                item["status"] = "Overdue"
+                
+                if matching_services:
+                    # Sort by date
+                    sorted_services = sorted(
+                        matching_services, 
+                        key=lambda s: s.get("StartDate", ""), 
+                        reverse=True
+                    )
+                    
+                    # Get last service details
+                    last_service = sorted_services[0]
+                    try:
+                        service_date = datetime.fromisoformat(last_service.get("StartDate", "").replace("Z", "+00:00"))
+                        service_mileage = last_service.get("mileage", 0)
+                        
+                        # Record last service date
+                        item["last_service"] = service_date.strftime("%Y-%m-%d")
+                        
+                        # Calculate when next service is due
+                        next_date = service_date + timedelta(days=30 * item["interval_months"])
+                        next_mileage = service_mileage + item["interval_miles"]
+                        
+                        # Determine status
+                        months_since = (today - service_date).days // 30
+                        miles_since = mileage - service_mileage if mileage > service_mileage else 0
+                        
+                        if months_since >= item["interval_months"] or miles_since >= item["interval_miles"]:
+                            item["status"] = "Overdue"
+                            item["next_due"] = "Immediately"
+                        elif months_since >= item["interval_months"] * 0.8 or miles_since >= item["interval_miles"] * 0.8:
+                            item["status"] = "Due Soon"
+                            item["next_due"] = next_date.strftime("%Y-%m-%d")
+                        else:
+                            item["status"] = "OK"
+                            item["next_due"] = next_date.strftime("%Y-%m-%d")
+                            
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Could not parse service date: {e}")
+            
+            # Build the response
+            attention_items = [item for item in maintenance_items if item["status"] != "OK"]
+            
+            if attention_items:
+                items_text = "\n".join([
+                    f"• {item['type']}: {item['status']}, next due {item['next_due']}"
+                    for item in attention_items
+                ])
+                response_text = f"Maintenance check: The following items require attention:\n\n{items_text}"
+            else:
+                response_text = "Maintenance check: All maintenance items are up to date."
+            
+            return self._format_response(
+                response_text,
+                data={
+                    "maintenance_items": maintenance_items,
+                    "vehicle_id": vehicle_id
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error checking maintenance: {str(e)}")
+            return self._format_response(
+                "I encountered an error while checking maintenance status. Please try again later.",
+                success=False
+            )
     
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""

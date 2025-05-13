@@ -6,10 +6,13 @@ eCalls, and theft notifications.
 """
 
 import logging
+import datetime
+import uuid
 from typing import Dict, Any, Optional
 
 from agents.base_agent import BaseAgent
 from utils.agent_tools import format_notification
+from azure.cosmos_db import cosmos_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,23 +77,98 @@ class SafetyEmergencyAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would initiate an emergency call
-        notification = format_notification(
-            notification_type="system_alert",
-            message="Emergency call initiated. Help is on the way.",
-            severity="critical"
-        )
-        
-        return self._format_response(
-            "Emergency call has been initiated. Help is on the way. "
-            "Stay on the line and follow any instructions from emergency services.",
-            data={
-                "action": "emergency_call",
-                "vehicle_id": vehicle_id,
-                "status": "initiated",
-                "notification": notification
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Get vehicle location for emergency response
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            location = None
+            if vehicle_status and "location" in vehicle_status:
+                location = vehicle_status["location"]
+            elif vehicle and "LastLocation" in vehicle:
+                # Convert to lowercase keys for consistency
+                location = {
+                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
+                    "longitude": vehicle["LastLocation"].get("Longitude", 0)
+                }
+            
+            # Create emergency call command in Cosmos DB
+            command_id = f"emergency_call_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": "EMERGENCY_CALL",
+                "parameters": {
+                    "location": location,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "call_type": "manual"
+                },
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "Critical"
             }
-        )
+            
+            await cosmos_client.create_command(command)
+            
+            # Create a notification for the emergency call
+            notification_id = str(uuid.uuid4())
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": notification_id,
+                "vehicleId": vehicle_id,
+                "type": "emergency_call",
+                "message": "Emergency call initiated. Help is on the way.",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "critical",
+                "source": "System",
+                "actionRequired": True,
+                "actionUrl": f"/emergency/{notification_id}"
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
+            # Format notification for response
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message="Emergency call initiated. Help is on the way.",
+                severity="critical"
+            )
+            
+            return self._format_response(
+                "Emergency call has been initiated. Help is on the way. "
+                "Stay on the line and follow any instructions from emergency services.",
+                data={
+                    "action": "emergency_call",
+                    "vehicle_id": vehicle_id,
+                    "status": "initiated",
+                    "notification": formatted_notification,
+                    "location": location,
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling emergency call: {str(e)}")
+            return self._format_response(
+                "I encountered an error while trying to initiate the emergency call. "
+                "Please try again or call emergency services directly.",
+                success=False
+            )
     
     async def _handle_collision_alert(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a collision alert."""
@@ -100,23 +178,98 @@ class SafetyEmergencyAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would process a collision alert
-        notification = format_notification(
-            notification_type="system_alert",
-            message="Collision detected. Emergency services have been notified.",
-            severity="critical"
-        )
-        
-        return self._format_response(
-            "I've detected a collision and notified emergency services. "
-            "Are you okay? Do you need any immediate assistance?",
-            data={
-                "action": "collision_alert",
-                "vehicle_id": vehicle_id,
-                "status": "processed",
-                "notification": notification
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Get vehicle location for emergency response
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            location = None
+            if vehicle_status and "location" in vehicle_status:
+                location = vehicle_status["location"]
+            elif vehicle and "LastLocation" in vehicle:
+                # Convert to lowercase keys for consistency
+                location = {
+                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
+                    "longitude": vehicle["LastLocation"].get("Longitude", 0)
+                }
+            
+            # Create collision alert command in Cosmos DB
+            command_id = f"collision_alert_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": "COLLISION_ALERT",
+                "parameters": {
+                    "location": location,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "severity": "high"
+                },
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "Critical"
             }
-        )
+            
+            await cosmos_client.create_command(command)
+            
+            # Create a notification for the collision alert
+            notification_id = str(uuid.uuid4())
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": notification_id,
+                "vehicleId": vehicle_id,
+                "type": "collision_alert",
+                "message": "Collision detected. Emergency services have been notified.",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "critical",
+                "source": "Vehicle",
+                "actionRequired": True,
+                "actionUrl": f"/emergency/{notification_id}"
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
+            # Format notification for response
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message="Collision detected. Emergency services have been notified.",
+                severity="critical"
+            )
+            
+            return self._format_response(
+                "I've detected a collision and notified emergency services. "
+                "Are you okay? Do you need any immediate assistance?",
+                data={
+                    "action": "collision_alert",
+                    "vehicle_id": vehicle_id,
+                    "status": "processed",
+                    "notification": formatted_notification,
+                    "location": location,
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling collision alert: {str(e)}")
+            return self._format_response(
+                "I encountered an error while processing the collision alert. "
+                "Please call emergency services directly if you need immediate assistance.",
+                success=False
+            )
     
     async def _handle_theft_notification(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle a theft notification."""
@@ -126,23 +279,98 @@ class SafetyEmergencyAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would process a theft notification
-        notification = format_notification(
-            notification_type="system_alert",
-            message="Potential vehicle theft detected. Authorities have been notified.",
-            severity="high"
-        )
-        
-        return self._format_response(
-            "I've recorded your vehicle theft report and notified the authorities. "
-            "The vehicle's location is being tracked, and you'll receive updates on the situation.",
-            data={
-                "action": "theft_notification",
-                "vehicle_id": vehicle_id,
-                "status": "processed",
-                "notification": notification
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Get vehicle location for tracking
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            location = None
+            if vehicle_status and "location" in vehicle_status:
+                location = vehicle_status["location"]
+            elif vehicle and "LastLocation" in vehicle:
+                # Convert to lowercase keys for consistency
+                location = {
+                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
+                    "longitude": vehicle["LastLocation"].get("Longitude", 0)
+                }
+            
+            # Create theft notification command in Cosmos DB
+            command_id = f"theft_notification_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": "THEFT_NOTIFICATION",
+                "parameters": {
+                    "location": location,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "reported_by": "owner"
+                },
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "High"
             }
-        )
+            
+            await cosmos_client.create_command(command)
+            
+            # Create a notification for the theft alert
+            notification_id = str(uuid.uuid4())
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": notification_id,
+                "vehicleId": vehicle_id,
+                "type": "theft_alert",
+                "message": "Potential vehicle theft detected. Authorities have been notified.",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "high",
+                "source": "System",
+                "actionRequired": True,
+                "actionUrl": f"/security/{notification_id}"
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
+            # Format notification for response
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message="Potential vehicle theft detected. Authorities have been notified.",
+                severity="high"
+            )
+            
+            return self._format_response(
+                "I've recorded your vehicle theft report and notified the authorities. "
+                "The vehicle's location is being tracked, and you'll receive updates on the situation.",
+                data={
+                    "action": "theft_notification",
+                    "vehicle_id": vehicle_id,
+                    "status": "processed",
+                    "notification": formatted_notification,
+                    "location": location,
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling theft notification: {str(e)}")
+            return self._format_response(
+                "I encountered an error while processing the theft notification. "
+                "Please contact authorities directly to report the theft.",
+                success=False
+            )
     
     async def _handle_sos(self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Handle an SOS request."""
@@ -152,23 +380,98 @@ class SafetyEmergencyAgent(BaseAgent):
                 success=False
             )
         
-        # In a real implementation, this would process an SOS request
-        notification = format_notification(
-            notification_type="system_alert",
-            message="SOS request received. Emergency services have been dispatched.",
-            severity="critical"
-        )
-        
-        return self._format_response(
-            "SOS signal received. Emergency services have been dispatched to your location. "
-            "Please stay in the vehicle if it's safe to do so. Help is on the way.",
-            data={
-                "action": "sos",
-                "vehicle_id": vehicle_id,
-                "status": "processed",
-                "notification": notification
+        try:
+            # Ensure Cosmos DB connection
+            await cosmos_client.ensure_connected()
+            
+            # Check if vehicle exists
+            vehicles = await cosmos_client.list_vehicles()
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vehicle_id} not found.",
+                    success=False
+                )
+            
+            # Get vehicle location for emergency response
+            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            
+            location = None
+            if vehicle_status and "location" in vehicle_status:
+                location = vehicle_status["location"]
+            elif vehicle and "LastLocation" in vehicle:
+                # Convert to lowercase keys for consistency
+                location = {
+                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
+                    "longitude": vehicle["LastLocation"].get("Longitude", 0)
+                }
+            
+            # Create SOS command in Cosmos DB
+            command_id = f"sos_request_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            command = {
+                "id": str(uuid.uuid4()),
+                "commandId": command_id,
+                "vehicleId": vehicle_id,
+                "commandType": "SOS_REQUEST",
+                "parameters": {
+                    "location": location,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "request_type": "manual"
+                },
+                "status": "Sent",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "priority": "Critical"
             }
-        )
+            
+            await cosmos_client.create_command(command)
+            
+            # Create a notification for the SOS request
+            notification_id = str(uuid.uuid4())
+            notification = {
+                "id": str(uuid.uuid4()),
+                "notificationId": notification_id,
+                "vehicleId": vehicle_id,
+                "type": "sos_request",
+                "message": "SOS request received. Emergency services have been dispatched.",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "read": False,
+                "severity": "critical",
+                "source": "Vehicle",
+                "actionRequired": True,
+                "actionUrl": f"/emergency/{notification_id}"
+            }
+            
+            await cosmos_client.create_notification(notification)
+            
+            # Format notification for response
+            formatted_notification = format_notification(
+                notification_type="system_alert",
+                message="SOS request received. Emergency services have been dispatched.",
+                severity="critical"
+            )
+            
+            return self._format_response(
+                "SOS signal received. Emergency services have been dispatched to your location. "
+                "Please stay in the vehicle if it's safe to do so. Help is on the way.",
+                data={
+                    "action": "sos",
+                    "vehicle_id": vehicle_id,
+                    "status": "processed",
+                    "notification": formatted_notification,
+                    "location": location,
+                    "command_id": command_id
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling SOS request: {str(e)}")
+            return self._format_response(
+                "I encountered an error while processing the SOS request. "
+                "Please call emergency services directly.",
+                success=False
+            )
     
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""
