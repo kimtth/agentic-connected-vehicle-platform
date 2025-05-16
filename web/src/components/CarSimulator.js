@@ -1,38 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Box, Typography, Container, Button, 
-  TextField, Card, CardContent, Grid, Paper,
+  TextField, Card, CardContent, Paper,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
-import { DirectionsCar, Speed, LocalGasStation, Battery90, Thermostat, Add } from '@mui/icons-material';
+import { DirectionsCar, Add } from '@mui/icons-material';
 import { fetchVehicles, addVehicle } from '../api/vehicles';
 import { sendCommand } from '../api/commands';
-import { api } from '../api/apiClient';
 
 const VehicleCard = ({ vehicle, onRefresh }) => {
-  const [status, setStatus] = useState(null);
   // eslint-disable-next-line no-unused-vars
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
 
-  // Define loadStatus with useCallback before using it in useEffect
-  const loadStatus = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(`/vehicle/status/${vehicle.VehicleId}`);
-      setStatus(response.data);
-    } catch (err) {
-      console.error('Error loading status:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [vehicle.VehicleId]); // Add proper dependency here
-
-  useEffect(() => {
-    loadStatus();
-    const interval = setInterval(loadStatus, 5000);
-    return () => clearInterval(interval);
-  }, [loadStatus]);
 
   const handleSendCommand = async (commandType, payload = {}) => {
     try {
@@ -43,7 +23,6 @@ const VehicleCard = ({ vehicle, onRefresh }) => {
       };
 
       await sendCommand(command);
-      setTimeout(loadStatus, 1500); // Refresh after delay to see effect
     } catch (err) {
       console.error('Error sending command:', err);
     }
@@ -56,31 +35,6 @@ const VehicleCard = ({ vehicle, onRefresh }) => {
           <DirectionsCar sx={{ mr: 1 }} />
           {vehicle.Brand} {vehicle.VehicleModel} ({vehicle.VehicleId})
         </Typography>
-
-        {status && (
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={3} sx={{ textAlign: 'center' }}>
-              <Battery90 color="primary" />
-              <Typography variant="h6">{status.Battery}%</Typography>
-              <Typography variant="body2">Battery</Typography>
-            </Grid>
-            <Grid item xs={3} sx={{ textAlign: 'center' }}>
-              <Thermostat color="error" />
-              <Typography variant="h6">{status.Temperature}°C</Typography>
-              <Typography variant="body2">Temperature</Typography>
-            </Grid>
-            <Grid item xs={3} sx={{ textAlign: 'center' }}>
-              <Speed color="info" />
-              <Typography variant="h6">{status.Speed} km/h</Typography>
-              <Typography variant="body2">Speed</Typography>
-            </Grid>
-            <Grid item xs={3} sx={{ textAlign: 'center' }}>
-              <LocalGasStation color="success" />
-              <Typography variant="h6">{status.OilRemaining}%</Typography>
-              <Typography variant="body2">Oil</Typography>
-            </Grid>
-          </Grid>
-        )}
 
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button 

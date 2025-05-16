@@ -2,15 +2,13 @@
 Agent tool implementations for the agentic connected vehicle platform.
 Uses real data from Azure Cosmos DB.
 """
-
-from typing import Dict, Any, List, Optional
 import datetime
-import logging
-import asyncio
+from typing import Dict, Any, List, Optional
 from azure.cosmos_db import cosmos_client
 
 # Configure logging
-logger = logging.getLogger(__name__)
+from utils.logging_config import get_logger
+logger = get_logger(__name__)
 
 # Service recommendation parameters (business logic)
 SERVICE_RECOMMENDATIONS = {

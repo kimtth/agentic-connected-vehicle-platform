@@ -5,7 +5,7 @@ import os
 import sys
 import logging
 from loguru import logger
-from typing import Dict, Any
+from typing import Any
 
 # Default format for standard output
 DEFAULT_FORMAT = (
@@ -111,7 +111,7 @@ def configure_logging(log_level: str = "INFO") -> None:
         mod_logger.setLevel(getattr(logging, level))
 
 # A function to get a logger for a specific module
-def get_logger(name: str) -> logger:
+def get_logger(name: str) -> Any:
     """
     Get a properly configured logger for the given module name.
     

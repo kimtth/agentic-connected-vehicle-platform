@@ -14,27 +14,24 @@ import sys
 import argparse
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
 import asyncio
-from dotenv import load_dotenv
-import logging
+
 import time
 import json
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+
+from dotenv import load_dotenv
+
 from azure.cosmos.aio import CosmosClient
-from azure.core.exceptions import ResourceExistsError, AzureError, ServiceRequestError, ServiceResponseError
+from azure.core.exceptions import AzureError, ServiceRequestError, ServiceResponseError
 from azure.identity.aio import DefaultAzureCredential
 from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
 from azure.cosmos import PartitionKey
 from azure.core.tracing.decorator import distributed_trace
 
-
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from utils.logging_config import get_logger
+logger = get_logger(__name__)
 
 # Sample data constants
 VEHICLE_MAKES = ["Tesla", "BMW", "Mercedes", "Toyota", "Honda", "Ford", "Chevrolet", "Audi", "Porsche", "Lexus"]

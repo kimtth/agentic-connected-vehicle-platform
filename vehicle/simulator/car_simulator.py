@@ -2,10 +2,7 @@
 import asyncio
 import random
 from typing import Dict, List, Any
-
-# Replace standard logging with loguru
 from utils.logging_config import get_logger
-
 logger = get_logger(__name__)
 
 class CarSimulator:
@@ -108,3 +105,38 @@ class CarSimulator:
     
     def get_acknowledgements(self):
         return self.acknowledgements
+    
+    def update_status(self, vehicle_id: str, status_data: Dict):
+        """Update the status of a vehicle in the simulator"""
+        # Create vehicle state if it doesn't exist
+        if vehicle_id not in self.vehicle_states:
+            self.vehicle_states[vehicle_id] = self._get_default_status()
+            logger.info(f"Created new simulated vehicle with ID: {vehicle_id}")
+        
+        # Update state with new values
+        state = self.vehicle_states[vehicle_id]
+        
+        # Map the incoming status fields to simulator fields
+        if "Battery" in status_data:
+            state["Battery"] = status_data["Battery"]
+        if "Temperature" in status_data:
+            state["Temperature"] = status_data["Temperature"]
+        if "Speed" in status_data:
+            state["Speed"] = status_data["Speed"]
+        if "OilRemaining" in status_data:
+            state["OilRemaining"] = status_data["OilRemaining"]
+        if "engineStatus" in status_data:
+            state["engineStatus"] = status_data["engineStatus"]
+        if "doorStatus" in status_data:
+            # Just store the whole object
+            state["doorStatus"] = status_data["doorStatus"]
+        if "climateSettings" in status_data:
+            state["climateSettings"] = status_data["climateSettings"]
+        
+        # Save updated state
+        self.vehicle_states[vehicle_id] = state
+        
+        logger.info(f"Updated simulator status for vehicle {vehicle_id}")
+        return state
+    
+car_simulator = CarSimulator()

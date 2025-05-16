@@ -4,14 +4,12 @@ Simplified to use AzureChatCompletion directly.
 """
 
 import os
-import logging
 from dotenv import load_dotenv
 from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 from semantic_kernel.exceptions.service_exceptions import ServiceInitializationError
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from utils.logging_config import get_logger
+logger = get_logger(__name__)
 
 class SemanticKernelManager:
     """

@@ -1,244 +1,152 @@
-"""
-Agent Manager for the Connected Vehicle Platform.
-Integrates with Cosmos DB for real data access.
-"""
-
-import os
-import logging
-import asyncio
-import json
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Dict, Any, Optional, AsyncGenerator
+from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
+from semantic_kernel.connectors.ai.open_ai import (
+    OpenAIChatPromptExecutionSettings,
+)
+from semantic_kernel.functions.kernel_arguments import KernelArguments
 from azure.cosmos_db import cosmos_client
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from agents.alerts_notifications_agent import AlertsNotificationsAgent
+from agents.charging_energy_agent import ChargingEnergyAgent
+from agents.diagnostics_battery_agent import DiagnosticsBatteryAgent
+from agents.information_services_agent import InformationServicesAgent
+from agents.remote_access_agent import RemoteAccessAgent
+from agents.safety_emergency_agent import SafetyEmergencyAgent
+from agents.vehicle_feature_control_agent import VehicleFeatureControlAgent
+from models.vehicle_response import VehicleResponseFormat
+from plugin.oai_service import create_chat_service
+from plugin.sk_plugin import GeneralPlugin
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class AgentManager:
     """
-    Agent manager to handle agent requests and coordinate with Cosmos DB
+    Vehicle AgentManager refactored to use Semantic Kernel style agents/plugins.
     """
-    
+
     def __init__(self):
-        """Initialize the agent manager"""
         logger.info("Agent Manager initialized")
-    
-    async def process_request(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process a request from an agent
-        
-        Args:
-            query: User query
-            context: Request context
-            
-        Returns:
-            Response to the agent request
-        """
-        try:
-            agent_type = context.get("agent_type", "general")
-            vehicle_id = context.get("vehicle_id")
-            
-            # Enrich context with vehicle data if available
-            if vehicle_id:
-                try:
-                    # Get vehicle data from Cosmos DB
-                    vehicle_data = await self._get_vehicle_data(vehicle_id)
-                    if vehicle_data:
-                        context["vehicle_data"] = vehicle_data
-                        
-                    # Get vehicle status
-                    vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
-                    if vehicle_status:
-                        context["vehicle_status"] = vehicle_status
-                except Exception as e:
-                    logger.error(f"Error getting vehicle data: {str(e)}")
-            
-            # Process based on agent type
-            if agent_type == "remote_access":
-                return await self._handle_remote_access(query, context)
-            elif agent_type == "safety_emergency":
-                return await self._handle_safety_emergency(query, context)
-            elif agent_type == "charging_energy":
-                return await self._handle_charging_energy(query, context)
-            elif agent_type == "information_services":
-                return await self._handle_information_services(query, context)
-            elif agent_type == "vehicle_feature_control":
-                return await self._handle_vehicle_feature_control(query, context)
-            elif agent_type == "diagnostics_battery":
-                return await self._handle_diagnostics_battery(query, context)
-            elif agent_type == "alerts_notifications":
-                return await self._handle_alerts_notifications(query, context)
-            else:
-                # General purpose handling
-                return await self._handle_general(query, context)
-                
-        except Exception as e:
-            logger.error(f"Error processing agent request: {str(e)}")
-            return {
-                "response": f"I encountered an error processing your request: {str(e)}",
-                "success": False
-            }
-    
-    async def process_request_stream(self, query: str, context: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Process a request with streaming response
-        
-        Args:
-            query: User query
-            context: Request context
-            
-        Yields:
-            Response chunks
-        """
-        try:
-            # Initial response
-            yield {"response": "Processing your request...", "complete": False}
-            
-            # Get full response
-            response = await self.process_request(query, context)
-            
-            # Split response into chunks for streaming
-            full_response = response.get("response", "")
-            
-            # Simple chunking by sentences
-            sentences = full_response.split('. ')
-            
-            for i, sentence in enumerate(sentences):
-                # Last chunk should end with period if original did
-                if i < len(sentences) - 1:
-                    sentence += '.'
-                    
-                yield {
-                    "response": sentence,
-                    "complete": i == len(sentences) - 1,
-                    "plugins_used": response.get("plugins_used", []) if i == len(sentences) - 1 else []
-                }
-                
-                # Small delay for realistic streaming
-                await asyncio.sleep(0.2)
-                
-        except Exception as e:
-            logger.error(f"Error in streaming response: {str(e)}")
-            yield {"response": f"Error: {str(e)}", "complete": True}
-    
+
+        # create a single service factory
+        service_factory = create_chat_service()
+
+        # domain agents
+        self.remote_access_agent = RemoteAccessAgent().agent
+        self.safety_agent = SafetyEmergencyAgent().agent
+        self.charging_agent = ChargingEnergyAgent().agent
+        self.info_services_agent = InformationServicesAgent().agent
+        self.feature_control_agent = VehicleFeatureControlAgent().agent
+        self.diagnostics_agent = DiagnosticsBatteryAgent().agent
+        self.alerts_agent = AlertsNotificationsAgent().agent
+        self.general_agent = ChatCompletionAgent(
+            service=service_factory,
+            name="GeneralAgent",
+            instructions="You handle general vehicle inquiries.",
+            plugins=[GeneralPlugin()],
+        )
+
+        # top-level manager agent
+        self.manager = ChatCompletionAgent(
+            service=service_factory,
+            name="VehicleManagerAgent",
+            instructions=(
+                "You coordinate across specialized agents. "
+                "Based on the user's request and context, invoke the right plugin. "
+                "Return JSON matching VehicleResponseFormat."
+            ),
+            plugins=[
+                self.remote_access_agent,
+                self.safety_agent,
+                self.charging_agent,
+                self.info_services_agent,
+                self.feature_control_agent,
+                self.diagnostics_agent,
+                self.alerts_agent,
+                self.general_agent,
+            ],
+            arguments=KernelArguments(
+                settings=OpenAIChatPromptExecutionSettings(
+                    response_format=VehicleResponseFormat
+                )
+            ),
+        )
+        self.thread: Optional[ChatHistoryAgentThread] = None
+
+    async def _ensure_thread(self, session_id: str):
+        if not self.thread or self.thread._thread_id != session_id:
+            if self.thread:
+                await self.thread.delete()
+            self.thread = ChatHistoryAgentThread(thread_id=session_id)
+
     async def _get_vehicle_data(self, vehicle_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get vehicle data from Cosmos DB
-        
-        Args:
-            vehicle_id: ID of the vehicle
-            
-        Returns:
-            Vehicle data or None if not found
-        """
         try:
-            # Get all vehicles
             vehicles = await cosmos_client.list_vehicles()
-            
-            # Find the vehicle with matching ID
-            for vehicle in vehicles:
-                if vehicle.get("VehicleId") == vehicle_id:
-                    return vehicle
-            
-            return None
+            return next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
         except Exception as e:
-            logger.error(f"Error getting vehicle data: {str(e)}")
+            logger.error(f"Error getting vehicle data: {e!s}")
             return None
-    
-    # Handler methods for different agent types
-    
-    async def _handle_remote_access(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle remote access agent requests"""
-        # Remote access sample response
+
+    async def process_request(
+        self, query: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        # enrich context
+        vid = context.get("vehicle_id")
+        if vid:
+            try:
+                vdata = await self._get_vehicle_data(vid)
+                if vdata:
+                    context["vehicle_data"] = vdata
+                vstatus = await cosmos_client.get_vehicle_status(vid)
+                if vstatus:
+                    context["vehicle_status"] = vstatus
+            except Exception as e:
+                logger.error(f"Error enriching context: {e!s}")
+
+        await self._ensure_thread(context.get("session_id", "default"))
+        sk_resp = await self.manager.get_response(
+            messages={"query": query, **context}, thread=self.thread
+        )
+        resp = VehicleResponseFormat.model_validate_json(sk_resp.content)
         return {
-            "response": f"I'll help you with remote access to your vehicle. Your query: {query}",
-            "success": True,
-            "plugins_used": ["remote_access"]
-        }
-    
-    async def _handle_safety_emergency(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle safety and emergency agent requests"""
-        return {
-            "response": f"I'm here to assist with safety and emergency situations. Your query: {query}",
-            "success": True,
-            "plugins_used": ["safety_emergency"]
-        }
-    
-    async def _handle_charging_energy(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle charging and energy agent requests"""
-        # Get vehicle status if available
-        vehicle_status = context.get("vehicle_status", {})
-        battery_level = vehicle_status.get("Battery", "unknown")
-        
-        if "battery" in query.lower() and battery_level != "unknown":
-            return {
-                "response": f"Your vehicle's current battery level is {battery_level}%.",
-                "success": True,
-                "plugins_used": ["charging_energy"],
-                "data": {"battery_level": battery_level}
-            }
-        
-        return {
-            "response": f"I'll help you with charging and energy management. Your query: {query}",
-            "success": True,
-            "plugins_used": ["charging_energy"]
-        }
-    
-    async def _handle_information_services(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle information services agent requests"""
-        return {
-            "response": f"I'll provide information services for your vehicle. Your query: {query}",
-            "success": True,
-            "plugins_used": ["information_services"]
-        }
-    
-    async def _handle_vehicle_feature_control(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle vehicle feature control agent requests"""
-        return {
-            "response": f"I'll help you control your vehicle features. Your query: {query}",
-            "success": True,
-            "plugins_used": ["vehicle_feature_control"]
-        }
-    
-    async def _handle_diagnostics_battery(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle diagnostics and battery agent requests"""
-        # Get vehicle status if available
-        vehicle_status = context.get("vehicle_status", {})
-        
-        if vehicle_status:
-            battery = vehicle_status.get("Battery", "N/A")
-            temperature = vehicle_status.get("Temperature", "N/A")
-            speed = vehicle_status.get("Speed", "N/A")
-            oil = vehicle_status.get("OilRemaining", "N/A")
-            
-            return {
-                "response": f"Based on diagnostics, your vehicle's status is: Battery: {battery}%, Temperature: {temperature}°C, Current Speed: {speed} km/h, Oil: {oil}%",
-                "success": True,
-                "plugins_used": ["diagnostics_battery"],
-                "data": vehicle_status
-            }
-        
-        return {
-            "response": f"I'll help you with vehicle diagnostics and battery monitoring. Your query: {query}",
-            "success": True,
-            "plugins_used": ["diagnostics_battery"]
-        }
-    
-    async def _handle_alerts_notifications(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle alerts and notifications agent requests"""
-        return {
-            "response": f"I'll manage alerts and notifications for your vehicle. Your query: {query}",
-            "success": True,
-            "plugins_used": ["alerts_notifications"]
-        }
-    
-    async def _handle_general(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle general agent requests"""
-        return {
-            "response": f"I'll assist you with your connected vehicle needs. Your query: {query}",
-            "success": True,
-            "plugins_used": ["general"]
+            "response": resp.message,
+            "success": resp.status == "completed",
+            "plugins_used": resp.plugins_used,
+            **({"data": resp.data} if resp.data else {}),
         }
 
-# Create a singleton instance
+    async def process_request_stream(
+        self, query: str, context: Dict[str, Any]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        vid = context.get("vehicle_id")
+        if vid:
+            try:
+                context["vehicle_data"] = await self._get_vehicle_data(vid)
+                context["vehicle_status"] = await cosmos_client.get_vehicle_status(vid)
+            except Exception:
+                pass
+
+        yield {"response": "Processing your request...", "complete": False}
+
+        await self._ensure_thread(context.get("session_id", "default"))
+        chunks = []
+        async for c in self.manager.invoke_stream(
+            messages={"query": query, **context}, thread=self.thread
+        ):
+            chunks.append(c)
+        final = VehicleResponseFormat.model_validate_json(chunks[-1].content)
+
+        sentences = final.message.split(". ")
+        for i, s in enumerate(sentences):
+            if i < len(sentences) - 1:
+                s += "."
+            yield {
+                "response": s,
+                "complete": i == len(sentences) - 1,
+                "plugins_used": final.plugins_used if i == len(sentences) - 1 else [],
+            }
+
+
+# singleton
 agent_manager = AgentManager()
