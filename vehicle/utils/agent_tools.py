@@ -2,15 +2,13 @@
 Agent tool implementations for the agentic connected vehicle platform.
 Uses real data from Azure Cosmos DB.
 """
-
-from typing import Dict, Any, List, Optional
 import datetime
-import logging
-import asyncio
+from typing import Dict, Any, List, Optional
 from azure.cosmos_db import cosmos_client
 
 # Configure logging
-logger = logging.getLogger(__name__)
+from utils.logging_config import get_logger
+logger = get_logger(__name__)
 
 # Service recommendation parameters (business logic)
 SERVICE_RECOMMENDATIONS = {
@@ -386,7 +384,7 @@ async def analyze_vehicle_data(vehicle_id: str,
     if not metrics:
         metrics = ["fuel_efficiency", "battery_health", "driving_behavior"]
     
-    # Try to get real vehicle status
+    # Get real vehicle status
     vehicle_status = await get_latest_status_from_cosmos(vehicle_id)
     
     # Initialize with base structure
@@ -419,7 +417,7 @@ async def analyze_vehicle_data(vehicle_id: str,
         logger.error(f"Error getting vehicle details: {str(e)}")
         is_electric = False
     
-    # Try to get historical data for better analysis
+    # Get historical data for analysis
     historical_data = []
     try:
         # Parse time period
@@ -518,7 +516,7 @@ async def analyze_vehicle_data(vehicle_id: str,
             }
         
         elif metric == "battery_health":
-            # Use real battery data if available
+            # Use real battery data
             value = "N/A"
             trend = "stable"
             replacement_estimate = "3 years"
@@ -567,7 +565,7 @@ async def analyze_vehicle_data(vehicle_id: str,
             }
         
         elif metric == "driving_behavior":
-            # Use real speed data if available
+            # Use real speed data
             speed = 0
             harsh_braking = 0
             rapid_acceleration = 0

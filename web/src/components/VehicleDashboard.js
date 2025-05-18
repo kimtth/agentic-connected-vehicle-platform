@@ -14,7 +14,7 @@ import {
   AcUnit, WbSunny, VolumeUp, BluetoothAudio, DirectionsCar, 
   Sync, DeviceThermostat
 } from '@mui/icons-material';
-import { fetchVehicleStatus, subscribeToVehicleStatus } from '../api/status';
+import { fetchVehicleStatus, subscribeToVehicleStatus, updateVehicleStatus, updateClimateSettings } from '../api/status';
 
 // Custom styled components for the dashboard
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -70,7 +70,8 @@ const VehicleDashboard = ({ vehicleId }) => {
   const [fanSpeed, setFanSpeed] = useState(2);
   const [acOn, setAcOn] = useState(true);
   const [mediaVolume, setMediaVolume] = useState(60);
-  const [lightIntensity, setLightIntensity] = useState(0);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
 
   useEffect(() => {
     let subscription = null;
@@ -82,17 +83,21 @@ const VehicleDashboard = ({ vehicleId }) => {
         const initialData = await fetchVehicleStatus(vehicleId);
         setStatus(initialData);
         
-        // Start the real-time subscription
+        // Start the real-time subscription with better error handling
         subscription = await subscribeToVehicleStatus(vehicleId, (newStatus) => {
           setStatus(newStatus);
           setError(null);
         }, (err) => {
-          setError('Error with real-time connection: ' + err.message);
+          // More robust error handling
+          const errorMessage = err ? (err.message || 'Unknown error') : 'Connection failed';
+          setError('Error with real-time connection: ' + errorMessage);
           console.error('Subscription error:', err);
         });
       } catch (err) {
-        setError('Error loading vehicle status');
-        console.error(err);
+        // Also improve error handling here
+        const errorMessage = err ? (err.message || 'Unknown error') : 'Unknown error';
+        setError('Error loading vehicle status: ' + errorMessage);
+        console.error('Vehicle status error:', err);
       } finally {
         setLoading(false);
       }
@@ -102,11 +107,73 @@ const VehicleDashboard = ({ vehicleId }) => {
     
     // Cleanup subscription when component unmounts
     return () => {
-      if (subscription) {
+      if (subscription && typeof subscription.unsubscribe === 'function') {
         subscription.unsubscribe();
       }
     };
   }, [vehicleId]);
+
+  // Handler for climate control updates
+  const handleClimateUpdate = async () => {
+    if (!vehicleId || !status) return;
+    
+    setIsUpdating(true);
+    setStatusMessage('Updating climate settings...');
+    
+    try {
+      // Create climate settings object
+      const climateSettings = {
+        temperature: temperature,
+        fanSpeed: fanSpeed === 0 ? 'off' : fanSpeed === 1 ? 'low' : fanSpeed === 2 ? 'medium' : 'high',
+        isAirConditioningOn: acOn,
+        isHeatingOn: !acOn
+      };
+      
+      // Send update to the API
+      await updateClimateSettings(vehicleId, climateSettings);
+      
+      setStatusMessage('Climate settings updated successfully!');
+      
+      // Clear message after a few seconds
+      setTimeout(() => setStatusMessage(''), 3000);
+    } catch (err) {
+      console.error('Failed to update climate settings:', err);
+      setStatusMessage('Failed to update climate settings. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  // Handler for media volume update
+  const handleMediaUpdate = async () => {
+    if (!vehicleId || !status) return;
+    
+    setIsUpdating(true);
+    setStatusMessage('Updating media settings...');
+    
+    try {
+      // Create a partial status update with media settings
+      const mediaSettings = {
+        mediaSettings: {
+          volume: mediaVolume,
+          source: 'bluetooth' // Default source
+        }
+      };
+      
+      // Send update to the API
+      await updateVehicleStatus(vehicleId, mediaSettings);
+      
+      setStatusMessage('Media settings updated successfully!');
+      
+      // Clear message after a few seconds
+      setTimeout(() => setStatusMessage(''), 3000);
+    } catch (err) {
+      console.error('Failed to update media settings:', err);
+      setStatusMessage('Failed to update media settings. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   if (loading && !status) {
     return (
@@ -119,7 +186,7 @@ const VehicleDashboard = ({ vehicleId }) => {
   if (error) {
     return (
       <DashboardContainer>
-        <Typography color="error">{error}</Typography>
+        {/* <Typography color="error">{error}</Typography> */}
       </DashboardContainer>
     );
   }
@@ -226,6 +293,20 @@ const VehicleDashboard = ({ vehicleId }) => {
                         sx={{ color: '#1976d2' }}
                       />
                     </Grid>
+                    
+                    {/* Add a button to apply changes */}
+                    <Grid item xs={12}>
+                      <Button 
+                        variant="contained" 
+                        color="primary"
+                        onClick={handleClimateUpdate}
+                        disabled={isUpdating}
+                        fullWidth
+                        sx={{ mt: 2 }}
+                      >
+                        {isUpdating ? <CircularProgress size={24} /> : 'Apply Climate Settings'}
+                      </Button>
+                    </Grid>
                   </ControlGrid>
                 </CardContent>
               </ControlPanel>
@@ -282,6 +363,20 @@ const VehicleDashboard = ({ vehicleId }) => {
                         </Grid>
                       </Grid>
                     </Grid>
+                    
+                    {/* Add a button to apply changes */}
+                    <Grid item xs={12}>
+                      <Button 
+                        variant="contained" 
+                        color="primary"
+                        onClick={handleMediaUpdate}
+                        disabled={isUpdating}
+                        fullWidth
+                        sx={{ mt: 2 }}
+                      >
+                        {isUpdating ? <CircularProgress size={24} /> : 'Apply Media Settings'}
+                      </Button>
+                    </Grid>
                   </ControlGrid>
                 </CardContent>
               </ControlPanel>
@@ -324,6 +419,20 @@ const VehicleDashboard = ({ vehicleId }) => {
                 </CardContent>
               </ControlPanel>
             </Grid>
+            
+            {/* Status message */}
+            {statusMessage && (
+              <Grid item xs={12}>
+                <Box sx={{ 
+                  mt: 2, 
+                  p: 2, 
+                  bgcolor: statusMessage.includes('Failed') ? 'error.dark' : 'success.dark',
+                  borderRadius: 1
+                }}>
+                  <Typography align="center">{statusMessage}</Typography>
+                </Box>
+              </Grid>
+            )}
           </Grid>
         </>
       )}

@@ -3,9 +3,10 @@ import { api } from './apiClient';
 /**
  * Fetch the current vehicle status
  * @param {string} vehicleId 
+ * @param {number} retries Number of retries if request fails (default: 2)
  * @returns {Promise<Object>} Vehicle status data
  */
-export const fetchVehicleStatus = async (vehicleId) => {
+export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
   try {
     // Use the API endpoint which will try Cosmos DB first, then simulator as fallback
     const response = await api.get(`/vehicle/${vehicleId}/status`);
@@ -15,6 +16,20 @@ export const fetchVehicleStatus = async (vehicleId) => {
       throw new Error("No status data returned");
     }
   } catch (error) {
+    // Handle 404 errors specifically
+    if (error.response && error.response.status === 404) {
+      console.error(`Vehicle status endpoint not found for vehicle ID: ${vehicleId}. Make sure the backend API is running and the endpoint is implemented.`);
+      
+      // If we have retries left, try again after a short delay
+      if (retries > 0) {
+        console.log(`Retrying fetchVehicleStatus (${retries} attempts left)...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        return fetchVehicleStatus(vehicleId, retries - 1);
+      }
+      
+      throw new Error(`Status API endpoint not available (404) for vehicle: ${vehicleId}. Please check if the API server is running and the endpoint is implemented.`);
+    }
+    
     console.error("Error fetching vehicle status:", error);
     throw error;
   }
@@ -93,3 +108,60 @@ function setupPolling(vehicleId, onUpdate, onError) {
     unsubscribe: () => clearInterval(interval)
   };
 }
+
+/**
+ * Update the complete vehicle status
+ * @param {string} vehicleId 
+ * @param {Object} statusData Complete status object
+ * @returns {Promise<Object>} Updated status
+ */
+export const updateVehicleStatus = async (vehicleId, statusData) => {
+  try {
+    // Make sure vehicleId is included in the data
+    const data = {
+      ...statusData,
+      vehicleId: vehicleId
+    };
+    
+    const response = await api.put(`/vehicle/${vehicleId}/status`, data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating vehicle status: ${error}`);
+    throw error;
+  }
+};
+
+/**
+ * Update only specific fields of vehicle status (partial update)
+ * @param {string} vehicleId 
+ * @param {Object} partialStatus Partial status object with only the fields to update
+ * @returns {Promise<Object>} Updated status
+ */
+export const updatePartialStatus = async (vehicleId, partialStatus) => {
+  try {
+    const response = await api.patch(`/vehicle/${vehicleId}/status`, partialStatus);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating vehicle status fields: ${error}`);
+    throw error;
+  }
+};
+
+/**
+ * Update climate settings
+ * @param {string} vehicleId 
+ * @param {Object} climateSettings Climate control settings
+ * @returns {Promise<Object>} Updated status
+ */
+export const updateClimateSettings = async (vehicleId, climateSettings) => {
+  try {
+    const partialStatus = {
+      climateSettings: climateSettings
+    };
+    
+    return await updatePartialStatus(vehicleId, partialStatus);
+  } catch (error) {
+    console.error(`Error updating climate settings: ${error}`);
+    throw error;
+  }
+};

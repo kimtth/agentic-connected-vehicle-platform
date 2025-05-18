@@ -83,7 +83,7 @@ const ServiceInfo = ({ vehicleId }) => {
           <CircularProgress size={24} />
         </Box>
       ) : (
-        <Box sx={{ maxHeight: 190, overflow: 'auto' }}>
+        <Box sx={{ width: '55vw', maxHeight: 500, overflow: 'auto' }}>
           <List>
             {services.length > 0 ? (
               services.map((service, index) => (

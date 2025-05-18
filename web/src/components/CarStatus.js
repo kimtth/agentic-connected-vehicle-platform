@@ -37,7 +37,7 @@ const StatusGauge = ({ value, max, icon, label, color }) => {
 const CarStatus = ({ vehicleId }) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [, setError] = useState(null);
 
   useEffect(() => {
     let subscription = null;
@@ -77,10 +77,6 @@ const CarStatus = ({ vehicleId }) => {
 
   if (loading && !status) {
     return <CircularProgress />;
-  }
-
-  if (error) {
-    return <Typography color="error">{error}</Typography>;
   }
 
   return (
