@@ -7,7 +7,9 @@ import { api } from './apiClient';
  */
 export const fetchServices = async (vehicleId) => {
   try {
-    const response = await api.get(`/vehicle/${vehicleId}/services`);
+    const response = await api.get(
+      `/vehicle/${encodeURIComponent(vehicleId)}/services`
+    );
 
     if (!response.data) {
       return [];
@@ -38,7 +40,10 @@ export const fetchServices = async (vehicleId) => {
  */
 export const addService = async (vehicleId, service) => {
   try {
-    const response = await api.post(`/vehicle/${vehicleId}/service`, service);
+    const response = await api.post(
+      `/vehicle/${encodeURIComponent(vehicleId)}/service`,
+      service
+    );
     return response.data;
   } catch (error) {
     console.error('Error adding service:', error);
@@ -55,7 +60,10 @@ export const addService = async (vehicleId, service) => {
  */
 export const updateService = async (vehicleId, serviceId, updates) => {
   try {
-    const response = await api.put(`/vehicle/${vehicleId}/service/${serviceId}`, updates);
+    const response = await api.put(
+      `/vehicle/${encodeURIComponent(vehicleId)}/service/${encodeURIComponent(serviceId)}`,
+      updates
+    );
     return response.data;
   } catch (error) {
     console.error('Error updating service:', error);
@@ -71,7 +79,9 @@ export const updateService = async (vehicleId, serviceId, updates) => {
  */
 export const deleteService = async (vehicleId, serviceId) => {
   try {
-    await api.delete(`/vehicle/${vehicleId}/service/${serviceId}`);
+    await api.delete(
+      `/vehicle/${encodeURIComponent(vehicleId)}/service/${encodeURIComponent(serviceId)}`
+    );
   } catch (error) {
     console.error('Error deleting service:', error);
     throw error;

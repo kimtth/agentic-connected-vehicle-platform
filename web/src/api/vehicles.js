@@ -1,94 +1,87 @@
-import { api } from './apiClient';
+// API functions for vehicle data
+
+import { API_BASE_URL } from './config';
 
 /**
- * Fetch all vehicles
- * @returns {Promise<Array>} Array of vehicle objects
+ * Fetches all vehicles from the backend
+ * @returns {Promise<Array>} - Array of vehicle objects
  */
 export const fetchVehicles = async () => {
   try {
-    const response = await api.get('/vehicles');
-
-    if (!response.data) {
-      return [];
+    console.log(`Attempting to fetch vehicles from: ${API_BASE_URL}/vehicles`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+    
+    const response = await fetch(`${API_BASE_URL}/vehicles`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Failed to fetch vehicles: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
     }
-
-    // Map the data to match the expected format in UI
-    return response.data.map((vehicle) => ({
-      VehicleId: vehicle.VehicleId || vehicle.id,
-      Brand: vehicle.Brand || vehicle.Make || '',
-      VehicleModel: vehicle.VehicleModel || vehicle.Model || '',
-      Year: vehicle.Year || 0,
-      Color: vehicle.Color || '',
-      VIN: vehicle.VIN || '',
-      LicensePlate: vehicle.LicensePlate || '',
-      Status: vehicle.Status || 'Active',
-      Mileage: vehicle.Mileage || 0,
-      Type: vehicle.Type || '',
-      Features: vehicle.Features || {},
-      OwnerId: vehicle.OwnerId || '',
-    }));
+    
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching vehicles:', error);
+    if (error.name === 'AbortError') {
+      console.error('Request timeout: Could not connect to the backend server. Please ensure the server is running.');
+    } else if (error.message.includes('Failed to fetch')) {
+      console.error('Connection error: Could not reach the backend server. Please verify that:');
+      console.error('1. The backend server is running at ' + API_BASE_URL);
+      console.error('2. There are no network connectivity issues');
+      console.error('3. The API URL in .env is configured correctly');
+    } else {
+      console.error('Error fetching vehicles:', error);
+    }
     throw error;
   }
 };
 
 /**
- * Add a new vehicle
- * @param {Object} vehicle Vehicle data to add
- * @returns {Promise<Object>} Created vehicle
+ * Fetches a specific vehicle by ID
+ * @param {string} vehicleId - The ID of the vehicle to fetch
+ * @returns {Promise<Object>} - Vehicle object
  */
-export const addVehicle = async (vehicle) => {
+export const fetchVehicleById = async (vehicleId) => {
   try {
-    const response = await api.post('/vehicle', vehicle);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/vehicle/${vehicleId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch vehicle: ${response.status} ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching vehicle ${vehicleId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Adds a new vehicle
+ * @param {Object} vehicleData - The vehicle data to add
+ * @returns {Promise<Object>} - Added vehicle object
+ */
+export const addVehicle = async (vehicleData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/vehicle`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(vehicleData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to add vehicle: ${response.status} ${response.statusText}`);
+    }
+    
+    return await response.json();
   } catch (error) {
     console.error('Error adding vehicle:', error);
-    throw error;
-  }
-};
-
-/**
- * Update an existing vehicle
- * @param {string} vehicleId
- * @param {Object} updates Vehicle updates
- * @returns {Promise<Object>} Updated vehicle
- */
-export const updateVehicle = async (vehicleId, updates) => {
-  try {
-    const response = await api.put(`/vehicle/${vehicleId}`, updates);
-    return response.data;
-  } catch (error) {
-    console.error('Error updating vehicle:', error);
-    throw error;
-  }
-};
-
-/**
- * Delete a vehicle
- * @param {string} vehicleId
- * @returns {Promise<void>}
- */
-export const deleteVehicle = async (vehicleId) => {
-  try {
-    await api.delete(`/vehicle/${vehicleId}`);
-  } catch (error) {
-    console.error('Error deleting vehicle:', error);
-    throw error;
-  }
-};
-
-/**
- * Get details for a specific vehicle
- * @param {string} vehicleId
- * @returns {Promise<Object>} Vehicle details
- */
-export const getVehicleDetails = async (vehicleId) => {
-  try {
-    const response = await api.get(`/vehicle/${vehicleId}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching vehicle details:', error);
     throw error;
   }
 };

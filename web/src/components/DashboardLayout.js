@@ -15,6 +15,9 @@ import BuildIcon from '@mui/icons-material/Build';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatIcon from '@mui/icons-material/Chat';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
+import SecurityIcon from '@mui/icons-material/Security';
+import InfoIcon from '@mui/icons-material/Info';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { Link } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -67,7 +70,6 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   justifyContent: 'flex-end',
 }));
 
-// Rename this file to DashboardLayout.js to prevent confusion
 const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = useTheme();
@@ -85,6 +87,24 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
       onVehicleChange(vehicle);
     }
   };
+
+  // Navigation items for sidebar
+  const navigationItems = [
+    { path: '/', icon: <DashboardIcon />, text: 'Dashboard' },
+    { path: '/simulator', icon: <DirectionsCarIcon />, text: 'Car Simulator' },
+    { path: '/vehicle-dashboard', icon: <DisplaySettingsIcon />, text: 'Vehicle Display' },
+    { path: '/services', icon: <BuildIcon />, text: 'Services' },
+    { path: '/notifications', icon: <NotificationsIcon />, text: 'Notifications' },
+    { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
+  ];
+
+  // System items for sidebar
+  const systemItems = [
+    { path: '/settings', icon: <SettingsIcon />, text: 'Settings' },
+    { path: '/security', icon: <SecurityIcon />, text: 'Security' },
+    { path: '/about', icon: <InfoIcon />, text: 'About' },
+    { path: '/profile', icon: <PersonOutlineIcon />, text: 'Profile' },
+  ];
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -114,7 +134,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
               >
                 {vehicles.map((vehicle) => (
                   <MenuItem key={vehicle.VehicleId} value={vehicle.VehicleId}>
-                    {vehicle.Brand} {vehicle.VehicleModel} ({vehicle.VehicleId})
+                    {vehicle.Brand || vehicle.Make} {vehicle.VehicleModel || vehicle.Model} ({vehicle.VehicleId})
                   </MenuItem>
                 ))}
               </Select>
@@ -139,66 +159,38 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
       >
         <DrawerHeader />
         <Box sx={{ overflow: 'auto' }}>
-          <List>            
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <DashboardIcon />
-                </ListItemIcon>
-                <ListItemText primary="Dashboard" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/car-simulator" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <DirectionsCarIcon />
-                </ListItemIcon>
-                <ListItemText primary="Car Simulator" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/vehicle-dashboard" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <DisplaySettingsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Vehicle Display" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/services" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <BuildIcon />
-                </ListItemIcon>
-                <ListItemText primary="Services" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/notifications" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <NotificationsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Notifications" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton component={Link} to="/agent-chat" onClick={isMobile ? handleDrawerToggle : undefined}>
-                <ListItemIcon>
-                  <ChatIcon />
-                </ListItemIcon>
-                <ListItemText primary="Agent Chat" />
-              </ListItemButton>
-            </ListItem>
-          </List>
-          <Divider />
+          {/* Main navigation items */}
           <List>
-            <ListItem disablePadding>
-              <ListItemButton>
-                <ListItemIcon>
-                  <SettingsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Settings" />
-              </ListItemButton>
-            </ListItem>
+            {navigationItems.map((item) => (
+              <ListItem key={item.path} disablePadding>
+                <ListItemButton 
+                  component={Link} 
+                  to={item.path} 
+                  onClick={isMobile ? handleDrawerToggle : undefined}
+                >
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.text} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+          
+          <Divider />
+          
+          {/* System items */}
+          <List>
+            {systemItems.map((item) => (
+              <ListItem key={item.path} disablePadding>
+                <ListItemButton 
+                  component={Link} 
+                  to={item.path} 
+                  onClick={isMobile ? handleDrawerToggle : undefined}
+                >
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.text} />
+                </ListItemButton>
+              </ListItem>
+            ))}
           </List>
         </Box>
       </Drawer>

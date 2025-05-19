@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { DirectionsCar, Add } from '@mui/icons-material';
 import { fetchVehicles, addVehicle } from '../api/vehicles';
-import { sendCommand } from '../api/commands';
+import { sendVehicleCommand } from '../api/commands';
 
 const VehicleCard = ({ vehicle, onRefresh }) => {
   // eslint-disable-next-line no-unused-vars
@@ -22,7 +22,7 @@ const VehicleCard = ({ vehicle, onRefresh }) => {
         payload
       };
 
-      await sendCommand(command);
+      await sendVehicleCommand(command);
     } catch (err) {
       console.error('Error sending command:', err);
     }

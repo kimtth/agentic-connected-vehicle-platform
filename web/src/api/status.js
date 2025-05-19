@@ -1,4 +1,5 @@
 import { api } from './apiClient';
+import { API_BASE_URL } from './config';
 
 /**
  * Fetch the current vehicle status
@@ -9,7 +10,7 @@ import { api } from './apiClient';
 export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
   try {
     // Use the API endpoint which will try Cosmos DB first, then simulator as fallback
-    const response = await api.get(`/vehicle/${vehicleId}/status`);
+    const response = await api.get(`/vehicle/${encodeURIComponent(vehicleId)}/status`);
     if (response.data) {
       return response.data;
     } else {
@@ -51,7 +52,9 @@ export const subscribeToVehicleStatus = async (vehicleId, onUpdate, onError) => 
     // Check if EventSource is available (for SSE)
     if (typeof EventSource !== 'undefined') {
       // Try to use server-sent events for real-time updates
-      const eventSource = new EventSource(`${api.defaults.baseURL}/vehicle/${vehicleId}/status/stream`);
+      const eventSource = new EventSource(
+        `${API_BASE_URL}/vehicle/${encodeURIComponent(vehicleId)}/status/stream`
+      );
       
       eventSource.onmessage = (event) => {
         try {
@@ -123,7 +126,10 @@ export const updateVehicleStatus = async (vehicleId, statusData) => {
       vehicleId: vehicleId
     };
     
-    const response = await api.put(`/vehicle/${vehicleId}/status`, data);
+    const response = await api.put(
+      `/vehicle/${encodeURIComponent(vehicleId)}/status`,
+      { ...statusData, vehicleId }
+    );
     return response.data;
   } catch (error) {
     console.error(`Error updating vehicle status: ${error}`);
@@ -139,7 +145,10 @@ export const updateVehicleStatus = async (vehicleId, statusData) => {
  */
 export const updatePartialStatus = async (vehicleId, partialStatus) => {
   try {
-    const response = await api.patch(`/vehicle/${vehicleId}/status`, partialStatus);
+    const response = await api.patch(
+      `/vehicle/${encodeURIComponent(vehicleId)}/status`,
+      partialStatus
+    );
     return response.data;
   } catch (error) {
     console.error(`Error updating vehicle status fields: ${error}`);

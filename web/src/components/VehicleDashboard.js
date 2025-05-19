@@ -6,15 +6,17 @@ import Navigation from '@mui/icons-material/Navigation';
 // eslint-disable-next-line no-unused-vars
 import Brightness6 from '@mui/icons-material/Brightness6';
 import { 
-  Box, Typography, Grid, Slider, Button, Card, CardContent, CircularProgress
+  Box, Typography, Grid, Slider, Button, Card, CardContent, CircularProgress,
+  IconButton, Menu, MenuItem, ListItemIcon, ListItemText
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { 
   Speed, LocalGasStation, Battery90, Thermostat, 
   AcUnit, WbSunny, VolumeUp, BluetoothAudio, DirectionsCar, 
-  Sync, DeviceThermostat
+  Sync, DeviceThermostat, MoreVert, Build
 } from '@mui/icons-material';
 import { fetchVehicleStatus, subscribeToVehicleStatus, updateVehicleStatus, updateClimateSettings } from '../api/status';
+import { useNavigate } from 'react-router-dom';
 
 // Custom styled components for the dashboard
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -72,6 +74,8 @@ const VehicleDashboard = ({ vehicleId }) => {
   const [mediaVolume, setMediaVolume] = useState(60);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [anchorEl, setAnchorEl] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let subscription = null;
@@ -175,6 +179,19 @@ const VehicleDashboard = ({ vehicleId }) => {
     }
   };
 
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+  
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+  
+  const launchSimulator = () => {
+    navigate(`/simulator?vehicleId=${vehicleId}`);
+    handleMenuClose();
+  };
+
   if (loading && !status) {
     return (
       <DashboardContainer sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -193,9 +210,37 @@ const VehicleDashboard = ({ vehicleId }) => {
 
   return (
     <DashboardContainer>
-      <Typography variant="h4" gutterBottom sx={{ textAlign: 'center', color: '#1976d2' }}>
+      <Typography variant="h4" gutterBottom sx={{ 
+        textAlign: 'center', 
+        color: '#1976d2',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
         Vehicle Dashboard
+        <IconButton onClick={handleMenuOpen} sx={{ color: '#fff' }}>
+          <MoreVert />
+        </IconButton>
       </Typography>
+      
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={launchSimulator}>
+          <ListItemIcon>
+            <DirectionsCar fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Launch Simulator" />
+        </MenuItem>
+        <MenuItem onClick={handleMenuClose}>
+          <ListItemIcon>
+            <Build fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Vehicle Diagnostics" />
+        </MenuItem>
+      </Menu>
       
       {status && (
         <>

@@ -104,9 +104,13 @@ async def start_weather_server(host: str = "0.0.0.0", port: int = 8001):
 
     if loop and loop.is_running():
         logger.warning("AsyncIO loop already running – launching Weather MCP server in background")
-        loop.create_task(mcp_weather_server.run(host=host, port=port))
+        # Run the server in the background using the async variant to avoid nesting event loops
+        # Use SSE transport so host and port are accepted by FastMCP
+        loop.create_task(mcp_weather_server.run_async(transport="sse", host=host, port=port))
     else:
-        await mcp_weather_server.run(host=host, port=port)
+        # Use SSE transport so host and port are accepted by FastMCP
+        await mcp_weather_server.run_async(transport="sse", host=host, port=port)
+        await mcp_weather_server.run_async(host=host, port=port)
     logger.info("Weather MCP server started successfully")
     
 def get_server_instance():
