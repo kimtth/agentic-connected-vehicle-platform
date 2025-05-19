@@ -3,18 +3,15 @@
  */
 
 import axios from 'axios';
+import { API_BASE_URL, REQUEST_TIMEOUT, INCLUDE_CREDENTIALS } from './config';
 
-// Use REACT_APP_API_BASE_URL in prod, fallback to localhost in dev
-export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
-
-/**
- * Create a configured axios instance
- */
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
+  timeout: REQUEST_TIMEOUT,
+  withCredentials: INCLUDE_CREDENTIALS,
 });
 
 /**

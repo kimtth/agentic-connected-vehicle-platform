@@ -5,7 +5,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, MenuItem, Select, InputLabel, FormControl
 } from '@mui/material';
-import { fetchCommands, sendCommand } from '../api/commands';
+import { getCommandHistory as fetchCommands, sendVehicleCommand } from '../api/commands';
 
 const CommandLog = ({ vehicleId }) => {
   const [commands, setCommands] = useState([]);
@@ -71,7 +71,7 @@ const CommandLog = ({ vehicleId }) => {
 
   const handleSendCommand = async () => {
     try {
-      await sendCommand(newCommand);
+      await sendVehicleCommand(newCommand);
       handleCloseDialog();
       loadCommands();
     } catch (error) {

@@ -48,7 +48,7 @@ except Exception as e:
 
 
 @asynccontextmanager
-async def lifespan():
+async def lifespan(app):
     # Startup: initialize resources
     logger.info("Starting up the application...")
 
@@ -79,7 +79,7 @@ app.add_middleware(
 app.include_router(agent_router, prefix="/api", tags=["Agents"])
 
 
-@app.get("/")
+@app.get("/api/")
 def get_status():
     return {
         "status": "Connected Car Platform running",
@@ -89,7 +89,7 @@ def get_status():
 
 
 # Submit a command (simulate external system)
-@app.post("/command")
+@app.post("/api/command")
 async def submit_command(command: Command, background_tasks: BackgroundTasks):
     """Submit a command to a vehicle"""
     # Ensure Cosmos DB is connected
@@ -112,7 +112,7 @@ async def submit_command(command: Command, background_tasks: BackgroundTasks):
 
 
 # Get command log
-@app.get("/commands")
+@app.get("/api/commands")
 async def get_commands(vehicleId: str = None):
     """Get all commands with optional filtering by vehicle ID"""
     # Ensure Cosmos DB is connected
@@ -127,7 +127,7 @@ async def get_commands(vehicleId: str = None):
 
 
 # Get vehicle status (from simulator or Cosmos DB)
-@app.get("/vehicle/{vehicle_id}/status")
+@app.get("/api/vehicle/{vehicle_id}/status")
 async def get_vehicle_status(vehicle_id: str):
     """Get the status of a vehicle"""
     # Ensure Cosmos DB is connected
@@ -148,7 +148,7 @@ async def get_vehicle_status(vehicle_id: str):
 
 
 # Stream vehicle status updates
-@app.get("/vehicle/{vehicle_id}/status/stream")
+@app.get("/api/vehicle/{vehicle_id}/status/stream")
 async def stream_vehicle_status(vehicle_id: str):
     """Stream real-time status updates for a vehicle"""
     # Ensure Cosmos DB is connected
@@ -162,7 +162,7 @@ async def stream_vehicle_status(vehicle_id: str):
 
 
 # Add a new endpoint to get all simulated vehicles
-@app.get("/simulator/vehicles")
+@app.get("/api/simulator/vehicles")
 def get_simulated_vehicles():
     """Get all vehicle IDs currently in the simulator"""
     vehicle_ids = car_simulator.get_all_vehicle_ids()
@@ -170,7 +170,7 @@ def get_simulated_vehicles():
 
 
 # Get notifications
-@app.get("/notifications")
+@app.get("/api/notifications")
 async def get_notifications(vehicleId: str = None):
     """Get all notifications with optional filtering by vehicle ID"""
     # Ensure Cosmos DB is connected
@@ -187,7 +187,7 @@ async def get_notifications(vehicleId: str = None):
 
 
 # Add a vehicle profile
-@app.post("/vehicle")
+@app.post("/api/vehicle")
 async def add_vehicle(profile: VehicleProfile):
     """Add a new vehicle profile"""
     # Ensure Cosmos DB is connected
@@ -199,7 +199,7 @@ async def add_vehicle(profile: VehicleProfile):
 
 
 # List all vehicles
-@app.get("/vehicles")
+@app.get("/api/vehicles")
 async def list_vehicles():
     """List all vehicles"""
     # Ensure Cosmos DB is connected
@@ -208,7 +208,7 @@ async def list_vehicles():
 
 
 # Add a service to a vehicle
-@app.post("/vehicle/{vehicle_id}/service")
+@app.post("/api/vehicle/{vehicle_id}/service")
 async def add_service(vehicle_id: str, service: Service):
     """Add a service record to a vehicle"""
     # Ensure Cosmos DB is connected
@@ -221,7 +221,7 @@ async def add_service(vehicle_id: str, service: Service):
 
 
 # List all services for a vehicle
-@app.get("/vehicle/{vehicle_id}/services")
+@app.get("/api/vehicle/{vehicle_id}/services")
 async def list_services(vehicle_id: str):
     """List all services for a vehicle"""
     # Ensure Cosmos DB is connected
@@ -230,7 +230,7 @@ async def list_services(vehicle_id: str):
 
 
 # Update vehicle status
-@app.put("/vehicle/{vehicle_id}/status")
+@app.put("/api/vehicle/{vehicle_id}/status")
 async def update_vehicle_status(vehicle_id: str, status: VehicleStatus):
     """Update the status of a vehicle"""
     # Ensure Cosmos DB is connected
@@ -264,7 +264,7 @@ async def update_vehicle_status(vehicle_id: str, status: VehicleStatus):
 
 
 # Partial status update (only specific fields)
-@app.patch("/vehicle/{vehicle_id}/status")
+@app.patch("/api/vehicle/{vehicle_id}/status")
 async def patch_vehicle_status(vehicle_id: str, status_update: dict):
     """Update specific fields of a vehicle's status"""
     # Ensure Cosmos DB is connected
@@ -402,6 +402,17 @@ async def process_command_async(command):
                 await cosmos_client.create_notification(notification)
 
 
+# Top-level entry points for multiprocessing
+def run_weather_process():
+    """Entry for MCP weather server."""
+    asyncio.run(start_weather_server(host="0.0.0.0", port=8001))
+
+
+def run_a2a_process():
+    """Entry for A2A server."""
+    asyncio.run(start_a2a_server(host="0.0.0.0", port=8002))
+
+
 # Entry point for running the application
 if __name__ == "__main__":
     # Initialize
@@ -409,11 +420,32 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 8000))
     logger.info(f"Starting server at http://{host}:{port}")
 
-    # Run the bootstrap process
-    # 1. Start the weather server (MCP) in the background
-    asyncio.run(start_weather_server(host="0.0.0.0", port=8001))
-    # 2. Start a2a server
-    asyncio.run(start_a2a_server(host="0.0.0.0", port=8002))
-    # 3. Start the FastAPI server
-    # Use uvicorn to run the FastAPI app
-    uvicorn.run("main:app", host=host, port=port, reload=True)
+    from multiprocessing import Process, set_start_method
+
+    # on Windows ensure 'spawn' start method
+    set_start_method("spawn", force=True)
+
+    # Try to start auxiliary servers, but continue with API even if they fail
+    try:
+        logger.info("Starting MCP (weather) server process on port 8001")
+        mcp_proc = Process(target=run_weather_process, daemon=True)
+        mcp_proc.start()
+        logger.info(f"MCP server started with PID {mcp_proc.pid}")
+    except Exception as e:
+        logger.error(f"Failed to start MCP server: {str(e)}")
+
+    try:
+        logger.info("Starting A2A server process on port 8002")
+        a2a_proc = Process(target=run_a2a_process, daemon=True)
+        a2a_proc.start()
+        logger.info(f"A2A server started with PID {a2a_proc.pid}")
+    except Exception as e:
+        logger.error(f"Failed to start A2A server: {str(e)}")
+
+    # Always start the API server, even if other servers failed
+    try:
+        logger.info(f"Starting API server at http://{host}:{port}")
+        uvicorn.run("main:app", host=host, port=port, reload=True)
+    except Exception as e:
+        logger.critical(f"Failed to start API server: {str(e)}")
+        raise  # Re-raise to show the error
