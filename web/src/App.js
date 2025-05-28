@@ -4,13 +4,11 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Container, Grid, Paper, Typography, Alert, CircularProgress } from '@mui/material';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
-import CarStatus from './components/CarStatus';
-import CommandLog from './components/CommandLog';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
 import VehicleDashboard from './components/VehicleDashboard';
 import AgentChat from './components/AgentChat';
-import CarSimulator from './components/CarSimulator';
+import CarSimulator from './components/simulator/CarSimulator';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import SimulatorPage from './components/simulator/SimulatorPage';
@@ -66,7 +64,7 @@ function App() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Container maxWidth="sm" sx={{ mt: 10, textAlign: 'center' }}>
+        <Container maxWidth="sm" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh' }}>
           <CircularProgress />
           <Typography variant="h6" sx={{ mt: 2 }}>
             Loading vehicles data...
@@ -81,7 +79,7 @@ function App() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Container maxWidth="sm" sx={{ mt: 10 }}>
+        <Container maxWidth="sm" sx={{ p: 2 }}>
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
@@ -117,7 +115,7 @@ function App() {
               selectedVehicle ? (
                 <Dashboard selectedVehicle={selectedVehicle} />
               ) : (
-                <Container maxWidth="sm" sx={{ mt: 10, textAlign: 'center' }}>
+                <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
                   <Typography variant="h5" color="textSecondary">
                     No vehicles available. Please add a vehicle to start.
                   </Typography>
@@ -128,11 +126,11 @@ function App() {
             {/* Vehicle Dashboard Route - now will work with proper navigation */}
             <Route path="/vehicle-dashboard" element={
               selectedVehicle ? (
-                <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+                <Container maxWidth="lg">
                   <VehicleDashboard vehicleId={selectedVehicle.VehicleId} />
                 </Container>
               ) : (
-                <Container maxWidth="sm" sx={{ mt: 10, textAlign: 'center' }}>
+                <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
                   <Typography variant="h5" color="textSecondary">
                     No vehicles available. Please select a vehicle first.
                   </Typography>
@@ -142,21 +140,17 @@ function App() {
             
             {/* Agent Chat Route */}
             <Route path="/agent-chat" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-                <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
-              </Container>
+              <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
             } />
             
             {/* Car Simulator Route */}
             <Route path="/car-simulator" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-                <CarSimulator />
-              </Container>
+              <CarSimulator />
             } />
             
             {/* Services Route */}
             <Route path="/services" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     Services
@@ -177,7 +171,7 @@ function App() {
             
             {/* Notifications Route */}
             <Route path="/notifications" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     Notifications
@@ -195,7 +189,7 @@ function App() {
             
             {/* Settings Route */}
             <Route path="/settings" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     Settings
@@ -227,7 +221,7 @@ function App() {
             
             {/* Security Route */}
             <Route path="/security" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     Security
@@ -259,7 +253,7 @@ function App() {
             
             {/* About Route */}
             <Route path="/about" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     About
@@ -291,7 +285,7 @@ function App() {
             
             {/* Profile Route */}
             <Route path="/profile" element={
-              <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+              <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
                   <Typography variant="h4" gutterBottom>
                     User Profile

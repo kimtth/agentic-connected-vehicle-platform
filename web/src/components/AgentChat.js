@@ -194,13 +194,13 @@ const AgentChat = ({ vehicleId }) => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ my: 4, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
-      <Typography variant="h4" component="h1" gutterBottom>
+    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Typography variant="h5" component="h1" gutterBottom>
         Connected Vehicle Agent Chat
         {vehicleId ? ` - Vehicle: ${vehicleId}` : ' - No vehicle selected'}
       </Typography>
       
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 1 }}>
         <FormControl fullWidth>
           <InputLabel id="agent-select-label">Select Agent</InputLabel>
           <Select
@@ -229,7 +229,7 @@ const AgentChat = ({ vehicleId }) => {
         </Tooltip>
       </Box>
       
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
         <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
           {selectedAgent.description}
         </Typography>
@@ -248,8 +248,7 @@ const AgentChat = ({ vehicleId }) => {
       <Paper
         elevation={3}
         sx={{
-          p: 2,
-          mb: 2,
+          mb: 1,
           flexGrow: 1,
           overflowY: 'auto',
           backgroundColor: '#f5f5f5',
@@ -262,39 +261,40 @@ const AgentChat = ({ vehicleId }) => {
               <React.Fragment key={index}>
                 <ListItem alignItems="flex-start" sx={{
                   justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
-                  mb: 1
+                  mb: 2,
+                  px: 2
                 }}>
                   <Paper
                     elevation={1}
                     sx={{
-                      p: 2,
                       maxWidth: '80%',
+                      p: 2,
                       backgroundColor: message.type === 'user' ? '#e3f2fd' : 
                                       message.type === 'error' ? '#ffebee' : '#ffffff',
                       borderRadius: 2
                     }}
                   >
                     {message.type !== 'user' && (
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
                         {message.type === 'agent' ? message.agentTitle : 'System Message'}
                       </Typography>
                     )}
-                    <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                       {message.text}
                     </Typography>
                     {message.data && (
-                      <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
-                        <Typography variant="caption" color="text.secondary">
+                      <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
                           Additional Data:
                         </Typography>
-                        <pre style={{ fontSize: '0.75rem', overflow: 'auto' }}>
+                        <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
                           {JSON.stringify(message.data, null, 2)}
                         </pre>
                       </Box>
                     )}
                   </Paper>
                 </ListItem>
-                {index < chatHistory.length - 1 && <Divider variant="middle" component="li" />}
+                {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
               </React.Fragment>
             ))
           ) : (
@@ -318,7 +318,7 @@ const AgentChat = ({ vehicleId }) => {
           variant="outlined"
           value={query}
           onChange={handleQueryChange}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyPress}
           disabled={loading}
         />
         <Button 
@@ -331,7 +331,7 @@ const AgentChat = ({ vehicleId }) => {
           {loading ? <CircularProgress size={24} /> : 'Send'}
         </Button>
       </Box>
-    </Container>
+    </Box>
   );
 };
 

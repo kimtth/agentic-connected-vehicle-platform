@@ -11,9 +11,9 @@ export let API_BASE_URL = isProduction
   : 'http://localhost:8000/api';    // Development endpoint
 
 // Allow override via environment variable if available
-if (process.env.REACT_APP_API_BASE_URL) {
-    API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
-}
+// if (process.env.REACT_APP_API_BASE_URL) {
+//     API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+// }
 
 console.log(`Using API endpoint: ${API_BASE_URL} (${isProduction ? 'production' : 'development'})`);
 
