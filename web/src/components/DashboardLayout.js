@@ -44,12 +44,16 @@ const AppBarStyled = styled(AppBar, { shouldForwardProp: (prop) => prop !== 'ope
 const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
   ({ theme, open }) => ({
     flexGrow: 1,
-    padding: theme.spacing(3),
+    padding: 0,
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
     }),
     marginLeft: 0,
+    height: '100vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
     ...(open && {
       transition: theme.transitions.create('margin', {
         easing: theme.transitions.easing.easeOut,
@@ -197,7 +201,17 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
       
       <Main open={drawerOpen && !isMobile} className="dashboard-content">
         <DrawerHeader />
-        {children}
+        <Box sx={{ 
+          height: 'calc(100vh - 64px)', 
+          overflow: 'auto', 
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%'
+        }}>
+          <Box sx={{ width: '100%', maxWidth: '1400px', mx: 'auto', p: 3, flexGrow: 1 }}>
+            {children}
+          </Box>
+        </Box>
       </Main>
     </Box>
   );

@@ -10,7 +10,6 @@ import VehicleMetrics from './VehicleMetrics';
 import { 
   fetchVehicleStatus, 
   subscribeToVehicleStatus, 
-  updateVehicleStatus 
 } from '../../api/status';
 import { sendVehicleCommand } from '../../api/commands';
 
@@ -18,17 +17,18 @@ import { sendVehicleCommand } from '../../api/commands';
 const SimulatorContainer = styled(Box)(({ theme }) => ({
   maxWidth: '1200px',
   margin: '0 auto',
-  padding: theme.spacing(2),
+  padding: 0,
 }));
 
 const Header = styled(Paper)(({ theme, isConnected }) => ({
   background: theme.palette.primary.main,
   color: 'white',
-  padding: theme.spacing(2),
-  borderRadius: `${theme.spacing(1)} ${theme.spacing(1)} 0 0`,
+  padding: theme.spacing(1.5),
+  borderRadius: 0,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
+  flexShrink: 0,
 }));
 
 const StatusIndicator = styled(Box)(({ theme, isConnected }) => ({
@@ -197,10 +197,10 @@ const CarSimulator = ({ vehicleId }) => {
     <SimulatorContainer>
       <Header>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Box component="i" className="fas fa-car" sx={{ fontSize: '2rem', mr: 1 }} />
-          <Typography variant="h5">
+          <Box component="i" className="fas fa-car" sx={{ fontSize: '1.5rem', mr: 1 }} />
+          <Typography variant="h6">
             Car Device Simulator
-            {vehicleId && <Typography component="span" variant="subtitle1" sx={{ ml: 1 }}>
+            {vehicleId && <Typography component="span" variant="subtitle2" sx={{ ml: 1 }}>
               (ID: {vehicleId})
             </Typography>}
           </Typography>
@@ -211,24 +211,26 @@ const CarSimulator = ({ vehicleId }) => {
         </StatusIndicator>
       </Header>
       
-      <Grid container spacing={2} sx={{ mt: 2 }}>
-        <Grid item xs={12} md={6}>
-          <CommandPanel 
-            onSendCommand={handleSendCommand} 
-            isConnected={isConnected}
-          />
+      <Box sx={{ p: 1 }}>
+        <Grid container spacing={1}>
+          <Grid item xs={12} md={6}>
+            <CommandPanel 
+              onSendCommand={handleSendCommand} 
+              isConnected={isConnected}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <LogsPanel 
+              logs={logs} 
+              isConnected={isConnected} 
+              onToggleConnection={toggleConnection}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <VehicleMetrics vehicleStatus={vehicleStatus} />
+          </Grid>
         </Grid>
-        <Grid item xs={12} md={6}>
-          <LogsPanel 
-            logs={logs} 
-            isConnected={isConnected} 
-            onToggleConnection={toggleConnection}
-          />
-        </Grid>
-        <Grid item xs={12}>
-          <VehicleMetrics vehicleStatus={vehicleStatus} />
-        </Grid>
-      </Grid>
+      </Box>
     </SimulatorContainer>
   );
 };

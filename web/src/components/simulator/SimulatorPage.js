@@ -84,7 +84,7 @@ const SimulatorPage = () => {
           <Typography color="textPrimary">Simulator</Typography>
         </Breadcrumbs>
         
-        <Typography variant="h4" component="h1" gutterBottom mt={2}>
+        <Typography variant="h5" component="h1" gutterBottom mt={2}>
           Car Device Simulator {vehicleId ? `(Vehicle #${vehicleId})` : ''}
         </Typography>
         <Typography variant="subtitle1" color="textSecondary" paragraph>
@@ -93,11 +93,11 @@ const SimulatorPage = () => {
         </Typography>
         
         {vehicleId ? (
-          <Alert severity="info" sx={{ mb: 2 }}>
+          <Alert severity="info" sx={{ mb: 1 }}>
             Connected to vehicle ID: {vehicleId}. Commands will be sent to this vehicle.
           </Alert>
         ) : (
-          <Alert severity="warning" sx={{ mb: 2 }}>
+          <Alert severity="warning" sx={{ mb: 1 }}>
             Running in demo mode. Select a vehicle from the dashboard to send real commands.
           </Alert>
         )}
