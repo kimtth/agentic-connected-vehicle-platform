@@ -1,10 +1,4 @@
-import React, { useState, useEffect } from 'react';
-// eslint-disable-next-line no-unused-vars
-import { Paper, Switch, FormControlLabel } from '@mui/material';
-// eslint-disable-next-line no-unused-vars
-import Navigation from '@mui/icons-material/Navigation';
-// eslint-disable-next-line no-unused-vars
-import Brightness6 from '@mui/icons-material/Brightness6';
+import { useState, useEffect } from 'react';
 import { 
   Box, Typography, Grid, Slider, Button, Card, CardContent, CircularProgress,
   IconButton, Menu, MenuItem, ListItemIcon, ListItemText
@@ -13,7 +7,9 @@ import { styled } from '@mui/material/styles';
 import { 
   Speed, LocalGasStation, Battery90, Thermostat, 
   AcUnit, WbSunny, VolumeUp, BluetoothAudio, DirectionsCar, 
-  Sync, DeviceThermostat, MoreVert, Build
+  Sync, DeviceThermostat, MoreVert, Build,
+  Lightbulb, Lock, LockOpen, PowerSettingsNew, Stop,
+  KeyboardArrowUp, KeyboardArrowDown, Warning, LocalHospital
 } from '@mui/icons-material';
 import { fetchVehicleStatus, subscribeToVehicleStatus, updateVehicleStatus, updateClimateSettings } from '../api/status';
 import { useNavigate } from 'react-router-dom';
@@ -64,6 +60,30 @@ const ControlGrid = styled(Grid)(({ theme }) => ({
   padding: theme.spacing(2)
 }));
 
+const VehicleControlSection = styled(Card)(({ theme }) => ({
+  background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+  color: '#fff',
+  marginBottom: theme.spacing(2),
+  borderRadius: theme.spacing(2),
+}));
+
+const ControlButton = styled(Button)(({ theme, variant: buttonVariant = 'primary' }) => ({
+  margin: theme.spacing(0.5),
+  minWidth: '120px',
+  color: buttonVariant === 'emergency' ? theme.palette.error.contrastText : '#fff',
+  backgroundColor: buttonVariant === 'emergency' 
+    ? theme.palette.error.main 
+    : 'rgba(255, 255, 255, 0.1)',
+  border: `1px solid ${buttonVariant === 'emergency' 
+    ? theme.palette.error.main 
+    : 'rgba(255, 255, 255, 0.3)'}`,
+  '&:hover': {
+    backgroundColor: buttonVariant === 'emergency' 
+      ? theme.palette.error.dark 
+      : 'rgba(255, 255, 255, 0.2)',
+  },
+}));
+
 const VehicleDashboard = ({ vehicleId }) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +95,13 @@ const VehicleDashboard = ({ vehicleId }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [anchorEl, setAnchorEl] = useState(null);
+  const [vehicleFeatures, setVehicleFeatures] = useState({
+    lights: { headlights: 'off', interior: 'off', hazard: 'off' },
+    doors: { locked: true },
+    engine: { status: 'off' },
+    windows: { driver: 'up', passenger: 'up', rear_left: 'up', rear_right: 'up' },
+    climate: { temperature: 22, auto: true, ac: 'off' }
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -190,6 +217,67 @@ const VehicleDashboard = ({ vehicleId }) => {
   const launchSimulator = () => {
     navigate(`/simulator?vehicleId=${vehicleId}`);
     handleMenuClose();
+  };
+
+  const handleFeatureControl = async (feature, action, params = {}) => {
+    try {
+      const response = await fetch(`/api/vehicles/${vehicleId}/features/${feature}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...params })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        // Update local state based on the action
+        setVehicleFeatures(prev => ({
+          ...prev,
+          [feature]: { ...prev[feature], ...result.data }
+        }));
+      }
+    } catch (error) {
+      console.error(`Error controlling ${feature}:`, error);
+    }
+  };
+
+  const handleRemoteAccess = async (action, params = {}) => {
+    try {
+      const endpoint = action.includes('door') ? 'doors' : 
+                     action.includes('engine') ? 'engine' : 'locate';
+      
+      const response = await fetch(`/api/vehicles/${vehicleId}/remote/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action.replace('_doors', '').replace('_engine', ''), ...params })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Remote access result:', result);
+      }
+    } catch (error) {
+      console.error('Error with remote access:', error);
+    }
+  };
+
+  const handleEmergency = async (emergencyType) => {
+    try {
+      const response = await fetch(`/api/vehicles/${vehicleId}/emergency/${emergencyType}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          emergency_type: emergencyType,
+          location: { latitude: 43.6532, longitude: -79.3832 } // Toronto coordinates
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Emergency ${emergencyType} activated: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error activating emergency:', error);
+    }
   };
 
   if (loading && !status) {
@@ -466,6 +554,153 @@ const VehicleDashboard = ({ vehicleId }) => {
                 </ControlPanel>
               </Grid>
               
+              {/* Vehicle Feature Controls */}
+              <Grid item xs={12}>
+                <VehicleControlSection>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                      <DirectionsCar sx={{ mr: 1 }} />
+                      Vehicle Controls
+                    </Typography>
+                    
+                    {/* Lights Control */}
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" gutterBottom>Lighting</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <ControlButton
+                          startIcon={<Lightbulb />}
+                          onClick={() => handleFeatureControl('lights', 
+                            vehicleFeatures.lights.headlights === 'on' ? 'off' : 'on',
+                            { light_type: 'headlights' }
+                          )}
+                        >
+                          Headlights {vehicleFeatures.lights.headlights === 'on' ? 'OFF' : 'ON'}
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={<Lightbulb />}
+                          onClick={() => handleFeatureControl('lights', 
+                            vehicleFeatures.lights.interior === 'on' ? 'off' : 'on',
+                            { light_type: 'interior_lights' }
+                          )}
+                        >
+                          Interior {vehicleFeatures.lights.interior === 'on' ? 'OFF' : 'ON'}
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={<Warning />}
+                          onClick={() => handleFeatureControl('lights', 
+                            vehicleFeatures.lights.hazard === 'on' ? 'off' : 'on',
+                            { light_type: 'hazard_lights' }
+                          )}
+                        >
+                          Hazards {vehicleFeatures.lights.hazard === 'on' ? 'OFF' : 'ON'}
+                        </ControlButton>
+                      </Box>
+                    </Box>
+
+                    {/* Climate Control */}
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" gutterBottom>Climate Control</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                        <Typography variant="body2">Temperature: {vehicleFeatures.climate.temperature}°C</Typography>
+                        <Button
+                          size="small"
+                          onClick={() => handleFeatureControl('climate', 'set_temperature', 
+                            { temperature: vehicleFeatures.climate.temperature - 1 }
+                          )}
+                        >-</Button>
+                        <Button
+                          size="small"
+                          onClick={() => handleFeatureControl('climate', 'set_temperature', 
+                            { temperature: vehicleFeatures.climate.temperature + 1 }
+                          )}
+                        >+</Button>
+                      </Box>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <ControlButton
+                          startIcon={<AcUnit />}
+                          onClick={() => handleFeatureControl('climate', 'cooling', { temperature: 18 })}
+                        >
+                          Cooling
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={<WbSunny />}
+                          onClick={() => handleFeatureControl('climate', 'heating', { temperature: 26 })}
+                        >
+                          Heating
+                        </ControlButton>
+                      </Box>
+                    </Box>
+
+                    {/* Windows Control */}
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" gutterBottom>Windows</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <ControlButton
+                          startIcon={<KeyboardArrowUp />}
+                          onClick={() => handleFeatureControl('windows', 'up', { windows: 'all' })}
+                        >
+                          All Windows UP
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={<KeyboardArrowDown />}
+                          onClick={() => handleFeatureControl('windows', 'down', { windows: 'all' })}
+                        >
+                          All Windows DOWN
+                        </ControlButton>
+                      </Box>
+                    </Box>
+
+                    {/* Remote Access */}
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" gutterBottom>Remote Access</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <ControlButton
+                          startIcon={vehicleFeatures.doors.locked ? <LockOpen /> : <Lock />}
+                          onClick={() => handleRemoteAccess(vehicleFeatures.doors.locked ? 'unlock_doors' : 'lock_doors')}
+                        >
+                          {vehicleFeatures.doors.locked ? 'UNLOCK' : 'LOCK'} Doors
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={vehicleFeatures.engine.status === 'running' ? <Stop /> : <PowerSettingsNew />}
+                          onClick={() => handleRemoteAccess(
+                            vehicleFeatures.engine.status === 'running' ? 'stop_engine' : 'start_engine'
+                          )}
+                        >
+                          {vehicleFeatures.engine.status === 'running' ? 'STOP' : 'START'} Engine
+                        </ControlButton>
+                        <ControlButton
+                          startIcon={<VolumeUp />}
+                          onClick={() => handleRemoteAccess('locate')}
+                        >
+                          Horn & Lights
+                        </ControlButton>
+                      </Box>
+                    </Box>
+
+                    {/* Emergency Controls */}
+                    <Box>
+                      <Typography variant="subtitle2" gutterBottom>Emergency</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <ControlButton
+                          variant="emergency"
+                          startIcon={<LocalHospital />}
+                          onClick={() => handleEmergency('sos')}
+                        >
+                          SOS Emergency
+                        </ControlButton>
+                        <ControlButton
+                          variant="emergency"
+                          startIcon={<Warning />}
+                          onClick={() => handleEmergency('collision')}
+                        >
+                          Report Collision
+                        </ControlButton>
+                      </Box>
+                    </Box>
+                  </CardContent>
+                </VehicleControlSection>
+              </Grid>
+
               {/* Status message */}
               {statusMessage && (
                 <Grid item xs={12}>

@@ -1,10 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { 
-  Paper, Typography, Box, Button, TextField, Divider, CircularProgress 
+  Paper, Typography, Box, Button, TextField, CircularProgress 
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { ArrowUpward, ArrowDownward, Error, Link, LinkOff } from '@mui/icons-material';
-import { getCommandHistory } from '../../api/commands';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(2),
@@ -83,7 +82,6 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId }) => {
       if (isConnected && vehicleId) {
         try {
           setIsLoadingHistory(true);
-          const history = await getCommandHistory(vehicleId);
           
           // Process history items and add them to logs
           // This would typically be handled through the parent component

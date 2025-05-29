@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { styled } from '@mui/material/styles';
 import { 
   AppBar, Toolbar, Typography, IconButton, 
@@ -80,9 +80,17 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
 
   const handleVehicleChange = (event) => {
     const selectedId = event.target.value;
-    const vehicle = vehicles.find(v => v.VehicleId === selectedId);
+    const vehicle = vehicles.find(v => 
+      (v.vehicleId === selectedId) || (v.VehicleId === selectedId)
+    );
     if (vehicle) {
-      onVehicleChange(vehicle);
+      // Normalize the vehicle object to use consistent field names
+      const normalizedVehicle = {
+        ...vehicle,
+        vehicleId: vehicle.vehicleId || vehicle.VehicleId,
+        VehicleId: vehicle.VehicleId || vehicle.vehicleId
+      };
+      onVehicleChange(normalizedVehicle);
     }
   };
 
@@ -107,16 +115,19 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
               <InputLabel id="vehicle-select-label" sx={{ color: 'white' }}>Vehicle</InputLabel>
               <Select
                 labelId="vehicle-select-label"
-                value={selectedVehicle?.VehicleId || ''}
+                value={selectedVehicle?.vehicleId || selectedVehicle?.VehicleId || ''}
                 label="Vehicle"
                 onChange={handleVehicleChange}
                 sx={{ color: 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: 'white' } }}
               >
-                {vehicles.map((vehicle) => (
-                  <MenuItem key={vehicle.VehicleId} value={vehicle.VehicleId}>
-                    {vehicle.Brand} {vehicle.VehicleModel} ({vehicle.VehicleId})
-                  </MenuItem>
-                ))}
+                {vehicles.map((vehicle) => {
+                  const vehicleId = vehicle.vehicleId || vehicle.VehicleId;
+                  return (
+                    <MenuItem key={vehicleId} value={vehicleId}>
+                      {vehicle.Brand} {vehicle.VehicleModel} ({vehicleId})
+                    </MenuItem>
+                  );
+                })}
               </Select>
             </FormControl>
           )}

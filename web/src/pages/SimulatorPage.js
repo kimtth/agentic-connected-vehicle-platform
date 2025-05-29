@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from 'react';
 import { Container, Typography, Box, Breadcrumbs, Link, Alert } from '@mui/material';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import CarSimulator from '../components/simulator/CarSimulator';

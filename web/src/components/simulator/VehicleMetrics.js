@@ -1,10 +1,7 @@
-import React from 'react';
 import { Paper, Typography, Grid, Box, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { 
-  Speed, LocalGasStation, Battery90, Thermostat,
-  SpeedOutlined, BatteryChargingFullOutlined, 
-  DeviceThermostat, Timeline 
+  Thermostat, SpeedOutlined, BatteryChargingFullOutlined, Timeline 
 } from '@mui/icons-material';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({

@@ -38,7 +38,7 @@ async def get_vehicles_from_cosmos() -> List[Dict[str, Any]]:
             formatted_vehicles.append({
                 "brand": vehicle.get("Brand", ""),
                 "model": vehicle.get("VehicleModel", ""),
-                "year": vehicle.get("Year", 2023),
+                "year": vehicle.get("Year", 0),
                 "region": vehicle.get("Region", "North America"),
                 "vehicle_id": vehicle.get("VehicleId", ""),
                 "vin": vehicle.get("VIN", ""),

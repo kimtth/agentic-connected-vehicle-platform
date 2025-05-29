@@ -9,7 +9,6 @@ import {
   SupportAgent, Settings, EnergySavingsLeaf, AcUnit, 
   LocalGasStation, Build
 } from '@mui/icons-material';
-import { fetchVehicles } from '../api/vehicles';
 import { fetchVehicleStatus } from '../api/status';
 
 const Dashboard = ({ selectedVehicle }) => {
@@ -301,6 +300,7 @@ const Dashboard = ({ selectedVehicle }) => {
             </Grid>
           </Grid>
           
+          {/* Enhanced Quick Settings with Vehicle Features */}
           <Grid container spacing={3} sx={{ mt: 1 }}>
             <Grid item xs={12} md={6}>
               <Card>
@@ -371,28 +371,51 @@ const Dashboard = ({ selectedVehicle }) => {
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                       <Settings color="primary" sx={{ fontSize: '2rem', mr: 2 }} />
-                      <Typography variant="h6">Quick Settings</Typography>
+                      <Typography variant="h6">Vehicle Controls</Typography>
                     </Box>
                     <Divider sx={{ mb: 2 }} />
                     <Grid container spacing={2}>
                       <Grid item xs={6}>
-                        <Button fullWidth variant="outlined" startIcon={<EnergySavingsLeaf />}>
+                        <Button 
+                          fullWidth 
+                          variant="outlined" 
+                          startIcon={<EnergySavingsLeaf />}
+                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=eco_mode&vehicleId=${selectedVehicle.VehicleId}`)}
+                          disabled={!selectedVehicle}
+                        >
                           Eco Mode
                         </Button>
                       </Grid>
                       <Grid item xs={6}>
-                        <Button fullWidth variant="outlined" startIcon={<AcUnit />}>
+                        <Button 
+                          fullWidth 
+                          variant="outlined" 
+                          startIcon={<AcUnit />}
+                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=climate&vehicleId=${selectedVehicle.VehicleId}`)}
+                          disabled={!selectedVehicle}
+                        >
                           Climate Control
                         </Button>
                       </Grid>
                       <Grid item xs={6}>
-                        <Button fullWidth variant="outlined" startIcon={<Speed />}>
-                          Sport Mode
+                        <Button 
+                          fullWidth 
+                          variant="outlined" 
+                          startIcon={<Speed />}
+                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=diagnostics&vehicleId=${selectedVehicle.VehicleId}`)}
+                          disabled={!selectedVehicle}
+                        >
+                          Diagnostics
                         </Button>
                       </Grid>
                       <Grid item xs={6}>
-                        <Button fullWidth variant="outlined" startIcon={<Notifications />}>
-                          Notification Settings
+                        <Button 
+                          fullWidth 
+                          variant="outlined" 
+                          startIcon={<Notifications />}
+                          onClick={() => navigate('/notifications')}
+                        >
+                          Alerts
                         </Button>
                       </Grid>
                     </Grid>

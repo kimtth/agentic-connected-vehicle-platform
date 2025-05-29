@@ -724,3 +724,12 @@ class ChargingEnergyPlugin:
             "energy_usage": "Track and analyze energy consumption",
             "range_estimation": "Estimate remaining driving range",
         }
+
+    def _format_response(
+        self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
+    ) -> Dict[str, Any]:
+        """Format the response message."""
+        response = {"message": message, "success": success}
+        if data:
+            response["data"] = data
+        return response

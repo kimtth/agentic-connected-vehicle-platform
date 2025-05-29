@@ -389,78 +389,76 @@ class DiagnosticsBatteryPlugin:
             ]
 
             # System components to check
-            systems = [
-                {"name": "Engine Control Module", "status": "Normal"},
-                {"name": "Transmission Control", "status": "Normal"},
-                {"name": "Brake Control System", "status": "Normal"},
-                {"name": "Battery Management System", "status": "Normal"},
-                {"name": "Infotainment System", "status": "Normal"},
-                {"name": "Climate Control System", "status": "Normal"},
-                {"name": "Driver Assistance Systems", "status": "Normal"},
-            ]
+            system_health = {
+                "overall_status": "Good",
+                "components": {
+                    "engine": "Normal",
+                    "transmission": "Normal",
+                    "brakes": "Normal",
+                    "battery": "Good",
+                    "electrical": "Normal",
+                    "connectivity": "Connected",
+                },
+                "issues": [],
+                "recommendations": [],
+            }
 
-            # Update system statuses based on real data
-            # Engine control module issues
-            if (
-                vehicle_status.get("engineStatus", "") == "error"
-                or vehicle_status.get("EngineStatus", "") == "error"
-            ):
-                systems[0]["status"] = "Error"
+            # Check for issues based on vehicle status
+            temperature = vehicle_status.get(
+                "temperature", vehicle_status.get("Temperature", 0)
+            )
+            if temperature > 90:
+                system_health["components"]["engine"] = "Warning"
+                system_health["issues"].append("High engine temperature detected")
+                system_health["recommendations"].append("Check cooling system")
 
-            # Battery management system issues for electric vehicles
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
             battery_level = vehicle_status.get(
                 "batteryLevel", vehicle_status.get("Battery", 0)
             )
-            if is_electric and battery_level < 10:
-                systems[3]["status"] = "Warning"
+            if battery_level < 20:
+                system_health["components"]["battery"] = "Low"
+                system_health["issues"].append("Low battery level")
+                system_health["recommendations"].append("Charge battery soon")
 
-            # Check climate control
-            climate_settings = vehicle_status.get("climateSettings", {})
-            if climate_settings and "error" in str(climate_settings).lower():
-                systems[5]["status"] = "Warning"
-
-            # Check for failed commands related to specific systems
-            for cmd in failed_commands:
-                cmd_type = cmd.get("commandType", "").lower()
-                if "engine" in cmd_type or "start" in cmd_type:
-                    systems[0]["status"] = "Warning"
-                elif "temperature" in cmd_type or "climate" in cmd_type:
-                    systems[5]["status"] = "Warning"
-                elif "entertainment" in cmd_type or "media" in cmd_type:
-                    systems[4]["status"] = "Error"
+            # Check for failed commands
+            if failed_commands:
+                system_health["components"]["connectivity"] = "Warning"
+                system_health["issues"].append(
+                    f"{len(failed_commands)} recent command failures"
+                )
+                system_health["recommendations"].append("Check vehicle connectivity")
 
             # Determine overall status
-            if any(system["status"] == "Error" for system in systems):
-                overall_status = "Error"
-            elif any(system["status"] == "Warning" for system in systems):
-                overall_status = "Warning"
-            else:
-                overall_status = "Normal"
-
-            # Build the response
-            issues = [system for system in systems if system["status"] != "Normal"]
-
-            if issues:
-                issues_text = "\n".join(
-                    [f"• {issue['name']}: {issue['status']}" for issue in issues]
+            warning_components = [
+                k for k, v in system_health["components"].items()
+                if v in ["Warning", "Low"]
+            ]
+            if warning_components:
+                system_health["overall_status"] = (
+                    "Warning" if len(warning_components) <= 2 else "Critical"
                 )
-                response_text = f"System health report: {overall_status}. The following systems require attention:\n\n{issues_text}"
-            else:
-                response_text = (
-                    "System health report: All systems are functioning normally."
+
+            # Format response
+            if system_health["issues"]:
+                issues_text = "\n".join([f"• {issue}" for issue in system_health["issues"]])
+                recommendations_text = "\n".join(
+                    [f"• {rec}" for rec in system_health["recommendations"]]
                 )
+                response_text = f"System health check complete. Status: {system_health['overall_status']}\n\nIssues found:\n{issues_text}\n\nRecommendations:\n{recommendations_text}"
+            else:
+                response_text = "System health check complete. All vehicle systems are operating normally."
 
             return self._format_response(
                 response_text,
                 data={
-                    "systems": systems,
-                    "overall_status": overall_status,
+                    "system_health": system_health,
                     "vehicle_id": vehicle_id,
+                    "failed_commands": len(failed_commands),
                 },
             )
+
         except Exception as e:
-            logger.error(f"Error checking system health: {str(e)}")
+            logger.error(f"Error checking system health: {e}")
             return self._format_response(
                 "I encountered an error while checking system health. Please try again later.",
                 success=False,
@@ -696,4 +694,14 @@ class DiagnosticsBatteryPlugin:
             "battery_status": "Check battery charge level, health, and status",
             "system_health": "Get detailed reports on all vehicle systems",
             "maintenance_check": "Review maintenance schedule and upcoming service needs",
+        }
+
+    def _format_response(
+        self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
+    ) -> Dict[str, Any]:
+        """Format the response message."""
+        return {
+            "message": message,
+            "data": data or {},
+            "success": success,
         }

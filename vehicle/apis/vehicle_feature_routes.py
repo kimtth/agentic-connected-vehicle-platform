@@ -1,0 +1,157 @@
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
+
+from agents.agent_manager import agent_manager
+from utils.logging_config import get_logger
+from utils.auth import get_current_user
+
+logger = get_logger(__name__)
+router = APIRouter(prefix="/api/vehicles/{vehicle_id}/features", tags=["Vehicle Features"])
+
+
+class LightsControlRequest(BaseModel):
+    light_type: str = "headlights"  # headlights, interior_lights, hazard_lights
+    action: str = "on"  # on, off
+
+
+class ClimateControlRequest(BaseModel):
+    temperature: Optional[int] = 22
+    action: str = "set_temperature"  # heating, cooling, set_temperature
+    auto: bool = True
+
+
+class WindowsControlRequest(BaseModel):
+    action: str = "up"  # up, down
+    windows: str = "all"  # all, driver, passenger
+
+
+@router.post("/lights")
+async def control_lights(
+    vehicle_id: str,
+    request: LightsControlRequest,
+    user=Depends(get_current_user)
+):
+    """Control vehicle lights (headlights, interior, hazard)"""
+    try:
+        context = {
+            "vehicle_id": vehicle_id,
+            "user_id": user.get("sub", "unknown"),
+            "query": f"turn {request.action} {request.light_type}",
+            "session_id": f"lights_{vehicle_id}"
+        }
+        
+        response = await agent_manager.process_request(
+            f"turn {request.action} the {request.light_type}",
+            context
+        )
+        
+        if not response.get("success", False):
+            raise HTTPException(status_code=400, detail=response.get("response", "Failed to control lights"))
+        
+        return {
+            "message": response.get("response"),
+            "data": response.get("data", {}),
+            "plugins_used": response.get("plugins_used", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error controlling lights for vehicle {vehicle_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/climate")
+async def control_climate(
+    vehicle_id: str,
+    request: ClimateControlRequest,
+    user=Depends(get_current_user)
+):
+    """Control vehicle climate settings"""
+    try:
+        context = {
+            "vehicle_id": vehicle_id,
+            "user_id": user.get("sub", "unknown"),
+            "query": f"set climate to {request.temperature} degrees {request.action}",
+            "session_id": f"climate_{vehicle_id}"
+        }
+        
+        response = await agent_manager.process_request(
+            f"set the climate control to {request.temperature} degrees with {request.action}",
+            context
+        )
+        
+        if not response.get("success", False):
+            raise HTTPException(status_code=400, detail=response.get("response", "Failed to control climate"))
+        
+        return {
+            "message": response.get("response"),
+            "data": response.get("data", {}),
+            "plugins_used": response.get("plugins_used", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error controlling climate for vehicle {vehicle_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/windows")
+async def control_windows(
+    vehicle_id: str,
+    request: WindowsControlRequest,
+    user=Depends(get_current_user)
+):
+    """Control vehicle windows"""
+    try:
+        context = {
+            "vehicle_id": vehicle_id,
+            "user_id": user.get("sub", "unknown"),
+            "query": f"roll {request.action} {request.windows} windows",
+            "session_id": f"windows_{vehicle_id}"
+        }
+        
+        response = await agent_manager.process_request(
+            f"roll {request.action} the {request.windows} windows",
+            context
+        )
+        
+        if not response.get("success", False):
+            raise HTTPException(status_code=400, detail=response.get("response", "Failed to control windows"))
+        
+        return {
+            "message": response.get("response"),
+            "data": response.get("data", {}),
+            "plugins_used": response.get("plugins_used", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error controlling windows for vehicle {vehicle_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/status")
+async def get_feature_status(
+    vehicle_id: str,
+    user=Depends(get_current_user)
+):
+    """Get current status of vehicle features"""
+    try:
+        context = {
+            "vehicle_id": vehicle_id,
+            "user_id": user.get("sub", "unknown"),
+            "session_id": f"status_{vehicle_id}"
+        }
+        
+        response = await agent_manager.process_request(
+            "show me the current status of vehicle features",
+            context
+        )
+        
+        return {
+            "message": response.get("response"),
+            "data": response.get("data", {}),
+            "plugins_used": response.get("plugins_used", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting feature status for vehicle {vehicle_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

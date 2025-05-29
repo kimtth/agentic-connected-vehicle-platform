@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Paper, Typography, Box, Button, 
@@ -17,21 +17,21 @@ const CommandLog = ({ vehicleId }) => {
   });
   const [payloadString, setPayloadString] = useState('{}');
 
-  useEffect(() => {
-    loadCommands();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadCommands, 5000);
-    return () => clearInterval(interval);
-  }, [vehicleId]); // Add vehicleId as dependency
-
-  const loadCommands = async () => {
+  const loadCommands = useCallback(async () => {
     try {
       const data = await fetchCommands(vehicleId);
       setCommands(data);
     } catch (error) {
       console.error('Error loading commands:', error);
     }
-  };
+  }, [vehicleId]);
+
+  useEffect(() => {
+    loadCommands();
+    // Poll for updates every 5 seconds
+    const interval = setInterval(loadCommands, 5000);
+    return () => clearInterval(interval);
+  }, [loadCommands, vehicleId]); // Add vehicleId as dependency
 
   const handleOpenDialog = () => {
     setOpenDialog(true);

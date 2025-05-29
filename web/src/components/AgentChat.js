@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Box, Typography, Container, Button, 
+  Box, Typography, Button, 
   TextField, Paper, CircularProgress,
   Select, MenuItem, FormControl, InputLabel,
   List, ListItem, Divider, Tooltip, IconButton
@@ -8,6 +8,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import { api } from '../api/apiClient';
+import { styled } from '@mui/system';
 
 // Define available agents with their details
 const AVAILABLE_AGENTS = [
@@ -55,6 +56,36 @@ const AVAILABLE_AGENTS = [
   }
 ];
 
+// Generate a simple unique session ID using timestamp and a random string
+const generateSessionId = () =>
+  `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+const QuickActionsPanel = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(2),
+  marginBottom: theme.spacing(2),
+  backgroundColor: theme.palette.background.default,
+}));
+
+const QuickActionButton = styled(Button)(({ theme, category }) => {
+  const colors = {
+    features: theme.palette.primary.main,
+    remote: theme.palette.info.main,
+    emergency: theme.palette.error.main,
+    charging: theme.palette.success.main,
+    info: theme.palette.warning.main,
+    diagnostics: theme.palette.secondary.main
+  };
+
+  return {
+    margin: theme.spacing(0.5),
+    backgroundColor: colors[category] || theme.palette.primary.main,
+    color: 'white',
+    '&:hover': {
+      backgroundColor: theme.palette.action.hover,
+    },
+  };
+});
+
 // Modified component to accept vehicleId prop
 const AgentChat = ({ vehicleId }) => {
   const [selectedAgent, setSelectedAgent] = useState(AVAILABLE_AGENTS[0]);
@@ -67,10 +98,10 @@ const AgentChat = ({ vehicleId }) => {
   // Generate a session ID if we don't have one
   useEffect(() => {
     if (!sessionId) {
-      setSessionId(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+      setSessionId(generateSessionId());
     }
   }, [sessionId]);
-  
+    
   // Load chat history from localStorage when selected agent changes
   useEffect(() => {
     if (selectedAgent) {
@@ -147,7 +178,7 @@ const AgentChat = ({ vehicleId }) => {
     setLoading(true);
     
     try {
-      const response = await api.post(`/api/agent/ask`, {
+      const response = await api.post(`/agent/ask`, {
         query: query,
         context: { 
           agentType: selectedAgent.type,
@@ -185,6 +216,11 @@ const AgentChat = ({ vehicleId }) => {
     }
   };
 
+  const handleQuickAction = (message) => {
+    setQuery(message);
+    submitQuery(message);
+  };
+
   // Handle Enter key press
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -192,6 +228,69 @@ const AgentChat = ({ vehicleId }) => {
       submitQuery();
     }
   };
+
+  const quickActions = [
+    {
+      category: 'features',
+      title: 'Vehicle Features',
+      actions: [
+        { text: 'Turn on headlights', message: 'Please turn on the headlights' },
+        { text: 'Set climate to 22°C', message: 'Set the climate control to 22 degrees' },
+        { text: 'Roll up all windows', message: 'Please roll up all the windows' },
+        { text: 'Turn on interior lights', message: 'Turn on the interior lights' }
+      ]
+    },
+    {
+      category: 'remote',
+      title: 'Remote Access',
+      actions: [
+        { text: 'Lock doors', message: 'Lock all the doors' },
+        { text: 'Start engine', message: 'Start the engine remotely' },
+        { text: 'Unlock vehicle', message: 'Unlock the vehicle doors' },
+        { text: 'Locate vehicle', message: 'Help me find my vehicle with horn and lights' }
+      ]
+    },
+    {
+      category: 'emergency',
+      title: 'Emergency & Safety',
+      actions: [
+        { text: 'Emergency SOS', message: 'EMERGENCY SOS - I need immediate help' },
+        { text: 'Report collision', message: 'I need to report a collision' },
+        { text: 'Call emergency services', message: 'I need to call emergency services' },
+        { text: 'Report theft', message: 'I need to report my vehicle as stolen' }
+      ]
+    },
+    {
+      category: 'charging',
+      title: 'Charging & Energy',
+      actions: [
+        { text: 'Find charging stations', message: 'Find nearby charging stations' },
+        { text: 'Check battery status', message: 'What is my current battery level and range?' },
+        { text: 'Start charging', message: 'Start charging the vehicle' },
+        { text: 'Set charging schedule', message: 'Set up a charging schedule for overnight' }
+      ]
+    },
+    {
+      category: 'info',
+      title: 'Information Services',
+      actions: [
+        { text: 'Weather update', message: 'What is the current weather?' },
+        { text: 'Traffic conditions', message: 'Check traffic conditions on my route' },
+        { text: 'Find restaurants', message: 'Find restaurants near my location' },
+        { text: 'Navigation help', message: 'Help me navigate to the nearest gas station' }
+      ]
+    },
+    {
+      category: 'diagnostics',
+      title: 'Diagnostics & Alerts',
+      actions: [
+        { text: 'Vehicle diagnostics', message: 'Run a full vehicle diagnostic check' },
+        { text: 'Check alerts', message: 'Show me any active alerts or warnings' },
+        { text: 'Battery health', message: 'Check my vehicle battery health status' },
+        { text: 'Maintenance status', message: 'When is my next scheduled maintenance?' }
+      ]
+    }
+  ];
 
   return (
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -244,92 +343,129 @@ const AgentChat = ({ vehicleId }) => {
         </Tooltip>
       </Box>
       
-      {/* Chat message display area */}
-      <Paper
-        elevation={3}
-        sx={{
-          mb: 1,
-          flexGrow: 1,
-          overflowY: 'auto',
-          backgroundColor: '#f5f5f5',
-          maxHeight: 'calc(100vh - 350px)'
-        }}
-      >
-        <List>
-          {chatHistory.length > 0 ? (
-            chatHistory.map((message, index) => (
-              <React.Fragment key={index}>
-                <ListItem alignItems="flex-start" sx={{
-                  justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
-                  mb: 2,
-                  px: 2
-                }}>
-                  <Paper
-                    elevation={1}
-                    sx={{
-                      maxWidth: '80%',
-                      p: 2,
-                      backgroundColor: message.type === 'user' ? '#e3f2fd' : 
-                                      message.type === 'error' ? '#ffebee' : '#ffffff',
-                      borderRadius: 2
-                    }}
-                  >
-                    {message.type !== 'user' && (
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
-                        {message.type === 'agent' ? message.agentTitle : 'System Message'}
-                      </Typography>
-                    )}
-                    <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                      {message.text}
-                    </Typography>
-                    {message.data && (
-                      <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                          Additional Data:
+      {/* Main content area with chat on left and quick actions on right */}
+      <Box sx={{ display: 'flex', gap: 2, flexGrow: 1, minHeight: 0 }}>
+        {/* Left side - Chat area */}
+        <Box sx={{ flex: '1 1 60%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {/* Chat message display area */}
+          <Paper
+            elevation={3}
+            sx={{
+              mb: 1,
+              flexGrow: 1,
+              overflowY: 'auto',
+              backgroundColor: '#f5f5f5',
+              minHeight: 400
+            }}
+          >
+            <List>
+              {chatHistory.length > 0 ? (
+                chatHistory.map((message, index) => (
+                  <React.Fragment key={index}>
+                    <ListItem alignItems="flex-start" sx={{
+                      justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
+                      mb: 2,
+                      px: 2
+                    }}>
+                      <Paper
+                        elevation={1}
+                        sx={{
+                          maxWidth: '80%',
+                          p: 2,
+                          backgroundColor: message.type === 'user' ? '#e3f2fd' : 
+                                          message.type === 'error' ? '#ffebee' : '#ffffff',
+                          borderRadius: 2
+                        }}
+                      >
+                        {message.type !== 'user' && (
+                          <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
+                            {message.type === 'agent' ? message.agentTitle : 'System Message'}
+                          </Typography>
+                        )}
+                        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                          {message.text}
                         </Typography>
-                        <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
-                          {JSON.stringify(message.data, null, 2)}
-                        </pre>
-                      </Box>
-                    )}
-                  </Paper>
+                        {message.data && (
+                          <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                              Additional Data:
+                            </Typography>
+                            <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
+                              {JSON.stringify(message.data, null, 2)}
+                            </pre>
+                          </Box>
+                        )}
+                      </Paper>
+                    </ListItem>
+                    {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
+                  </React.Fragment>
+                ))
+              ) : (
+                <ListItem>
+                  <Typography variant="body2" color="text.secondary" align="center" sx={{ width: '100%' }}>
+                    No messages yet. Start a conversation with the {selectedAgent.title} agent.
+                  </Typography>
                 </ListItem>
-                {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
-              </React.Fragment>
-            ))
-          ) : (
-            <ListItem>
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ width: '100%' }}>
-                No messages yet. Start a conversation with the {selectedAgent.title} agent.
-              </Typography>
-            </ListItem>
-          )}
-          <div ref={messagesEndRef} />
-        </List>
-      </Paper>
-      
-      {/* Input area */}
-      <Box sx={{ display: 'flex', gap: 1 }}>
-        <TextField
-          fullWidth
-          multiline
-          maxRows={3}
-          placeholder={selectedAgent.placeholderText}
-          variant="outlined"
-          value={query}
-          onChange={handleQueryChange}
-          onKeyDown={handleKeyPress}
-          disabled={loading}
-        />
-        <Button 
-          variant="contained" 
-          color="primary"
-          onClick={submitQuery}
-          disabled={loading || !query.trim()}
-          sx={{ minWidth: '100px' }}
-        >
-          {loading ? <CircularProgress size={24} /> : 'Send'}
-        </Button>
+              )}
+              <div ref={messagesEndRef} />
+            </List>
+          </Paper>
+          
+          {/* Input area */}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField
+              fullWidth
+              multiline
+              maxRows={3}
+              placeholder={selectedAgent.placeholderText}
+              variant="outlined"
+              value={query}
+              onChange={handleQueryChange}
+              onKeyDown={handleKeyPress}
+              disabled={loading}
+            />
+            <Button 
+              variant="contained" 
+              color="primary"
+              onClick={submitQuery}
+              disabled={loading || !query.trim()}
+              sx={{ minWidth: '100px' }}
+            >
+              {loading ? <CircularProgress size={24} /> : 'Send'}
+            </Button>
+          </Box>
+        </Box>
+
+        {/* Right side - Quick Actions Panel */}
+        <Box sx={{ flex: '0 0 40%', minWidth: 300, maxWidth: 400 }}>
+          <QuickActionsPanel sx={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom>
+              Quick Actions
+            </Typography>
+            <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
+              {quickActions.map((group) => (
+                <Box key={group.category} sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom color="text.secondary">
+                    {group.title}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {group.actions.map((action, index) => (
+                      <QuickActionButton
+                        key={index}
+                        category={group.category}
+                        size="small"
+                        onClick={() => handleQuickAction(action.message)}
+                        disabled={loading}
+                      >
+                        {action.text}
+                      </QuickActionButton>
+                    ))}
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </QuickActionsPanel>
+        </Box>
       </Box>
     </Box>
   );

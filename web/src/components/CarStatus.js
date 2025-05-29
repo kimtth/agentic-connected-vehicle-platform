@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Grid } from '@mui/material';
 import { Battery90, Thermostat, Speed, LocalGasStation } from '@mui/icons-material';
 import { fetchVehicleStatus, subscribeToVehicleStatus } from '../api/status';

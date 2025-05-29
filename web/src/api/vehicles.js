@@ -53,7 +53,14 @@ export const fetchVehicleById = async (vehicleId) => {
       throw new Error(`Failed to fetch vehicle: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const vehicle = await response.json();
+    
+    // Ensure consistent field naming
+    if (vehicle.VehicleId && !vehicle.vehicleId) {
+      vehicle.vehicleId = vehicle.VehicleId;
+    }
+    
+    return vehicle;
   } catch (error) {
     console.error(`Error fetching vehicle ${vehicleId}:`, error);
     throw error;
@@ -67,12 +74,18 @@ export const fetchVehicleById = async (vehicleId) => {
  */
 export const addVehicle = async (vehicleData) => {
   try {
+    // Ensure consistent field naming before sending to backend
+    const payload = {
+      ...vehicleData,
+      vehicleId: vehicleData.vehicleId || vehicleData.VehicleId
+    };
+    
     const response = await fetch(`${API_BASE_URL}/vehicle`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(vehicleData),
+      body: JSON.stringify(payload),
     });
     
     if (!response.ok) {

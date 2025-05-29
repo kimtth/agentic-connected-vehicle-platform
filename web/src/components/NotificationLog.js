@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Paper, Typography, Box,
@@ -10,14 +10,7 @@ const NotificationLog = ({ vehicleId }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadNotifications();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadNotifications, 5000);
-    return () => clearInterval(interval);
-  }, [vehicleId]); // Add vehicleId as a dependency
-
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     try {
       setLoading(true);
       const data = await fetchNotifications(vehicleId);
@@ -27,7 +20,14 @@ const NotificationLog = ({ vehicleId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [vehicleId]);
+
+  useEffect(() => {
+    loadNotifications();
+    // Poll for updates every 5 seconds
+    const interval = setInterval(loadNotifications, 5000);
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
 
   // Helper function to safely get substring
   const safeSubstring = (str, start, end) => {
