@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Box, Typography, Container, Button, 
   TextField, Paper, CircularProgress,
@@ -67,9 +67,21 @@ const AgentChat = ({ vehicleId }) => {
   // Generate a session ID if we don't have one
   useEffect(() => {
     if (!sessionId) {
-      setSessionId(crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15));
+      setSessionId(generateSessionId());
     }
   }, [sessionId]);
+  
+  // Update context when vehicleId changes
+  const getContext = useCallback(() => {
+    const context = { session_id: sessionId };
+    
+    // Add vehicle ID to context if available
+    if (vehicleId) {
+      context.vehicle_id = vehicleId;
+    }
+    
+    return context;
+  }, [sessionId, vehicleId]);
   
   // Load chat history from localStorage when selected agent changes
   useEffect(() => {
@@ -147,7 +159,7 @@ const AgentChat = ({ vehicleId }) => {
     setLoading(true);
     
     try {
-      const response = await api.post(`/api/agent/ask`, {
+      const response = await api.post(`/agent/ask`, {
         query: query,
         context: { 
           agentType: selectedAgent.type,

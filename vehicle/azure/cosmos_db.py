@@ -209,12 +209,12 @@ class CosmosDBClient:
             
     # Vehicle Status operations
     
-    async def get_vehicle_status(self, vehicle_id: str) -> Dict[str, Any]:
+    async def get_vehicle_status(self, vehicleId: str) -> Dict[str, Any]:
         """
         Get the latest status for a vehicle
         
         Args:
-            vehicle_id: ID of the vehicle
+            vehicleId: ID of the vehicle
             
         Returns:
             Dictionary with vehicle status data
@@ -222,7 +222,7 @@ class CosmosDBClient:
         try:
             # Use parameters instead of string interpolation for security
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 1"
-            parameters = [{"name": "@vehicleId", "value": vehicle_id}]
+            parameters = [{"name": "@vehicleId", "value": vehicleId}]
             
             items = self.status_container.query_items(
                 query=query,
@@ -237,25 +237,25 @@ class CosmosDBClient:
                     "OilRemaining": item.get("oilLevel", 0)
                 }
                 
-            logger.warning(f"No status found for vehicle {vehicle_id}.")
+            logger.warning(f"No status found for vehicle {vehicleId}.")
             return {}
         except Exception as e:
             logger.error(f"Error getting vehicle status: {str(e)}")
             raise
     
-    async def subscribe_to_vehicle_status(self, vehicle_id: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def subscribe_to_vehicle_status(self, vehicleId: str) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Subscribe to status updates for a vehicle using Change Feed
         
         Args:
-            vehicle_id: ID of the vehicle
+            vehicleId: ID of the vehicle
             
         Yields:
             Dictionary with updated vehicle status data
         """
         try:
             # Initialize with latest status
-            latest_status = await self.get_vehicle_status(vehicle_id)
+            latest_status = await self.get_vehicle_status(vehicleId)
             yield latest_status
             
             # Use the SDK's recommended pattern for change feed without any problematic params
@@ -264,7 +264,7 @@ class CosmosDBClient:
             # Monitor change feed for updates
             async for changes in change_feed_iterator:
                 for change in changes:
-                    if change.get("vehicleId") == vehicle_id:
+                    if change.get("vehicleId") == vehicleId:
                         updated_status = {
                             "Battery": change.get("batteryLevel", 0),
                             "Temperature": change.get("temperature", 0),
@@ -279,7 +279,7 @@ class CosmosDBClient:
             logger.error(f"Error in vehicle status subscription: {str(e)}")
             return  # stop iteration
 
-    async def update_vehicle_status(self, vehicle_id: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_vehicle_status(self, vehicleId: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
         """Update or create vehicle status record"""
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot update vehicle status.")
@@ -288,7 +288,7 @@ class CosmosDBClient:
         try:
             # Check if status exists
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 1"
-            parameters = [{"name": "@vehicleId", "value": vehicle_id}]
+            parameters = [{"name": "@vehicleId", "value": vehicleId}]
             
             items = self.status_container.query_items(
                 query=query,
@@ -312,17 +312,17 @@ class CosmosDBClient:
                     body=existing_status
                 )
                 
-                logger.info(f"Updated status for vehicle {vehicle_id}")
+                logger.info(f"Updated status for vehicle {vehicleId}")
                 return result
             else:
                 # Create new status
                 status_data["id"] = str(uuid.uuid4())
-                status_data["vehicleId"] = vehicle_id
+                status_data["vehicleId"] = vehicleId
                 status_data["_ts"] = int(datetime.now().timestamp())
                 
                 result = await self.status_container.create_item(body=status_data)
                 
-                logger.info(f"Created status for vehicle {vehicle_id}")
+                logger.info(f"Created status for vehicle {vehicleId}")
                 return result
         except Exception as e:
             logger.error(f"Error updating vehicle status: {str(e)}")
@@ -382,12 +382,12 @@ class CosmosDBClient:
             logger.error(f"Error creating service: {str(e)}")
             return service_data
             
-    async def list_services(self, vehicle_id: str) -> List[Dict[str, Any]]:
+    async def list_services(self, vehicleId: str) -> List[Dict[str, Any]]:
         """List all services for a vehicle"""
         try:
             # Use parameters instead of string interpolation
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId"
-            parameters = [{"name": "@vehicleId", "value": vehicle_id}]
+            parameters = [{"name": "@vehicleId", "value": vehicleId}]
             
             items = self.services_container.query_items(
                 query=query,
@@ -424,7 +424,7 @@ class CosmosDBClient:
             logger.error(f"Error creating command: {str(e)}")
             return command_data
             
-    async def update_command(self, command_id: str, vehicle_id: str, updated_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_command(self, command_id: str, vehicleId: str, updated_data: Dict[str, Any]) -> Dict[str, Any]:
         """Update an existing command"""
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot update command.")

@@ -83,7 +83,10 @@ class AgentManager:
     async def _get_vehicle_data(self, vehicle_id: str) -> Optional[Dict[str, Any]]:
         try:
             vehicles = await cosmos_client.list_vehicles()
-            return next((v for v in vehicles if v.get("VehicleId") == vehicle_id), None)
+            # Handle both vehicleId and VehicleId field names for backward compatibility
+            return next((v for v in vehicles if 
+                        v.get("vehicleId") == vehicle_id or 
+                        v.get("VehicleId") == vehicle_id), None)
         except Exception as e:
             logger.error(f"Error getting vehicle data: {e!s}")
             return None

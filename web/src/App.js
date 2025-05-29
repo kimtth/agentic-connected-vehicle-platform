@@ -127,7 +127,7 @@ function App() {
             <Route path="/vehicle-dashboard" element={
               selectedVehicle ? (
                 <Container maxWidth="lg">
-                  <VehicleDashboard vehicleId={selectedVehicle.VehicleId} />
+                  <VehicleDashboard vehicleId={selectedVehicle.vehicleId || selectedVehicle.VehicleId} />
                 </Container>
               ) : (
                 <Container maxWidth="sm" sx={{ textAlign: 'center' }}>

@@ -139,4 +139,12 @@ class CarSimulator:
         logger.info(f"Updated simulator status for vehicle {vehicle_id}")
         return state
     
+    def add_vehicle(self, vehicle_id: str):
+        """Add a new vehicle to the simulator"""
+        if vehicle_id not in self.vehicle_states:
+            self.vehicle_states[vehicle_id] = self._get_default_status()
+            logger.info(f"Added new vehicle to simulator: {vehicle_id}")
+        else:
+            logger.info(f"Vehicle {vehicle_id} already exists in simulator")
+    
 car_simulator = CarSimulator()
