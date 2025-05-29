@@ -28,6 +28,8 @@ from agents.base.a2a_server_init import start_a2a_server
 log_level = os.getenv("LOG_LEVEL", "INFO")
 configure_logging(log_level)
 
+load_dotenv(override=True)
+
 # Now import Azure modules after configuring logging
 from azure.cosmos_db import cosmos_client
 
@@ -81,10 +83,15 @@ app.include_router(agent_router, prefix="/api", tags=["Agents"])
 
 @app.get("/api/")
 def get_status():
+    # Check if cosmos client has valid configuration
+    cosmos_enabled = bool(cosmos_client.endpoint and (cosmos_client.key or cosmos_client.use_aad_auth))
+    cosmos_connected = cosmos_client.connected if cosmos_enabled else False
+    
     return {
         "status": "Connected Car Platform running",
         "version": "2.0.0",
-        "azure_cosmos_enabled": bool(cosmos_client.endpoint and cosmos_client.key),
+        "azure_cosmos_enabled": cosmos_enabled,
+        "azure_cosmos_connected": cosmos_connected,
     }
 
 
@@ -92,8 +99,10 @@ def get_status():
 @app.post("/api/command")
 async def submit_command(command: Command, background_tasks: BackgroundTasks):
     """Submit a command to a vehicle"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
+    # Try to ensure Cosmos DB is connected, but continue if it fails
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        logger.warning("Cosmos DB not available, command will be processed without persistence")
 
     command_id = str(uuid.uuid4())
     command.commandId = command_id
@@ -115,15 +124,18 @@ async def submit_command(command: Command, background_tasks: BackgroundTasks):
 @app.get("/api/commands")
 async def get_commands(vehicleId: str = None):
     """Get all commands with optional filtering by vehicle ID"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
-    commands = await cosmos_client.list_commands()
-
-    # Filter by vehicleId if provided
-    if vehicleId:
-        commands = [cmd for cmd in commands if cmd.get("vehicleId") == vehicleId]
-
-    return commands
+    # Try to ensure Cosmos DB is connected
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        logger.warning("Cosmos DB not available, returning empty command list")
+        return []
+    
+    try:
+        commands = await cosmos_client.list_commands(vehicleId)
+        return commands
+    except Exception as e:
+        logger.error(f"Error retrieving commands: {str(e)}")
+        return []
 
 
 # Get vehicle status (from simulator or Cosmos DB)
@@ -151,12 +163,43 @@ async def get_vehicle_status(vehicleId: str):
 @app.get("/api/vehicle/{vehicleId}/status/stream")
 async def stream_vehicle_status(vehicleId: str):
     """Stream real-time status updates for a vehicle"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
-
+    # Try to ensure Cosmos DB is connected
+    cosmos_connected = await cosmos_client.ensure_connected()
+    
     async def status_stream_generator():
-        async for status in cosmos_client.subscribe_to_vehicle_status(vehicleId):
-            yield f"data: {json.dumps(status)}\n\n"
+        if not cosmos_connected:
+            # Fallback to simulator if Cosmos DB is not available
+            logger.warning("Cosmos DB not available, using simulator for status streaming")
+            try:
+                # Get status from simulator periodically
+                while True:
+                    simulator_status = car_simulator.get_status(vehicleId)
+                    if simulator_status:
+                        yield f"data: {json.dumps(simulator_status)}\n\n"
+                    await asyncio.sleep(2.0)  # Update every 2 seconds from simulator
+            except Exception as e:
+                logger.error(f"Error in simulator status streaming: {str(e)}")
+                error_status = {"error": "Status streaming unavailable", "vehicleId": vehicleId}
+                yield f"data: {json.dumps(error_status)}\n\n"
+        else:
+            # Use Cosmos DB for status streaming
+            try:
+                async for status in cosmos_client.subscribe_to_vehicle_status(vehicleId):
+                    yield f"data: {json.dumps(status)}\n\n"
+            except Exception as e:
+                logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
+                # Fallback to simulator
+                logger.info("Falling back to simulator for status streaming")
+                try:
+                    while True:
+                        simulator_status = car_simulator.get_status(vehicleId)
+                        if simulator_status:
+                            yield f"data: {json.dumps(simulator_status)}\n\n"
+                        await asyncio.sleep(2.0)
+                except Exception as sim_error:
+                    logger.error(f"Error in simulator fallback: {str(sim_error)}")
+                    error_status = {"error": "Status streaming unavailable", "vehicleId": vehicleId}
+                    yield f"data: {json.dumps(error_status)}\n\n"
 
     return StreamingResponse(status_stream_generator(), media_type="text/event-stream")
 
@@ -173,17 +216,18 @@ def get_simulated_vehicles():
 @app.get("/api/notifications")
 async def get_notifications(vehicleId: str = None):
     """Get all notifications with optional filtering by vehicle ID"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
-    notifications = await cosmos_client.list_notifications()
-
-    # Filter by vehicleId if provided
-    if vehicleId:
-        notifications = [
-            notif for notif in notifications if notif.get("vehicleId") == vehicleId
-        ]
-
-    return notifications
+    # Try to ensure Cosmos DB is connected
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        logger.warning("Cosmos DB not available, returning empty notification list")
+        return []
+    
+    try:
+        notifications = await cosmos_client.list_notifications(vehicleId)
+        return notifications
+    except Exception as e:
+        logger.error(f"Error retrieving notifications: {str(e)}")
+        return []
 
 
 # Add a vehicle profile
@@ -202,9 +246,22 @@ async def add_vehicle(profile: VehicleProfile):
 @app.get("/api/vehicles")
 async def list_vehicles():
     """List all vehicles"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
-    return await cosmos_client.list_vehicles()
+    # Try to ensure Cosmos DB is connected
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        logger.warning("Cosmos DB not available, returning simulated vehicle list")
+        # Return simulated vehicles as fallback
+        simulated_vehicles = [{"vehicleId": vid, "source": "simulator"} for vid in car_simulator.get_all_vehicle_ids()]
+        return simulated_vehicles
+    
+    try:
+        vehicles = await cosmos_client.list_vehicles()
+        return vehicles
+    except Exception as e:
+        logger.error(f"Error retrieving vehicles from Cosmos DB: {str(e)}")
+        # Fallback to simulator
+        simulated_vehicles = [{"vehicleId": vid, "source": "simulator"} for vid in car_simulator.get_all_vehicle_ids()]
+        return simulated_vehicles
 
 
 # Add a service to a vehicle

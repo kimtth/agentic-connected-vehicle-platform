@@ -333,6 +333,7 @@ class AlertsNotificationsPlugin:
             )
 
     def _get_capabilities(self) -> Dict[str, str]:
+        """Get the capabilities of this agent."""
         return {
             "alert_status": "Check the status of all vehicle alerts",
             "speed_alert": "Set alerts for exceeding speed limits",
@@ -340,3 +341,22 @@ class AlertsNotificationsPlugin:
             "battery_alert": "Set alerts for low battery levels",
             "notification_settings": "View and adjust notification settings",
         }
+
+    def _format_response(
+        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Format the response to be sent back to the user.
+
+        Args:
+            message: Response message
+            success: Indicates if the operation was successful
+            data: Additional data to include in the response
+
+        Returns:
+            Formatted response as a dictionary
+        """
+        response = {"message": message, "success": success}
+        if data:
+            response.update(data)
+        return response

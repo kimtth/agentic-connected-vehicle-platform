@@ -1,12 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Grid, Paper } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CommandPanel from './CommandPanel';
 import LogsPanel from './LogsPanel';
 import VehicleMetrics from './VehicleMetrics';
-// Remove simulated API imports
-// import { simulateNotification, simulateCommandResponse } from './simulatorApi';
-// Import real API functions
 import { 
   fetchVehicleStatus, 
   subscribeToVehicleStatus, 
@@ -76,28 +73,6 @@ const CarSimulator = ({ vehicleId }) => {
     ]);
   }, []);
 
-  // Toggle connection
-  const toggleConnection = useCallback(() => {
-    setIsConnected(prevState => {
-      const newState = !prevState;
-      addLog(
-        newState ? 'Connection established with server' : 'Connection lost with server',
-        newState ? 'success' : 'error'
-      );
-      
-      if (newState && vehicleId) {
-        // Connect to real-time updates
-        initializeConnection();
-      } else if (subscription) {
-        // Disconnect from real-time updates
-        subscription.unsubscribe();
-        setSubscription(null);
-      }
-      
-      return newState;
-    });
-  }, [addLog, vehicleId, subscription]);
-
   // Initialize connection and get vehicle status
   const initializeConnection = useCallback(async () => {
     if (!vehicleId) {
@@ -148,6 +123,28 @@ const CarSimulator = ({ vehicleId }) => {
       setIsConnected(false);
     }
   }, [vehicleId, addLog]);
+  
+  // Toggle connection
+  const toggleConnection = useCallback(() => {
+    setIsConnected(prevState => {
+      const newState = !prevState;
+      addLog(
+        newState ? 'Connection established with server' : 'Connection lost with server',
+        newState ? 'success' : 'error'
+      );
+      
+      if (newState && vehicleId) {
+        // Connect to real-time updates
+        initializeConnection();
+      } else if (subscription) {
+        // Disconnect from real-time updates
+        subscription.unsubscribe();
+        setSubscription(null);
+      }
+      
+      return newState;
+    });
+  }, [addLog, vehicleId, subscription, initializeConnection]);
 
   // Handle command sending - using real API
   const handleSendCommand = useCallback(async (command, isCustom = false) => {
@@ -191,7 +188,7 @@ const CarSimulator = ({ vehicleId }) => {
         subscription.unsubscribe();
       }
     };
-  }, [vehicleId, isConnected, initializeConnection]);
+  }, [vehicleId, isConnected, initializeConnection, addLog, subscription]);
 
   return (
     <SimulatorContainer>

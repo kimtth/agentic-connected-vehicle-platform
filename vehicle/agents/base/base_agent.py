@@ -53,13 +53,18 @@ class BaseAgent(ABC):
             instructions: Prompt instructions for the LLM.
             plugin_class: A BasePlugin subclass.
         """
-        service_factory = create_chat_service()
-        self.agent = ChatCompletionAgent(
-            service=service_factory,
-            name=name,
-            instructions=instructions,
-            plugins=[plugin_class()],
-        )
+        try:
+            service_factory = create_chat_service()
+            self.agent = ChatCompletionAgent(
+                service=service_factory,
+                name=name,
+                instructions=instructions,
+                plugins=[plugin_class()],
+            )
+            logger.info(f"Initialized agent: {name}")
+        except Exception as e:
+            logger.error(f"Failed to initialize agent {name}: {e}")
+            raise
 
     @abstractmethod
     async def process(

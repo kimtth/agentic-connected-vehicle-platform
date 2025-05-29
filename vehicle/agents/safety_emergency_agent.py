@@ -353,14 +353,14 @@ class SafetyEmergencyPlugin:
     async def _handle_sos(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle an SOS request."""
+        """Handle an SOS request with immediate emergency response."""
         if not vehicle_id:
             return self._format_response(
-                "Please specify which vehicle needs SOS assistance.", success=False
+                "Please specify which vehicle needs SOS assistance.",
+                success=False,
             )
 
         try:
-            # Ensure Cosmos DB connection
             await cosmos_client.ensure_connected()
 
             # Check if vehicle exists
@@ -374,23 +374,19 @@ class SafetyEmergencyPlugin:
                     f"Vehicle with ID {vehicle_id} not found.", success=False
                 )
 
-            # Get vehicle location for emergency response
+            # Get vehicle location
             vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
-
             location = None
             if vehicle_status and "location" in vehicle_status:
                 location = vehicle_status["location"]
             elif vehicle and "LastLocation" in vehicle:
-                # Convert to lowercase keys for consistency
                 location = {
                     "latitude": vehicle["LastLocation"].get("Latitude", 0),
                     "longitude": vehicle["LastLocation"].get("Longitude", 0),
                 }
 
-            # Create SOS command in Cosmos DB
-            command_id = (
-                f"sos_request_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
+            # Create SOS command
+            command_id = f"sos_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
             command = {
                 "id": str(uuid.uuid4()),
@@ -400,7 +396,7 @@ class SafetyEmergencyPlugin:
                 "parameters": {
                     "location": location,
                     "timestamp": datetime.datetime.now().isoformat(),
-                    "request_type": "manual",
+                    "priority": "critical",
                 },
                 "status": "Sent",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -409,38 +405,36 @@ class SafetyEmergencyPlugin:
 
             await cosmos_client.create_command(command)
 
-            # Create a notification for the SOS request
-            notification_id = str(uuid.uuid4())
+            # Create SOS notification
             notification = {
                 "id": str(uuid.uuid4()),
-                "notificationId": notification_id,
+                "notificationId": str(uuid.uuid4()),
                 "vehicleId": vehicle_id,
                 "type": "sos_request",
-                "message": "SOS request received. Emergency services have been dispatched.",
+                "message": "SOS request activated. Emergency services have been contacted.",
                 "timestamp": datetime.datetime.now().isoformat(),
                 "read": False,
                 "severity": "critical",
-                "source": "Vehicle",
+                "source": "System",
                 "actionRequired": True,
-                "actionUrl": f"/emergency/{notification_id}",
+                "actionUrl": f"/emergency/sos/{command_id}",
             }
 
             await cosmos_client.create_notification(notification)
 
-            # Format notification for response
             formatted_notification = format_notification(
-                notification_type="system_alert",
-                message="SOS request received. Emergency services have been dispatched.",
+                notification_type="emergency_alert",
+                message="SOS request activated. Emergency services have been contacted.",
                 severity="critical",
             )
 
             return self._format_response(
-                "SOS signal received. Emergency services have been dispatched to your location. "
-                "Please stay in the vehicle if it's safe to do so. Help is on the way.",
+                "SOS request has been activated. Emergency services have been contacted and "
+                "are being dispatched to your location. Please stay calm and wait for assistance.",
                 data={
-                    "action": "sos",
+                    "action": "sos_request",
                     "vehicle_id": vehicle_id,
-                    "status": "processed",
+                    "status": "activated",
                     "notification": formatted_notification,
                     "location": location,
                     "command_id": command_id,
@@ -448,10 +442,10 @@ class SafetyEmergencyPlugin:
             )
 
         except Exception as e:
-            logger.error(f"Error handling SOS request: {str(e)}")
+            logger.error(f"Error handling SOS request: {e}")
             return self._format_response(
                 "I encountered an error while processing the SOS request. "
-                "Please call emergency services directly.",
+                "Please call emergency services directly at your local emergency number.",
                 success=False,
             )
 
@@ -510,4 +504,14 @@ class SafetyEmergencyPlugin:
             "collision_alert": "Process collision alerts and notify emergency services",
             "theft_notification": "Report vehicle theft and track vehicle location",
             "sos": "Send an SOS signal for immediate assistance",
+        }
+
+    def _format_response(
+        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Format the response to be returned by the agent."""
+        return {
+            "message": message,
+            "success": success,
+            "data": data or {},
         }

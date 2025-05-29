@@ -67,8 +67,17 @@ async def ask_agent(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                async for chunk in agent_manager.process_request_stream(request.query, context):
-                    yield f"data: {json.dumps(chunk)}\n\n"
+                try:
+                    async for chunk in agent_manager.process_request_stream(request.query, context):
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                except Exception as e:
+                    logger.error(f"Error in streaming response: {str(e)}")
+                    error_chunk = {
+                        "error": "Agent service temporarily unavailable",
+                        "message": "Please try again later",
+                        "session_id": session_id
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
                 
             return StreamingResponse(
                 stream_generator(), 
@@ -76,13 +85,24 @@ async def ask_agent(request: AgentQueryRequest):
             )
         else:
             # Regular non-streaming response
-            response = await agent_manager.process_request(request.query, context)
-            response["session_id"] = session_id
-            return response
+            try:
+                response = await agent_manager.process_request(request.query, context)
+                response["session_id"] = session_id
+                return response
+            except Exception as e:
+                logger.error(f"Error in agent processing: {str(e)}")
+                # Return a fallback response instead of failing
+                return {
+                    "response": "I apologize, but I'm experiencing technical difficulties at the moment. Please try again later or contact support if the issue persists.",
+                    "error": "Agent service temporarily unavailable",
+                    "session_id": session_id,
+                    "plugins_used": [],
+                    "execution_time": 0
+                }
             
     except Exception as e:
         logger.error(f"Error in agent ask: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=503, detail="Agent service temporarily unavailable")
 
 # Direct access to specialized agents
 @router.post("/agent/remote-access")
@@ -295,17 +315,28 @@ async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
             "session_id": session_id
         }
         
-        response = await agent_manager.process_request(
-            "Run a full diagnostic analysis on my vehicle",
-            context
-        )
-        
-        response["session_id"] = session_id
-        return response
+        try:
+            response = await agent_manager.process_request(
+                "Run a full diagnostic analysis on my vehicle",
+                context
+            )
+            response["session_id"] = session_id
+            return response
+        except Exception as e:
+            logger.error(f"Error in vehicle analysis: {str(e)}")
+            # Return a fallback response
+            return {
+                "response": f"Unable to complete vehicle analysis for {request.vehicle_id} at this time. Please try again later.",
+                "error": "Analysis service temporarily unavailable",
+                "session_id": session_id,
+                "vehicle_id": request.vehicle_id,
+                "plugins_used": [],
+                "execution_time": 0
+            }
         
     except Exception as e:
         logger.error(f"Error in vehicle data analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=503, detail="Analysis service temporarily unavailable")
 
 @router.post("/recommend/services")
 async def recommend_services_endpoint(request: ServiceRecommendationRequest):
@@ -318,12 +349,23 @@ async def recommend_services_endpoint(request: ServiceRecommendationRequest):
             "last_service_date": request.last_service_date
         }
         
-        response = await agent_manager.process_request(
-            "Recommend vehicle services based on my vehicle condition",
-            context
-        )
-        
-        return response
+        try:
+            response = await agent_manager.process_request(
+                "Recommend vehicle services based on my vehicle condition",
+                context
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Error in service recommendations: {str(e)}")
+            # Return a fallback response
+            return {
+                "response": f"Unable to generate service recommendations for vehicle {request.vehicle_id} at this time. Please try again later.",
+                "error": "Recommendation service temporarily unavailable",
+                "vehicle_id": request.vehicle_id,
+                "plugins_used": [],
+                "execution_time": 0
+            }
+            
     except Exception as e:
         logger.error(f"Error in service recommendations: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=503, detail="Recommendation service temporarily unavailable")
