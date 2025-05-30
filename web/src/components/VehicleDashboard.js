@@ -13,6 +13,7 @@ import {
 } from '@mui/icons-material';
 import { fetchVehicleStatus, subscribeToVehicleStatus, updateVehicleStatus, updateClimateSettings } from '../api/status';
 import { useNavigate } from 'react-router-dom';
+import { INTERVALS, createVehicleStatusThrottle } from '../config/intervals';
 
 // Custom styled components for the dashboard
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -102,47 +103,96 @@ const VehicleDashboard = ({ vehicleId }) => {
     windows: { driver: 'up', passenger: 'up', rear_left: 'up', rear_right: 'up' },
     climate: { temperature: 22, auto: true, ac: 'off' }
   });
+  const [intervalIds, setIntervalIds] = useState(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
     let subscription = null;
+    let statusCheckInterval = null;
+    let isMounted = true;
     
     const initializeStatus = async () => {
+      if (!isMounted) return;
+      
       try {
         setLoading(true);
-        // Get initial data
-        const initialData = await fetchVehicleStatus(vehicleId);
-        setStatus(initialData);
+        // Get initial data with throttling check
+        if (createVehicleStatusThrottle(vehicleId)) {
+          const initialData = await fetchVehicleStatus(vehicleId);
+          if (isMounted) {
+            setStatus(initialData);
+          }
+        }
         
         // Start the real-time subscription with better error handling
         subscription = await subscribeToVehicleStatus(vehicleId, (newStatus) => {
-          setStatus(newStatus);
-          setError(null);
+          if (isMounted) {
+            setStatus(newStatus);
+            setError(null);
+          }
         }, (err) => {
-          // More robust error handling
-          const errorMessage = err ? (err.message || 'Unknown error') : 'Connection failed';
-          setError('Error with real-time connection: ' + errorMessage);
-          console.error('Subscription error:', err);
+          if (isMounted) {
+            const errorMessage = err ? (err.message || 'Unknown error') : 'Connection failed';
+            setError('Error with real-time connection: ' + errorMessage);
+            console.error('Subscription error:', err);
+          }
         });
+
+        // Add periodic status check with throttling and proper cleanup tracking
+        statusCheckInterval = setInterval(async () => {
+          if (!isMounted) return;
+          
+          try {
+            // Only make the call if throttling allows it
+            if (createVehicleStatusThrottle(vehicleId)) {
+              const currentStatus = await fetchVehicleStatus(vehicleId);
+              if (isMounted) {
+                setStatus(currentStatus);
+              }
+            }
+          } catch (err) {
+            if (isMounted) {
+              console.warn('Periodic status check failed:', err);
+            }
+          }
+        }, INTERVALS.VEHICLE_DASHBOARD_CHECK);
+        
+        // Track the interval for cleanup
+        setIntervalIds(prev => new Set(prev).add(statusCheckInterval));
+
       } catch (err) {
-        // Also improve error handling here
-        const errorMessage = err ? (err.message || 'Unknown error') : 'Unknown error';
-        setError('Error loading vehicle status: ' + errorMessage);
-        console.error('Vehicle status error:', err);
+        if (isMounted) {
+          const errorMessage = err ? (err.message || 'Unknown error') : 'Unknown error';
+          setError('Error loading vehicle status: ' + errorMessage);
+          console.error('Vehicle status error:', err);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    initializeStatus();
+    if (vehicleId) {
+      initializeStatus();
+    }
     
-    // Cleanup subscription when component unmounts
+    // Enhanced cleanup function
     return () => {
+      isMounted = false;
+      
       if (subscription && typeof subscription.unsubscribe === 'function') {
         subscription.unsubscribe();
       }
+      if (statusCheckInterval) {
+        clearInterval(statusCheckInterval);
+      }
+      
+      // Clear all tracked intervals
+      intervalIds.forEach(id => clearInterval(id));
+      setIntervalIds(new Set());
     };
-  }, [vehicleId]);
+  }, [vehicleId]); // Remove other dependencies to prevent recreating intervals
 
   // Handler for climate control updates
   const handleClimateUpdate = async () => {
@@ -165,8 +215,8 @@ const VehicleDashboard = ({ vehicleId }) => {
       
       setStatusMessage('Climate settings updated successfully!');
       
-      // Clear message after a few seconds
-      setTimeout(() => setStatusMessage(''), 3000);
+      // Clear message after configured delay
+      setTimeout(() => setStatusMessage(''), INTERVALS.STATUS_MESSAGE_CLEAR);
     } catch (err) {
       console.error('Failed to update climate settings:', err);
       setStatusMessage('Failed to update climate settings. Please try again.');
@@ -196,8 +246,8 @@ const VehicleDashboard = ({ vehicleId }) => {
       
       setStatusMessage('Media settings updated successfully!');
       
-      // Clear message after a few seconds
-      setTimeout(() => setStatusMessage(''), 3000);
+      // Clear message after configured delay
+      setTimeout(() => setStatusMessage(''), INTERVALS.STATUS_MESSAGE_CLEAR);
     } catch (err) {
       console.error('Failed to update media settings:', err);
       setStatusMessage('Failed to update media settings. Please try again.');

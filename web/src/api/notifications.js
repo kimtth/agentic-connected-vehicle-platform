@@ -42,9 +42,26 @@ export const markNotificationRead = async (notificationId) => {
  */
 export const deleteNotification = async (notificationId) => {
   try {
-    await api.delete(`/notifications/${encodeURIComponent(notificationId)}`);
+    await api.delete(
+      `/notifications/${encodeURIComponent(notificationId)}`
+    );
   } catch (error) {
     console.error('Error deleting notification:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new notification
+ * @param {Object} notificationData
+ * @returns {Promise<Object>} Created notification
+ */
+export const createNotification = async (notificationData) => {
+  try {
+    const response = await api.post('/notifications', notificationData);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating notification:', error);
     throw error;
   }
 };

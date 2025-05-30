@@ -1,13 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
-from utils.auth import get_current_user
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/vehicles/{vehicle_id}/remote", tags=["Remote Access"])
+router = APIRouter(prefix="/api/vehicles/{vehicle_id}/remote-access", tags=["Remote Access"])
 
 
 class DoorControlRequest(BaseModel):
@@ -21,14 +19,12 @@ class EngineControlRequest(BaseModel):
 @router.post("/doors")
 async def control_doors(
     vehicle_id: str,
-    request: DoorControlRequest,
-    user=Depends(get_current_user)
+    request: DoorControlRequest
 ):
     """Lock or unlock vehicle doors remotely"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"{request.action} doors",
             "session_id": f"doors_{vehicle_id}"
         }
@@ -55,14 +51,12 @@ async def control_doors(
 @router.post("/engine")
 async def control_engine(
     vehicle_id: str,
-    request: EngineControlRequest,
-    user=Depends(get_current_user)
+    request: EngineControlRequest
 ):
     """Start or stop vehicle engine remotely"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"{request.action} engine",
             "session_id": f"engine_{vehicle_id}"
         }
@@ -88,14 +82,12 @@ async def control_engine(
 
 @router.post("/locate")
 async def locate_vehicle(
-    vehicle_id: str,
-    user=Depends(get_current_user)
+    vehicle_id: str
 ):
     """Activate horn and lights to locate vehicle"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": "locate vehicle",
             "session_id": f"locate_{vehicle_id}"
         }

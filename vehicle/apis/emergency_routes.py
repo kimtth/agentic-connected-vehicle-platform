@@ -1,10 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
-from utils.auth import get_current_user
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/vehicles/{vehicle_id}/emergency", tags=["Emergency & Safety"])
@@ -27,14 +26,12 @@ class TheftReportRequest(BaseModel):
 @router.post("/call")
 async def emergency_call(
     vehicle_id: str,
-    request: EmergencyCallRequest,
-    user=Depends(get_current_user)
+    request: EmergencyCallRequest
 ):
     """Initiate an emergency call"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"emergency call {request.emergency_type}",
             "session_id": f"emergency_{vehicle_id}",
             "emergency_type": request.emergency_type
@@ -62,14 +59,12 @@ async def emergency_call(
 @router.post("/collision")
 async def report_collision(
     vehicle_id: str,
-    request: CollisionReportRequest,
-    user=Depends(get_current_user)
+    request: CollisionReportRequest
 ):
     """Report a collision incident"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"collision report {request.severity}",
             "session_id": f"collision_{vehicle_id}",
             "collision_severity": request.severity,
@@ -98,14 +93,12 @@ async def report_collision(
 @router.post("/theft")
 async def report_theft(
     vehicle_id: str,
-    request: TheftReportRequest,
-    user=Depends(get_current_user)
+    request: TheftReportRequest
 ):
     """Report vehicle theft"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"theft report",
             "session_id": f"theft_{vehicle_id}",
             "theft_description": request.description,
@@ -133,14 +126,12 @@ async def report_theft(
 
 @router.post("/sos")
 async def activate_sos(
-    vehicle_id: str,
-    user=Depends(get_current_user)
+    vehicle_id: str
 ):
     """Activate SOS emergency response"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": "SOS emergency",
             "session_id": f"sos_{vehicle_id}"
         }

@@ -6,6 +6,7 @@ import {
   TextField, MenuItem, Select, InputLabel, FormControl
 } from '@mui/material';
 import { getCommandHistory as fetchCommands, sendVehicleCommand } from '../api/commands';
+import { INTERVALS } from '../config/intervals';
 
 const CommandLog = ({ vehicleId }) => {
   const [commands, setCommands] = useState([]);
@@ -28,8 +29,8 @@ const CommandLog = ({ vehicleId }) => {
 
   useEffect(() => {
     loadCommands();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadCommands, 5000);
+    // Poll for updates using centralized interval configuration
+    const interval = setInterval(loadCommands, INTERVALS.COMMANDS_POLLING);
     return () => clearInterval(interval);
   }, [loadCommands, vehicleId]); // Add vehicleId as dependency
 

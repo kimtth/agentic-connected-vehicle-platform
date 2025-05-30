@@ -309,15 +309,15 @@ class AlertsNotificationsPlugin:
 
         # Handle speed alert requests
         elif "speed" in query_lower and "alert" in query_lower:
-            return await self._handle_speed_alert(vehicle_id, query, context)
+            return await self._handle_speed_alert(vehicle_id, context)
 
         # Handle curfew alert requests
         elif "curfew" in query_lower:
-            return await self._handle_curfew_alert(vehicle_id, query, context)
+            return await self._handle_curfew_alert(vehicle_id, context)
 
         # Handle battery alert requests
         elif "battery" in query_lower and "alert" in query_lower:
-            return await self._handle_battery_alert(vehicle_id, query, context)
+            return await self._handle_battery_alert(vehicle_id, context)
 
         # Handle notification settings requests
         elif "notification" in query_lower and "setting" in query_lower:

@@ -1,5 +1,6 @@
 import { api } from './apiClient';
 import { API_BASE_URL } from './config';
+import { INTERVALS } from '../config/intervals';
 
 /**
  * Fetch the current vehicle status
@@ -9,8 +10,8 @@ import { API_BASE_URL } from './config';
  */
 export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
   try {
-    // Use the API endpoint which will try Cosmos DB first, then simulator as fallback
-    const response = await api.get(`/vehicle/${encodeURIComponent(vehicleId)}/status`);
+    // Use the correct API endpoint that matches backend - use plural "vehicles" for status
+    const response = await api.get(`/vehicles/${encodeURIComponent(vehicleId)}/status`);
     if (response.data) {
       return response.data;
     } else {
@@ -23,154 +24,198 @@ export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
       
       // If we have retries left, try again after a short delay
       if (retries > 0) {
-        console.log(`Retrying fetchVehicleStatus (${retries} attempts left)...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        console.log(`Retrying vehicle status fetch for ${vehicleId}. Retries left: ${retries - 1}`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
         return fetchVehicleStatus(vehicleId, retries - 1);
       }
-      
-      throw new Error(`Status API endpoint not available (404) for vehicle: ${vehicleId}. Please check if the API server is running and the endpoint is implemented.`);
     }
     
-    console.error("Error fetching vehicle status:", error);
+    // Handle 405 Method Not Allowed specifically
+    if (error.response && error.response.status === 405) {
+      console.error(`Method not allowed for vehicle status endpoint. This suggests the backend endpoint exists but doesn't support GET requests for vehicle ID: ${vehicleId}`);
+    }
+    
+    console.error(`Error fetching vehicle status for ${vehicleId}:`, error);
     throw error;
   }
 };
 
 /**
- * Subscribe to real-time updates for a vehicle using SSE
+ * Stream vehicle status updates
  * @param {string} vehicleId 
- * @param {Function} onUpdate Callback for status updates
- * @param {Function} onError Callback for errors
- * @returns {Object} Subscription object with unsubscribe method
+ * @param {function} onStatusUpdate Callback for status updates
+ * @param {function} onError Callback for errors
+ * @returns {function} Cleanup function to stop streaming
  */
-export const subscribeToVehicleStatus = async (vehicleId, onUpdate, onError) => {
-  try {
-    // First get initial status
-    const initialStatus = await fetchVehicleStatus(vehicleId);
-    onUpdate(initialStatus);
-    
-    // Check if EventSource is available (for SSE)
-    if (typeof EventSource !== 'undefined') {
-      // Try to use server-sent events for real-time updates
-      const eventSource = new EventSource(
-        `${API_BASE_URL}/vehicle/${encodeURIComponent(vehicleId)}/status/stream`
-      );
-      
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          onUpdate(data);
-        } catch (err) {
-          console.error("Error parsing SSE data:", err);
-        }
-      };
-      
-      eventSource.onerror = (error) => {
-        console.error("SSE error:", error);
-        if (onError) onError(error);
-        
-        // Fallback to polling if SSE fails
-        eventSource.close();
-        return setupPolling(vehicleId, onUpdate, onError);
-      };
-      
-      return {
-        unsubscribe: () => {
-          eventSource.close();
-        }
-      };
-    } else {
-      console.warn("EventSource not supported in this browser. Falling back to polling.");
-      return setupPolling(vehicleId, onUpdate, onError);
-    }
-  } catch (error) {
-    console.error("Error setting up status subscription:", error);
-    if (onError) {
+export const streamVehicleStatus = (vehicleId, onStatusUpdate, onError) => {
+  const eventSource = new EventSource(`${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`);
+  
+  eventSource.onmessage = (event) => {
+    try {
+      const statusData = JSON.parse(event.data);
+      onStatusUpdate(statusData);
+    } catch (error) {
+      console.error('Error parsing status update:', error);
       onError(error);
     }
-    
-    // Fallback to polling
-    return setupPolling(vehicleId, onUpdate, onError);
-  }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('Error in status stream:', error);
+    onError(error);
+  };
+  
+  // Return cleanup function
+  return () => {
+    eventSource.close();
+  };
 };
 
 /**
- * Helper function to set up polling as a fallback
- */
-function setupPolling(vehicleId, onUpdate, onError) {
-  const interval = setInterval(async () => {
-    try {
-      const status = await fetchVehicleStatus(vehicleId);
-      onUpdate(status);
-    } catch (err) {
-      if (onError) onError(err);
-    }
-  }, 5000); // Poll every 5 seconds
-  
-  return {
-    unsubscribe: () => clearInterval(interval)
-  };
-}
-
-/**
- * Update the complete vehicle status
+ * Update vehicle status
  * @param {string} vehicleId 
- * @param {Object} statusData Complete status object
+ * @param {Object} statusData 
  * @returns {Promise<Object>} Updated status
  */
 export const updateVehicleStatus = async (vehicleId, statusData) => {
   try {
-    // Make sure vehicleId is included in the data
-    const data = {
-      ...statusData,
-      vehicleId: vehicleId
-    };
-    
-    const response = await api.put(
-      `/vehicle/${encodeURIComponent(vehicleId)}/status`,
-      { ...statusData, vehicleId }
-    );
+    // Backend uses singular "vehicle" for status updates
+    const response = await api.put(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusData);
     return response.data;
   } catch (error) {
-    console.error(`Error updating vehicle status: ${error}`);
+    console.error(`Error updating vehicle status for ${vehicleId}:`, error);
     throw error;
   }
 };
 
 /**
- * Update only specific fields of vehicle status (partial update)
+ * Partially update vehicle status
  * @param {string} vehicleId 
- * @param {Object} partialStatus Partial status object with only the fields to update
+ * @param {Object} statusUpdates 
  * @returns {Promise<Object>} Updated status
  */
-export const updatePartialStatus = async (vehicleId, partialStatus) => {
+export const patchVehicleStatus = async (vehicleId, statusUpdates) => {
   try {
-    const response = await api.patch(
-      `/vehicle/${encodeURIComponent(vehicleId)}/status`,
-      partialStatus
-    );
+    // Backend uses singular "vehicle" for status patches
+    const response = await api.patch(`/vehicle/${encodeURIComponent(vehicleId)}/status`, statusUpdates);
     return response.data;
   } catch (error) {
-    console.error(`Error updating vehicle status fields: ${error}`);
+    console.error(`Error patching vehicle status for ${vehicleId}:`, error);
     throw error;
   }
 };
 
 /**
- * Update climate settings
+ * Subscribe to vehicle status updates (wrapper for streamVehicleStatus)
  * @param {string} vehicleId 
- * @param {Object} climateSettings Climate control settings
+ * @param {function} onStatusUpdate Callback for status updates
+ * @param {function} onError Callback for errors
+ * @returns {function} Cleanup function to stop streaming
+ */
+export const subscribeToVehicleStatus = (vehicleId, onStatusUpdate, onError) => {
+  return streamVehicleStatus(vehicleId, onStatusUpdate, onError);
+};
+
+/**
+ * Update climate settings for a vehicle
+ * @param {string} vehicleId 
+ * @param {Object} climateSettings - Climate settings to update
  * @returns {Promise<Object>} Updated status
  */
 export const updateClimateSettings = async (vehicleId, climateSettings) => {
   try {
-    const partialStatus = {
-      climateSettings: climateSettings
+    // Create a status update that includes climate settings
+    const statusUpdate = {
+      climateSettings: {
+        temperature: climateSettings.temperature || 22,
+        fanSpeed: climateSettings.fanSpeed || 0,
+        mode: climateSettings.mode || 'off',
+        ...climateSettings
+      },
+      timestamp: new Date().toISOString()
     };
-    
-    return await updatePartialStatus(vehicleId, partialStatus);
+
+    // Use the patch endpoint to update only specific fields
+    const response = await patchVehicleStatus(vehicleId, statusUpdate);
+    return response;
   } catch (error) {
-    console.error(`Error updating climate settings: ${error}`);
+    console.error(`Error updating climate settings for ${vehicleId}:`, error);
     throw error;
+  }
+};
+
+/**
+ * Setup polling for vehicle status (fallback when streaming is not available)
+ * @param {string} vehicleId 
+ * @param {function} onStatusUpdate Callback for status updates
+ * @param {function} onError Callback for errors
+ * @param {number} interval Polling interval in milliseconds
+ * @returns {function} Cleanup function to stop polling
+ */
+export const setupPolling = (vehicleId, onStatusUpdate, onError, interval = INTERVALS.REALTIME_POLLING) => {
+  let isActive = true;
+  
+  const poll = async () => {
+    if (!isActive) return;
+    
+    try {
+      const status = await fetchVehicleStatus(vehicleId);
+      if (isActive) {
+        onStatusUpdate(status);
+      }
+    } catch (error) {
+      if (isActive) {
+        console.error('Polling error:', error);
+        onError(error);
+      }
+    }
+    
+    if (isActive) {
+      setTimeout(poll, interval);
+    }
+  };
+  
+  // Start polling
+  poll();
+  
+  // Return cleanup function
+  return () => {
+    isActive = false;
+  };
+};
+
+/**
+ * Get simulated vehicle status (for testing/simulator)
+ * @param {string} vehicleId 
+ * @returns {Promise<Object>} Vehicle status
+ */
+export const getSimulatedStatus = async (vehicleId) => {
+  try {
+    const response = await api.get(`/simulator/vehicles/${encodeURIComponent(vehicleId)}/status`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching simulated status for ${vehicleId}:`, error);
+    // Return fallback status if simulator is not available
+    return {
+      Battery: 85,
+      Temperature: 22,
+      Speed: 0,
+      OilRemaining: 80,
+      engineStatus: "off",
+      doorStatus: {
+        frontLeft: false,
+        frontRight: false,
+        rearLeft: false,
+        rearRight: false
+      },
+      climateSettings: {
+        temperature: 22,
+        fanSpeed: 0,
+        mode: "off"
+      },
+      timestamp: new Date().toISOString(),
+      vehicleId: vehicleId,
+      source: "fallback"
+    };
   }
 };

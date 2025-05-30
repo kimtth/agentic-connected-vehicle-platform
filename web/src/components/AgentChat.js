@@ -178,15 +178,29 @@ const AgentChat = ({ vehicleId }) => {
     setLoading(true);
     
     try {
-      const response = await api.post(`/agent/ask`, {
+      // Prepare the request payload with proper structure
+      const requestPayload = {
         query: query,
         context: { 
-          agentType: selectedAgent.type,
-          vehicleId: vehicleId // Include vehicleId in all requests
+          agentType: selectedAgent.type, // Frontend agent type
+          vehicleId: vehicleId, // Include vehicleId in all requests
+          timestamp: new Date().toISOString()
         },
         session_id: sessionId,
         stream: false
-      });
+      };
+
+      // Log the API call in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚀 Sending agent request:', requestPayload);
+      }
+      
+      const response = await api.post(`/agent/ask`, requestPayload);
+      
+      // Log the response in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Agent response received:', response.data);
+      }
       
       // Add agent response to chat history
       const agentMessage = {
@@ -195,6 +209,9 @@ const AgentChat = ({ vehicleId }) => {
         agentType: selectedAgent.type,
         agentTitle: selectedAgent.title,
         data: response.data.data,
+        pluginsUsed: response.data.plugins_used || [],
+        executionTime: response.data.execution_time || 0,
+        success: response.data.success !== false,
         timestamp: new Date().toISOString()
       };
       
@@ -202,14 +219,64 @@ const AgentChat = ({ vehicleId }) => {
     } catch (error) {
       console.error(`Error querying ${selectedAgent.type}:`, error);
       
+      // More detailed error handling
+      let errorMessage = "Sorry, there was an error processing your request.";
+      let errorDetails = null;
+      
+      if (error.response) {
+        // Server responded with error status
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        switch (status) {
+          case 503:
+            errorMessage = "The agent service is temporarily unavailable. Please try again in a moment.";
+            break;
+          case 404:
+            errorMessage = "The requested agent endpoint was not found. Please check your configuration.";
+            break;
+          case 500:
+            errorMessage = "Internal server error. Please try again later.";
+            break;
+          default:
+            errorMessage = `Server error (${status}): ${data?.detail || data?.message || error.response.statusText}`;
+        }
+        
+        errorDetails = {
+          status: status,
+          endpoint: '/agent/ask',
+          agentType: selectedAgent.type,
+          timestamp: new Date().toISOString()
+        };
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = "Unable to connect to the server. Please check your internet connection and try again.";
+        errorDetails = {
+          type: 'network_error',
+          endpoint: '/agent/ask',
+          agentType: selectedAgent.type,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        // Something else happened
+        errorMessage = `Request error: ${error.message}`;
+        errorDetails = {
+          type: 'client_error',
+          message: error.message,
+          agentType: selectedAgent.type,
+          timestamp: new Date().toISOString()
+        };
+      }
+      
       // Add error response to chat history
-      const errorMessage = {
+      const errorResponseMessage = {
         type: 'error',
-        text: "Sorry, there was an error processing your request.",
+        text: errorMessage,
+        errorDetails: errorDetails,
         timestamp: new Date().toISOString()
       };
       
-      setChatHistory(prev => [...prev, errorMessage]);
+      setChatHistory(prev => [...prev, errorResponseMessage]);
     } finally {
       setLoading(false);
       setQuery(''); // Clear input field after submission
@@ -293,7 +360,14 @@ const AgentChat = ({ vehicleId }) => {
   ];
 
   return (
-    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ 
+      width: '100%', 
+      height: 'calc(100vh - 120px)', 
+      display: 'flex', 
+      flexDirection: 'column',
+      maxWidth: '1800px',
+      mx: 'auto'
+    }}>
       <Typography variant="h5" component="h1" gutterBottom>
         Connected Vehicle Agent Chat
         {vehicleId ? ` - Vehicle: ${vehicleId}` : ' - No vehicle selected'}
@@ -333,29 +407,31 @@ const AgentChat = ({ vehicleId }) => {
           {selectedAgent.description}
         </Typography>
         <Tooltip title="Use sample query">
-          <IconButton 
-            color="primary" 
-            onClick={useSampleQuery}
-            disabled={loading}
-          >
-            <LightbulbIcon />
-          </IconButton>
+          <span>
+            <IconButton 
+              color="primary" 
+              onClick={useSampleQuery}
+              disabled={loading}
+            >
+              <LightbulbIcon />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
       
-      {/* Main content area with chat on left and quick actions on right */}
-      <Box sx={{ display: 'flex', gap: 2, flexGrow: 1, minHeight: 0 }}>
+      {/* Main content area with chat on left and quick actions on right - Optimized for large screens */}
+      <Box sx={{ display: 'flex', gap: 3, flexGrow: 1, minHeight: 0 }}>
         {/* Left side - Chat area */}
-        <Box sx={{ flex: '1 1 60%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Box sx={{ flex: '1 1 65%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {/* Chat message display area */}
           <Paper
             elevation={3}
             sx={{
-              mb: 1,
+              mb: 2,
               flexGrow: 1,
               overflowY: 'auto',
               backgroundColor: '#f5f5f5',
-              minHeight: 400
+              minHeight: { xs: 400, lg: 600, xl: 700 }
             }}
           >
             <List>
@@ -412,43 +488,58 @@ const AgentChat = ({ vehicleId }) => {
           </Paper>
           
           {/* Input area */}
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
               fullWidth
               multiline
-              maxRows={3}
+              maxRows={4}
               placeholder={selectedAgent.placeholderText}
               variant="outlined"
               value={query}
               onChange={handleQueryChange}
               onKeyDown={handleKeyPress}
               disabled={loading}
+              sx={{ 
+                '& .MuiOutlinedInput-root': {
+                  fontSize: { xs: '14px', lg: '16px' }
+                }
+              }}
             />
             <Button 
               variant="contained" 
               color="primary"
               onClick={submitQuery}
               disabled={loading || !query.trim()}
-              sx={{ minWidth: '100px' }}
+              sx={{ minWidth: '120px', height: 'fit-content' }}
             >
               {loading ? <CircularProgress size={24} /> : 'Send'}
             </Button>
           </Box>
         </Box>
 
-        {/* Right side - Quick Actions Panel */}
-        <Box sx={{ flex: '0 0 40%', minWidth: 300, maxWidth: 400 }}>
-          <QuickActionsPanel sx={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* Right side - Quick Actions Panel - Optimized for large screens */}
+        <Box sx={{ flex: '0 0 35%', minWidth: { xs: 300, lg: 400, xl: 500 } }}>
+          <QuickActionsPanel sx={{ 
+            height: '100%', 
+            overflow: 'hidden', 
+            display: 'flex', 
+            flexDirection: 'column',
+            p: { xs: 2, lg: 3 }
+          }}>
             <Typography variant="h6" gutterBottom>
               Quick Actions
             </Typography>
             <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
               {quickActions.map((group) => (
-                <Box key={group.category} sx={{ mb: 2 }}>
+                <Box key={group.category} sx={{ mb: 3 }}>
                   <Typography variant="subtitle2" gutterBottom color="text.secondary">
                     {group.title}
                   </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr', xl: '1fr 1fr 1fr' },
+                    gap: 1 
+                  }}>
                     {group.actions.map((action, index) => (
                       <QuickActionButton
                         key={index}
@@ -456,6 +547,10 @@ const AgentChat = ({ vehicleId }) => {
                         size="small"
                         onClick={() => handleQuickAction(action.message)}
                         disabled={loading}
+                        sx={{ 
+                          fontSize: { xs: '0.75rem', lg: '0.8rem' },
+                          p: { xs: '6px 8px', lg: '8px 12px' }
+                        }}
                       >
                         {action.text}
                       </QuickActionButton>

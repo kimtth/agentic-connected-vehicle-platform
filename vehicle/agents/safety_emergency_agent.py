@@ -488,6 +488,18 @@ class SafetyEmergencyPlugin:
         elif "sos" in query_lower or "help" in query_lower:
             return await self._handle_sos(vehicle_id, context)
 
+        # Handle speed alert requests
+        elif "speed" in query_lower and "alert" in query_lower:
+            return await self._handle_speed_alert(vehicle_id, context)
+
+        # Handle curfew alert requests
+        elif "curfew" in query_lower:
+            return await self._handle_curfew_alert(vehicle_id, context)
+
+        # Handle battery alert requests
+        elif "battery" in query_lower and "alert" in query_lower:
+            return await self._handle_battery_alert(vehicle_id, context)
+
         # Handle general information requests
         else:
             return self._format_response(

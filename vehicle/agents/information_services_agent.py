@@ -43,178 +43,125 @@ class InformationServicesAgent:
 class InformationServicesPlugin(BasePlugin):
     """Plugin for information services operations."""
 
-    @kernel_function(description="Handle weather information requests")
+    @kernel_function(
+        description="Get weather information for the vehicle's location",
+        name="get_weather",
+    )
     async def _handle_weather(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Handle weather information requests."""
-        try:
-            location = await self._get_vehicle_location(vehicle_id)
+        self, 
+        location: Optional[str] = None,
+        vehicle_id: Optional[str] = None
+    ) -> str:
+        """Get weather information for a specific location or vehicle."""
+        # Extract vehicle_id from context if not provided directly
+        if not vehicle_id:
+            # Try to get vehicle_id from kernel context
+            try:
+                from semantic_kernel.kernel import Kernel
+                kernel = Kernel.get_current()
+                if kernel and hasattr(kernel, 'arguments'):
+                    vehicle_id = kernel.arguments.get('vehicle_id')
+            except:
+                pass
+        
+        logger.info(f"Getting weather information for location: {location}, vehicle: {vehicle_id}")
+        
+        # If still no vehicle_id, use a default location
+        if not location and not vehicle_id:
+            location = "Toronto, ON"
             
-            # Simulated weather data (in production, would call weather API)
-            weather_data = {
-                "temperature": 22,
-                "condition": "Partly Cloudy",
-                "humidity": 65,
-                "wind_speed": 12,
-                "forecast": ["Sunny", "Cloudy", "Rain"],
-                "location": location or {"latitude": 0, "longitude": 0},
-            }
-
-            return self._format_response(
-                f"Current weather: {weather_data['condition']}, {weather_data['temperature']}°C. "
-                f"Humidity: {weather_data['humidity']}%, Wind: {weather_data['wind_speed']} km/h. "
-                f"Forecast: {', '.join(weather_data['forecast'])}",
-                data={"weather": weather_data, "vehicle_id": vehicle_id},
-            )
-
+        try:
+            return await weather_service.get_weather(location or "current location")
         except Exception as e:
-            logger.error(f"Error getting weather information: {e}")
-            return self._format_response(
-                "I'm having trouble getting weather information right now. Please try again later.",
-                success=False,
-            )
+            logger.error(f"Error getting weather: {e}")
+            return f"Weather information is currently unavailable. Error: {str(e)}"
 
-    @kernel_function(description="Handle traffic information requests")
+    @kernel_function(
+        description="Get traffic information for the vehicle's route",
+        name="get_traffic",
+    )
     async def _handle_traffic(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Handle traffic information requests."""
+        self, 
+        route: Optional[str] = None,
+        vehicle_id: Optional[str] = None
+    ) -> str:
+        """Get traffic information for a specific route or vehicle location."""
+        # Extract vehicle_id from context if not provided directly
+        if not vehicle_id:
+            try:
+                from semantic_kernel.kernel import Kernel
+                kernel = Kernel.get_current()
+                if kernel and hasattr(kernel, 'arguments'):
+                    vehicle_id = kernel.arguments.get('vehicle_id')
+            except:
+                pass
+                
+        logger.info(f"Getting traffic information for route: {route}, vehicle: {vehicle_id}")
+        
         try:
-            location = await self._get_vehicle_location(vehicle_id)
-            
-            # Simulated traffic data
-            traffic_data = {
-                "overall_condition": "Moderate",
-                "incidents": [
-                    {"type": "Construction", "location": "Highway 401", "delay": "15 min"},
-                    {"type": "Accident", "location": "Main St", "delay": "5 min"},
-                ],
-                "suggested_routes": ["Route A (fastest)", "Route B (scenic)"],
-                "location": location or {"latitude": 0, "longitude": 0},
-            }
-
-            incidents_text = "\n".join([
-                f"• {incident['type']} on {incident['location']} - {incident['delay']} delay"
-                for incident in traffic_data['incidents']
-            ])
-
-            return self._format_response(
-                f"Traffic condition: {traffic_data['overall_condition']}\n\n"
-                f"Current incidents:\n{incidents_text}\n\n"
-                f"Suggested routes: {', '.join(traffic_data['suggested_routes'])}",
-                data={"traffic": traffic_data, "vehicle_id": vehicle_id},
-            )
-
+            return await traffic_service.get_traffic_info(route or "current route")
         except Exception as e:
             logger.error(f"Error getting traffic information: {e}")
-            return self._format_response(
-                "I'm having trouble getting traffic information right now. Please try again later.",
-                success=False,
-            )
+            return f"Traffic information is currently unavailable. Error: {str(e)}"
 
-    @kernel_function(description="Handle points of interest requests")
+    @kernel_function(
+        description="Find points of interest near the vehicle's location",
+        name="find_pois",
+    )
     async def _handle_pois(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Handle points of interest requests."""
-        try:
-            location = await self._get_vehicle_location(vehicle_id)
-            
-            # Simulated POI data
-            pois = [
-                {"name": "Downtown Mall", "type": "Shopping", "distance": "2.5 km"},
-                {"name": "City Hospital", "type": "Medical", "distance": "1.8 km"},
-                {"name": "Riverside Park", "type": "Recreation", "distance": "3.2 km"},
-                {"name": "Gas Station", "type": "Fuel", "distance": "0.8 km"},
-            ]
-
-            pois_text = "\n".join([
-                f"• {poi['name']} ({poi['type']}) - {poi['distance']} away"
-                for poi in pois
-            ])
-
-            return self._format_response(
-                f"Nearby points of interest:\n\n{pois_text}",
-                data={"pois": pois, "vehicle_id": vehicle_id, "location": location},
-            )
-
-        except Exception as e:
-            logger.error(f"Error getting points of interest: {e}")
-            return self._format_response(
-                "I'm having trouble finding nearby points of interest. Please try again later.",
-                success=False,
-            )
-
-    @kernel_function(description="Handle navigation requests")
-    async def _handle_navigation(
-        self,
-        vehicle_id: Optional[str],
-        query: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Handle a navigation request."""
-        try:
-            # Extract destination from query
-            destination = "destination"
-            if "to " in query.lower():
-                destination = query.lower().split("to ")[-1].strip()
-            
-            # Get vehicle location from Cosmos DB
-            location = await self._get_vehicle_location(vehicle_id)
-
-            if not location:
-                return self._format_response(
-                    "I couldn't determine your vehicle's location for navigation.",
-                    success=False,
-                )
-
-            # Generate distance based on destination length (just for demo purposes)
-            distance = len(destination) * 1.5
-            duration = int(distance * 2)  # ~30 km/h average speed
-
-            navigation_data = {
-                "destination": destination.title(),
-                "start_location": location,
-                "estimated_time": duration,
-                "distance_km": round(distance, 1),
-                "route_overview": "via main roads",
-                "next_turn": f"Continue straight for {int(distance/3)} km",
-                "timestamp": datetime.datetime.now().isoformat(),
-            }
-
-            # Create a command in Cosmos DB for the navigation
-            command = {
-                "id": str(uuid.uuid4()),
-                "commandId": f"nav-{hash(destination) % 10000:04d}",
-                "vehicleId": vehicle_id,
-                "commandType": "SET_NAVIGATION",
-                "parameters": {
-                    "destination": destination,
-                    "distance_km": navigation_data["distance_km"],
-                    "estimated_time": navigation_data["estimated_time"],
-                },
-                "status": "Sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-            }
-
+        self, 
+        category: Optional[str] = None,
+        vehicle_id: Optional[str] = None
+    ) -> str:
+        """Find points of interest near the vehicle's location."""
+        # Extract vehicle_id from context if not provided directly
+        if not vehicle_id:
             try:
-                await cosmos_client.create_command(command)
-            except Exception as e:
-                logger.warning(f"Could not save navigation command: {e}")
-
-            return self._format_response(
-                f"I've set up navigation to {navigation_data['destination']}. "
-                f"It's {navigation_data['distance_km']} km away and should take about {navigation_data['estimated_time']} minutes "
-                f"{navigation_data['route_overview']}. {navigation_data['next_turn']}.",
-                data={"navigation": navigation_data, "vehicle_id": vehicle_id},
+                from semantic_kernel.kernel import Kernel
+                kernel = Kernel.get_current()
+                if kernel and hasattr(kernel, 'arguments'):
+                    vehicle_id = kernel.arguments.get('vehicle_id')
+            except:
+                pass
+                
+        logger.info(f"Finding POIs for category: {category}, vehicle: {vehicle_id}")
+        
+        try:
+            return await poi_service.find_points_of_interest(
+                category or "general", 
+                vehicle_id=vehicle_id
             )
         except Exception as e:
-            logger.error(f"Error setting up navigation: {e}")
-            return self._format_response(
-                "I encountered an error while setting up navigation. Please try again later.",
-                success=False,
-            )
+            logger.error(f"Error finding POIs: {e}")
+            return f"Points of interest search is currently unavailable. Error: {str(e)}"
+
+    @kernel_function(
+        description="Get navigation directions to a destination",
+        name="get_directions",
+    )
+    async def _handle_navigation(
+        self, 
+        destination: str,
+        vehicle_id: Optional[str] = None
+    ) -> str:
+        """Get navigation directions to a destination."""
+        # Extract vehicle_id from context if not provided directly
+        if not vehicle_id:
+            try:
+                from semantic_kernel.kernel import Kernel
+                kernel = Kernel.get_current()
+                if kernel and hasattr(kernel, 'arguments'):
+                    vehicle_id = kernel.arguments.get('vehicle_id')
+            except:
+                pass
+                
+        logger.info(f"Getting navigation to: {destination}, vehicle: {vehicle_id}")
+        
+        try:
+            return await navigation_service.get_directions(destination, vehicle_id=vehicle_id)
+        except Exception as e:
+            logger.error(f"Error getting navigation directions: {e}")
+            return f"Navigation service is currently unavailable. Error: {str(e)}"
 
     async def _get_vehicle_location(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
         """Get the vehicle's current location from Cosmos DB."""

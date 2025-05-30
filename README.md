@@ -353,11 +353,11 @@ python a2a_server_init.py --port 10002
 ### Agent System APIs
 
 #### General Agent Interface
-- `POST /api/agent/ask` - General agent entry point with optional streaming
+- `POST /agent/ask` - General agent entry point with optional streaming
   ```json
   {
     "query": "Lock the doors on my vehicle",
-    "context": {"vehicle_id": "test-vehicle-1"},
+    "context": {"vehicleId": "test-vehicle-1", "agentType": "remote-access"},
     "stream": false
   }
   ```

@@ -5,6 +5,7 @@ import {
   CircularProgress
 } from '@mui/material';
 import { fetchNotifications } from '../api/notifications';
+import { INTERVALS } from '../config/intervals';
 
 const NotificationLog = ({ vehicleId }) => {
   const [notifications, setNotifications] = useState([]);
@@ -24,8 +25,8 @@ const NotificationLog = ({ vehicleId }) => {
 
   useEffect(() => {
     loadNotifications();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadNotifications, 5000);
+    // Poll for updates using centralized interval configuration
+    const interval = setInterval(loadNotifications, INTERVALS.NOTIFICATIONS_POLLING);
     return () => clearInterval(interval);
   }, [loadNotifications]);
 

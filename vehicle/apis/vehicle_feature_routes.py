@@ -1,13 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException
+from typing import Optional
 from pydantic import BaseModel
 
 from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
-from utils.auth import get_current_user
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/vehicles/{vehicle_id}/features", tags=["Vehicle Features"])
+router = APIRouter(prefix="/api/vehicles/features", tags=["Vehicle Features"])
 
 
 class LightsControlRequest(BaseModel):
@@ -29,14 +28,12 @@ class WindowsControlRequest(BaseModel):
 @router.post("/lights")
 async def control_lights(
     vehicle_id: str,
-    request: LightsControlRequest,
-    user=Depends(get_current_user)
+    request: LightsControlRequest
 ):
     """Control vehicle lights (headlights, interior, hazard)"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"turn {request.action} {request.light_type}",
             "session_id": f"lights_{vehicle_id}"
         }
@@ -63,14 +60,12 @@ async def control_lights(
 @router.post("/climate")
 async def control_climate(
     vehicle_id: str,
-    request: ClimateControlRequest,
-    user=Depends(get_current_user)
+    request: ClimateControlRequest
 ):
     """Control vehicle climate settings"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"set climate to {request.temperature} degrees {request.action}",
             "session_id": f"climate_{vehicle_id}"
         }
@@ -97,14 +92,12 @@ async def control_climate(
 @router.post("/windows")
 async def control_windows(
     vehicle_id: str,
-    request: WindowsControlRequest,
-    user=Depends(get_current_user)
+    request: WindowsControlRequest
 ):
     """Control vehicle windows"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "query": f"roll {request.action} {request.windows} windows",
             "session_id": f"windows_{vehicle_id}"
         }
@@ -130,14 +123,12 @@ async def control_windows(
 
 @router.get("/status")
 async def get_feature_status(
-    vehicle_id: str,
-    user=Depends(get_current_user)
+    vehicle_id: str
 ):
     """Get current status of vehicle features"""
     try:
         context = {
             "vehicle_id": vehicle_id,
-            "user_id": user.get("sub", "unknown"),
             "session_id": f"status_{vehicle_id}"
         }
         
