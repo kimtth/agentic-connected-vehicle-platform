@@ -22,13 +22,35 @@
   margin-top: 0;
 }
 
+/* Optimize for large screens (1920x1080 and above) */
+@media (min-width: 1920px) {
+  .dashboard-content {
+    padding: 24px 48px;
+  }
+
+  .card-grid {
+    gap: 24px;
+  }
+
+  .status-cards {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .quick-actions-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+  }
+}
+
 .card-title {
   font-size: 14px;
   color: #555;
   margin-bottom: 8px;
 }
 
-.command-log-table, .notification-log-table {
+.command-log-table,
+.notification-log-table {
   min-width: 650px;
 }
 
@@ -53,20 +75,27 @@
   margin-top: 16px !important;
 }
 
-/* Vehicle Dashboard styles */
+/* Vehicle Dashboard styles optimized for large screens */
 .vehicle-gauge {
   position: relative;
   text-align: center;
-  width: 180px;
-  height: 180px;
+  width: 200px;
+  height: 200px;
   margin: 0 auto;
+}
+
+@media (min-width: 1920px) {
+  .vehicle-gauge {
+    width: 220px;
+    height: 220px;
+  }
 }
 
 .dashboard-control-panel {
   background-color: #222;
   border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
   color: white;
 }
 
@@ -81,9 +110,26 @@
 .dashboard-button {
   background-color: #333;
   color: white;
-  margin: 4px;
+  margin: 6px;
+  min-width: 140px;
 }
 
 .dashboard-button:hover {
   background-color: #444;
+}
+
+/* Large screen layout optimizations */
+@media (min-width: 1600px) {
+  .simulator-container {
+    max-width: 1400px;
+  }
+
+  .agent-chat-container {
+    height: calc(100vh - 160px);
+  }
+
+  .vehicle-dashboard-container {
+    max-width: 1600px;
+    margin: 0 auto;
+  }
 }

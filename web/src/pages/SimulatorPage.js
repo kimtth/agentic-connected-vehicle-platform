@@ -8,8 +8,8 @@ const SimulatorPage = () => {
   const navigate = useNavigate();
   
   return (
-    <Box sx={{ width: '100%' }}>
-      <Container maxWidth="lg">
+    <Box sx={{ width: '100%', height: 'calc(100vh - 120px)', overflow: 'auto' }}>
+      <Container maxWidth={false} sx={{ maxWidth: '1800px', px: { xs: 2, md: 3, lg: 4 } }}>
         <Box mb={3}>
           <Breadcrumbs aria-label="breadcrumb">
             <Link color="inherit" href="/" onClick={(e) => {

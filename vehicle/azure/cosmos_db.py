@@ -10,6 +10,8 @@ import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
 import uuid
 from datetime import datetime, timedelta
+import weakref
+import atexit
 
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey, ConsistencyLevel
@@ -24,6 +26,20 @@ from utils.logging_config import get_logger
 # Get logger for this module
 logger = get_logger(__name__)
 
+# Global registry for tracking client instances
+_client_registry = weakref.WeakSet()
+
+async def _cleanup_all_clients():
+    """Cleanup all registered clients on shutdown"""
+    for client in list(_client_registry):
+        try:
+            await client.close()
+        except Exception as e:
+            logger.debug(f"Error during global cleanup: {str(e)}")
+
+# Register cleanup function
+atexit.register(lambda: asyncio.create_task(_cleanup_all_clients()) if asyncio.get_event_loop().is_running() else None)
+
 class CosmosDBClient:
     """Azure Cosmos DB client implementation for Connected Car Platform"""
     
@@ -36,6 +52,10 @@ class CosmosDBClient:
         # Explicitly set HTTP logging policy to ERROR
         http_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
         http_logger.setLevel(logging.ERROR)
+
+        # Also silence aiohttp client session warnings
+        aiohttp_logger = logging.getLogger("aiohttp")
+        aiohttp_logger.setLevel(logging.WARNING)
 
         load_dotenv(override=True)
         
@@ -87,6 +107,13 @@ class CosmosDBClient:
         self.health_check_interval = 30  # seconds
         self.last_health_check = None
         
+        # Session management
+        self._cleanup_scheduled = False
+        self._connection_lock = asyncio.Lock()
+        
+        # Register this instance for global cleanup
+        _client_registry.add(self)
+        
         # Validate configuration
         self._validate_configuration()
         
@@ -125,65 +152,71 @@ class CosmosDBClient:
             logger.warning("Cosmos DB configuration incomplete - skipping connection")
             return False
             
-        if self.is_connecting:
-            logger.debug("Connection attempt already in progress")
-            return self.connected
-            
-        if self.connected and self._is_connection_healthy():
-            logger.debug("Already connected and healthy")
-            return True
-            
-        # Check if we should retry based on last attempt
-        if (self.last_connection_attempt and 
-            datetime.now() - self.last_connection_attempt < timedelta(seconds=self.connection_retry_delay)):
-            logger.debug("Too soon to retry connection")
-            return self.connected
-
-        self.is_connecting = True
-        self.connection_error = None
-        self.last_connection_attempt = datetime.now()
-
-        try:
-            # Determine authentication method with fallback
-            if self.use_aad_auth:
-                success = await self._connect_with_aad()
-            elif self.key:
-                try:
-                    success = await self._connect_with_master_key()
-                except (AzureError, Exception) as e:
-                    # Check if the error suggests AAD is required
-                    error_str = str(e).lower()
-                    if any(phrase in error_str for phrase in ["local authorization", "authentication", "forbidden"]):
-                        logger.warning("Master key auth failed, attempting AAD fallback")
-                        self.use_aad_auth = True
-                        success = await self._connect_with_aad()
-                    else:
-                        raise
-            else:
-                logger.error("No valid authentication method available")
-                return False
-            
-            if success:
-                # Ensure containers exist
-                await self._ensure_containers_exist()
+        async with self._connection_lock:
+            if self.is_connecting:
+                logger.debug("Connection attempt already in progress")
+                return self.connected
                 
-                # Verify connection with a simple operation
-                await self._verify_connection()
-                
-                self.connected = True
-                self.connection_error = None
-                logger.info(f"Successfully connected to Cosmos DB: {self.database_name}")
+            if self.connected and self._is_connection_healthy():
+                logger.debug("Already connected and healthy")
                 return True
-            else:
-                return False
                 
-        except Exception as e:
-            self.connection_error = str(e)
-            self.connected = False
-            logger.error(f"Failed to connect to Cosmos DB: {str(e)}")
-            return False
-        finally:
-            self.is_connecting = False
+            # Check if we should retry based on last attempt
+            if (self.last_connection_attempt and 
+                datetime.now() - self.last_connection_attempt < timedelta(seconds=self.connection_retry_delay)):
+                logger.debug("Too soon to retry connection")
+                return self.connected
+
+            self.is_connecting = True
+            self.connection_error = None
+            self.last_connection_attempt = datetime.now()
+
+            try:
+                # Clean up any existing client first
+                await self._cleanup_client()
+                
+                # Determine authentication method with fallback
+                if self.use_aad_auth:
+                    success = await self._connect_with_aad()
+                elif self.key:
+                    try:
+                        success = await self._connect_with_master_key()
+                    except (AzureError, Exception) as e:
+                        # Check if the error suggests AAD is required
+                        error_str = str(e).lower()
+                        if any(phrase in error_str for phrase in ["local authorization", "authentication", "forbidden"]):
+                            logger.warning("Master key auth failed, attempting AAD fallback")
+                            self.use_aad_auth = True
+                            success = await self._connect_with_aad()
+                        else:
+                            raise
+                else:
+                    logger.error("No valid authentication method available")
+                    return False
+                
+                if success:
+                    # Ensure containers exist
+                    await self._ensure_containers_exist()
+                    
+                    # Verify connection with a simple operation
+                    await self._verify_connection()
+                    
+                    self.connected = True
+                    self.connection_error = None
+                    logger.info(f"Successfully connected to Cosmos DB: {self.database_name}")
+                    return True
+                else:
+                    return False
+                    
+            except Exception as e:
+                self.connection_error = str(e)
+                self.connected = False
+                logger.error(f"Failed to connect to Cosmos DB: {str(e)}")
+                # Clean up on failure
+                await self._cleanup_client()
+                return False
+            finally:
+                self.is_connecting = False
             
     async def _connect_with_aad(self):
         """Connect using Azure AD authentication with proper configuration"""
@@ -360,7 +393,7 @@ class CosmosDBClient:
         if not self.is_connecting:
             return await self.connect()
             
-        # Wait for existing connection attempt
+        # Wait for existing connection attempt with timeout
         max_wait = 30  # seconds
         wait_time = 0
         while self.is_connecting and wait_time < max_wait:
@@ -370,38 +403,106 @@ class CosmosDBClient:
         return self.connected
 
     async def _cleanup_client(self):
-        """Clean up client resources properly"""
+        """Clean up client resources properly with enhanced session management"""
+        cleanup_tasks = []
+        
+        # Clean up containers first
+        self.vehicles_container = None
+        self.services_container = None
+        self.commands_container = None
+        self.notifications_container = None
+        self.status_container = None
+        self.database = None
+        
+        # Clean up the main client
         if self.client:
             try:
-                await self.client.close()
-            except Exception as e:
-                logger.debug(f"Error during client cleanup: {str(e)}")
-            finally:
+                # Schedule the close operation
+                cleanup_tasks.append(self._safe_close_client(self.client))
                 self.client = None
-                self.database = None
-                self.vehicles_container = None
-                self.services_container = None
-                self.commands_container = None
-                self.notifications_container = None
-                self.status_container = None
+            except Exception as e:
+                logger.debug(f"Error scheduling client cleanup: {str(e)}")
+                self.client = None
+        
+        # Execute cleanup tasks
+        if cleanup_tasks:
+            try:
+                await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            except Exception as e:
+                logger.debug(f"Error during cleanup execution: {str(e)}")
+        
+        # Reset connection state
+        self.connected = False
+        
+    async def _safe_close_client(self, client):
+        """Safely close a client with timeout and error handling"""
+        try:
+            # Use a timeout to prevent hanging
+            await asyncio.wait_for(client.close(), timeout=10.0)
+            logger.debug("Client closed successfully")
+        except asyncio.TimeoutError:
+            logger.warning("Client close operation timed out")
+        except Exception as e:
+            logger.debug(f"Error during client close: {str(e)}")
 
     async def close(self):
-        """Close Cosmos DB client connection properly"""
-        if self.client:
+        """Close Cosmos DB client connection properly with enhanced cleanup"""
+        logger.info("Closing Cosmos DB connection...")
+        
+        try:
+            # Use the connection lock to prevent concurrent operations
+            async with self._connection_lock:
+                await self._cleanup_client()
+                
+            # Remove from registry
             try:
-                await self.client.close()
-                logger.info("Cosmos DB connection closed")
-            except Exception as e:
-                logger.error(f"Error closing Cosmos DB connection: {str(e)}")
-            finally:
-                self.client = None
-                self.database = None
-                self.vehicles_container = None
-                self.services_container = None
-                self.commands_container = None
-                self.notifications_container = None
-                self.status_container = None
-                self.connected = False
+                _client_registry.discard(self)
+            except Exception:
+                pass  # Registry cleanup is not critical
+                
+            logger.info("Cosmos DB connection closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing Cosmos DB connection: {str(e)}")
+
+    async def ensure_connected(self):
+        """Ensure we have a valid connection with automatic retry"""
+        if self.connected and self._is_connection_healthy():
+            return True
+            
+        if not self.is_connecting:
+            return await self.connect()
+            
+        # Wait for existing connection attempt with timeout
+        max_wait = 30  # seconds
+        wait_time = 0
+        while self.is_connecting and wait_time < max_wait:
+            await asyncio.sleep(1)
+            wait_time += 1
+            
+        return self.connected
+
+    # Context manager support for proper resource management
+    async def __aenter__(self):
+        """Async context manager entry"""
+        await self.ensure_connected()
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        await self.close()
+        
+    def __del__(self):
+        """Destructor to ensure cleanup"""
+        if hasattr(self, 'client') and self.client is not None:
+            # Schedule cleanup if event loop is running
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running() and not self._cleanup_scheduled:
+                    self._cleanup_scheduled = True
+                    # Create a task for cleanup without waiting
+                    asyncio.create_task(self._cleanup_client())
+            except Exception:
+                pass  # Ignore errors in destructor
 
     # Vehicle Status operations
     
@@ -450,8 +551,12 @@ class CosmosDBClient:
         Yields:
             Dictionary with updated vehicle status data
         """
-        if not await self.ensure_connected() or not self.status_container:
+        if not await self.ensure_connected():
             logger.warning("No Cosmos DB connection. Cannot subscribe to vehicle status.")
+            return
+            
+        if not self.status_container:
+            logger.warning("Status container not available. Cannot subscribe to vehicle status.")
             return
             
         try:
@@ -465,6 +570,16 @@ class CosmosDBClient:
             
             while True:
                 try:
+                    # Ensure we still have a valid connection and container
+                    if not self.connected or not self.status_container:
+                        logger.warning("Connection lost during status subscription. Attempting to reconnect...")
+                        if not await self.ensure_connected():
+                            logger.error("Failed to reconnect. Ending status subscription.")
+                            break
+                        if not self.status_container:
+                            logger.error("Status container not available after reconnection.")
+                            break
+                    
                     # Query for newer status updates
                     query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId AND c._ts > @lastTimestamp ORDER BY c._ts DESC"
                     parameters = [
@@ -500,6 +615,14 @@ class CosmosDBClient:
                 except Exception as e:
                     logger.error(f"Error in status polling iteration: {str(e)}")
                     await asyncio.sleep(10.0)  # Wait longer on error before retrying
+                    
+                    # Try to reconnect if we get connection-related errors
+                    if any(phrase in str(e).lower() for phrase in ["connection", "timeout", "unavailable", "nonetype"]):
+                        logger.info("Attempting to reconnect due to connection error...")
+                        try:
+                            await self.connect()
+                        except Exception as reconnect_error:
+                            logger.error(f"Reconnection failed: {str(reconnect_error)}")
                     continue
                     
         except Exception as e:

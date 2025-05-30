@@ -7,6 +7,7 @@ import { api } from './apiClient';
  */
 export const fetchServices = async (vehicleId) => {
   try {
+    // Update to match backend API structure - use singular "vehicle" not "vehicles"
     const response = await api.get(
       `/vehicle/${encodeURIComponent(vehicleId)}/services`
     );
@@ -40,6 +41,7 @@ export const fetchServices = async (vehicleId) => {
  */
 export const addService = async (vehicleId, service) => {
   try {
+    // Update to match backend API structure - use singular "vehicle" not "vehicles"
     const response = await api.post(
       `/vehicle/${encodeURIComponent(vehicleId)}/service`,
       service

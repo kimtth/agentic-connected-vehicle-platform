@@ -20,7 +20,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import { Link } from 'react-router-dom';
 
-const drawerWidth = 240;
+const drawerWidth = 280; // Increased drawer width for large screens
 
 // AppBar styled component that shifts when drawer is open
 const AppBarStyled = styled(AppBar, { shouldForwardProp: (prop) => prop !== 'open' })(
@@ -208,7 +208,13 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
           flexDirection: 'column',
           width: '100%'
         }}>
-          <Box sx={{ width: '100%', maxWidth: '1400px', mx: 'auto', p: 3, flexGrow: 1 }}>
+          <Box sx={{ 
+            width: '100%', 
+            maxWidth: { xs: '100%', lg: '1600px', xl: '1800px' }, 
+            mx: 'auto', 
+            p: { xs: 2, md: 3, lg: 4 }, 
+            flexGrow: 1 
+          }}>
             {children}
           </Box>
         </Box>

@@ -14,27 +14,59 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(2),
   height: '100%',
   backgroundColor: theme.palette.background.paper,
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
 }));
 
-const CommandButton = styled(Button)(({ theme, emergency }) => ({
+const CommandButton = styled(Button)(({ theme }) => ({
   width: '100%',
   textAlign: 'left',
   justifyContent: 'flex-start',
   padding: theme.spacing(1.5),
-  backgroundColor: emergency ? theme.palette.error.main : theme.palette.action.hover,
-  color: emergency ? theme.palette.error.contrastText : theme.palette.text.primary,
+  backgroundColor: theme.palette.action.hover,
+  color: theme.palette.text.primary,
   '&:hover': {
-    backgroundColor: emergency 
-      ? theme.palette.error.dark 
-      : theme.palette.primary.main,
+    backgroundColor: theme.palette.primary.main,
     color: theme.palette.primary.contrastText,
     transform: 'translateY(-2px)',
     boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
   }
 }));
 
+const EmergencyCommandButton = styled(Button)(({ theme }) => ({
+  width: '100%',
+  textAlign: 'left',
+  justifyContent: 'flex-start',
+  padding: theme.spacing(1.5),
+  backgroundColor: theme.palette.error.main,
+  color: theme.palette.error.contrastText,
+  '&:hover': {
+    backgroundColor: theme.palette.error.dark,
+    transform: 'translateY(-2px)',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+  }
+}));
+
+const EmergencyButton = styled(Button)(({ theme }) => ({
+  backgroundColor: theme.palette.error.main,
+  color: 'white',
+  '&:hover': {
+    backgroundColor: theme.palette.error.dark,
+  },
+  fontWeight: 'bold',
+  minHeight: '48px',
+}));
+
 const CustomCommandSection = styled(Box)(({ theme }) => ({
-  marginTop: theme.spacing(2)
+  marginTop: theme.spacing(1),
+  flexShrink: 0,
+}));
+
+const ScrollableContent = styled(Box)(({ theme }) => ({
+  flex: 1,
+  overflowY: 'auto',
+  marginBottom: theme.spacing(1),
 }));
 
 const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
@@ -67,6 +99,20 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       }
     } else {
       alert('Please enter a command');
+    }
+  };
+
+  const handleEmergencyCommand = async (command) => {
+    if (!isConnected) {
+      alert('Please connect to server first!');
+      return;
+    }
+    
+    setIsSending(true);
+    try {
+      await onSendCommand(command);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -128,74 +174,117 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
     }
   };
 
+  const emergencyCommands = [
+    { label: 'Emergency Stop', command: 'EMERGENCY_STOP' },
+    { label: 'Emergency Brake', command: 'EMERGENCY_BRAKE' },
+    { label: 'Hazard Lights On', command: 'HAZARD_ON' },
+    { label: 'Call Emergency', command: 'CALL_911' }
+  ];
+
+  const isEmergencyCategory = commandCategories[selectedCategory]?.emergency;
+
   return (
     <StyledPaper elevation={3}>
-      <Typography variant="h6" gutterBottom>
+      <Typography variant="h6" gutterBottom sx={{ flexShrink: 0 }}>
         <Box component="i" className="fas fa-terminal" sx={{ mr: 1 }} />
         Send Commands
       </Typography>
       
-      <Grid container spacing={1}>
-        {commandCategories[selectedCategory]?.commands.map((cmd, index) => (
-          <Grid item xs={12} sm={6} key={index}>
-            <CommandButton
-              emergency={commandCategories[selectedCategory].emergency}
-              startIcon={cmd.icon}
-              onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
-              disabled={isSending || !isConnected}
+      <ScrollableContent>
+        <Grid container spacing={1}>
+          {commandCategories[selectedCategory]?.commands.map((cmd, index) => (
+            <Grid item xs={12} sm={6} key={index}>
+              {isEmergencyCategory ? (
+                <EmergencyCommandButton
+                  startIcon={cmd.icon}
+                  onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
+                  disabled={isSending || !isConnected}
+                  fullWidth
+                >
+                  {cmd.label}
+                </EmergencyCommandButton>
+              ) : (
+                <CommandButton
+                  startIcon={cmd.icon}
+                  onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
+                  disabled={isSending || !isConnected}
+                  fullWidth
+                >
+                  {cmd.label}
+                </CommandButton>
+              )}
+            </Grid>
+          ))}
+          
+          <Grid item xs={12}>
+            <EmergencyCommandButton
+              startIcon={<Warning />}
+              onClick={() => onSendCommand('SOS')}
+              disabled={!isConnected}
               fullWidth
             >
-              {cmd.label}
-            </CommandButton>
+              EMERGENCY SOS
+            </EmergencyCommandButton>
           </Grid>
-        ))}
-        
-        <Grid item xs={12}>
-          <CommandButton
-            variant="contained"
-            startIcon={<Warning />}
-            onClick={() => onSendCommand('SOS')}
-            emergency={true}
-            disabled={!isConnected}
-          >
-            EMERGENCY SOS
-          </CommandButton>
         </Grid>
-      </Grid>
+
+        {/* Emergency Commands Section */}
+        <Box sx={{ mb: 2, mt: 1 }}>
+          <Typography variant="subtitle2" gutterBottom color="error">
+            Emergency Commands
+          </Typography>
+          <Grid container spacing={1}>
+            {emergencyCommands.map((cmd) => (
+              <Grid item xs={6} key={cmd.command}>
+                <EmergencyButton
+                  fullWidth
+                  size="small"
+                  onClick={() => handleEmergencyCommand(cmd.command)}
+                  disabled={!isConnected}
+                >
+                  {cmd.label}
+                </EmergencyButton>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      </ScrollableContent>
       
       <CustomCommandSection>
-        <Typography variant="subtitle1" gutterBottom>
+        <Typography variant="subtitle2" gutterBottom>
           <Box component="i" className="fas fa-code" sx={{ mr: 1 }} />
           Custom Command
         </Typography>
         <TextField
           fullWidth
           multiline
-          rows={3}
-          placeholder="Enter your custom command here..."
+          rows={2}
+          placeholder="Enter custom command..."
           value={customCommand}
           onChange={(e) => setCustomCommand(e.target.value)}
-          margin="normal"
+          margin="dense"
           variant="outlined"
+          size="small"
         />
         <Button
           fullWidth
           variant="contained"
           color="primary"
           onClick={handleCustomCommand}
-          disabled={!isConnected}
-          sx={{ mt: 1 }}
+          disabled={!isConnected || isSending}
+          sx={{ mt: 0.5 }}
+          size="small"
+          startIcon={<Box component="i" className="fas fa-paper-plane" />}
         >
-          <Box component="i" className="fas fa-paper-plane" sx={{ mr: 1 }} />
           Send Custom Command
         </Button>
-      </CustomCommandSection>
 
-      {vehicleId && (
-        <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-          Commands will be sent to Vehicle ID: {vehicleId}
-        </Typography>
-      )}
+        {vehicleId && (
+          <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+            Target: Vehicle {vehicleId}
+          </Typography>
+        )}
+      </CustomCommandSection>
     </StyledPaper>
   );
 };

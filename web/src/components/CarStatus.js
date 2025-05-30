@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Grid } from '@mui/material';
 import { Battery90, Thermostat, Speed, LocalGasStation } from '@mui/icons-material';
 import { fetchVehicleStatus, subscribeToVehicleStatus } from '../api/status';
+import { INTERVALS, createVehicleStatusThrottle } from '../config/intervals';
 
 const StatusGauge = ({ value, max, icon, label, color }) => {
   // Calculate progress value and use it in the component styling
@@ -41,36 +42,79 @@ const CarStatus = ({ vehicleId }) => {
 
   useEffect(() => {
     let subscription = null;
+    let statusCheckInterval = null;
+    let isMounted = true;
     
     const initializeStatus = async () => {
+      if (!isMounted) return;
+      
       try {
         setLoading(true);
-        // Get initial data
-        const initialData = await fetchVehicleStatus(vehicleId);
-        setStatus(initialData);
+        // Get initial data with throttling
+        if (createVehicleStatusThrottle(vehicleId)) {
+          const initialData = await fetchVehicleStatus(vehicleId);
+          if (isMounted) {
+            setStatus(initialData);
+          }
+        }
         
         // Start the real-time subscription to Cosmos DB Change Feed
         subscription = await subscribeToVehicleStatus(vehicleId, (newStatus) => {
-          setStatus(newStatus);
-          setError(null);
+          if (isMounted) {
+            setStatus(newStatus);
+            setError(null);
+          }
         }, (err) => {
-          setError('Error with real-time connection: ' + err.message);
-          console.error('Subscription error:', err);
+          if (isMounted) {
+            setError('Error with real-time connection: ' + err.message);
+            console.error('Subscription error:', err);
+          }
         });
+
+        // Add periodic status check with throttling to ensure data freshness
+        statusCheckInterval = setInterval(async () => {
+          if (!isMounted) return;
+          
+          try {
+            // Only make the call if throttling allows it
+            if (createVehicleStatusThrottle(vehicleId)) {
+              const currentStatus = await fetchVehicleStatus(vehicleId);
+              if (isMounted) {
+                setStatus(currentStatus);
+              }
+            }
+          } catch (err) {
+            if (isMounted) {
+              console.warn('Periodic status check failed:', err);
+            }
+          }
+        }, INTERVALS.STATUS_CHECK);
+
       } catch (err) {
-        setError('Error loading vehicle status');
-        console.error(err);
+        if (isMounted) {
+          setError('Error loading vehicle status');
+          console.error(err);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    initializeStatus();
+    if (vehicleId) {
+      initializeStatus();
+    }
     
     // Cleanup: close subscription when component unmounts
     return () => {
+      isMounted = false;
+      
       if (subscription) {
         subscription.unsubscribe();
+      }
+      if (statusCheckInterval) {
+        clearInterval(statusCheckInterval);
       }
     };
   }, [vehicleId]);

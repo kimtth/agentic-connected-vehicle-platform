@@ -1,432 +1,499 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Grid, Typography, Card, CardContent, CardActionArea, 
-  Box, Paper, Button, Divider, CircularProgress, Alert, LinearProgress
+import {
+  Container,
+  Grid,
+  Paper,
+  Typography,
+  Box,
+  Card,
+  CardContent,
+  CardActionArea,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Divider,
+  Chip,
+  Alert,
+  Button,
+  LinearProgress,
+  CircularProgress
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { 
-  DirectionsCar, Speed, Battery90, Notifications, 
-  SupportAgent, Settings, EnergySavingsLeaf, AcUnit, 
-  LocalGasStation, Build
+import {
+  Speed as SpeedIcon,
+  BatteryChargingFull as BatteryIcon,
+  Thermostat as TempIcon,
+  DirectionsCar as CarIcon,
+  Notifications as NotificationIcon,
+  Build as ServiceIcon,
+  SupportAgent,
+  LocalGasStation,
+  EnergySavingsLeaf,
+  AcUnit
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
+import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
+import { fetchNotifications } from '../api/notifications';
+import { INTERVALS, createVehicleStatusThrottle } from '../config/intervals';
 
 const Dashboard = ({ selectedVehicle }) => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [vehicleStatus, setVehicleStatus] = useState(null);
-  const [statusError, setStatusError] = useState(null);
+  const [vehicleStatus, setVehicleStatus] = useState({
+    engineTemp: '0°C',
+    speed: '0 km/h',
+    batteryLevel: '0%',
+    odometer: '0 km',
+    Speed: 0,
+    Battery: 0,
+    Temperature: 0,
+    OilRemaining: 0
+  });
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isMounted, setIsMounted] = useState(true);
 
-  // Fetch vehicle status when a vehicle is selected
   useEffect(() => {
-    const getVehicleStatus = async () => {
-      if (!selectedVehicle) return;
-      
-      setLoading(true);
-      try {
-        const status = await fetchVehicleStatus(selectedVehicle.VehicleId);
-        setVehicleStatus(status);
-        setStatusError(null);
-      } catch (error) {
-        console.error('Error fetching vehicle status:', error);
-        setStatusError('Failed to load vehicle status. Please try again later.');
-      } finally {
+    setIsMounted(true);
+    
+    const loadDashboardData = async () => {
+      if (!selectedVehicle || !isMounted) {
         setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Load vehicle status with throttling
+        const vehicleId = selectedVehicle.VehicleId || selectedVehicle.vehicleId;
+        if (createVehicleStatusThrottle(vehicleId)) {
+          const status = await fetchVehicleStatus(vehicleId);
+          if (status && Object.keys(status).length > 0 && isMounted) {
+            setVehicleStatus({
+              engineTemp: `${status.Temperature || 0}°C`,
+              speed: `${status.Speed || 0} km/h`,
+              batteryLevel: `${status.Battery || 0}%`,
+              odometer: status.Odometer ? `${status.Odometer} km` : '0 km',
+              Speed: status.Speed || 0,
+              Battery: status.Battery || 0,
+              Temperature: status.Temperature || 0,
+              OilRemaining: status.OilRemaining || 0
+            });
+          }
+        }
+
+        // Load recent notifications
+        try {
+          const notificationData = await fetchNotifications(vehicleId);
+          if (Array.isArray(notificationData) && isMounted) {
+            setNotifications(notificationData.slice(0, 5)); // Show only recent 5
+          } else if (isMounted) {
+            setNotifications([]);
+          }
+        } catch (notificationError) {
+          console.warn('Could not load notifications:', notificationError);
+          if (isMounted) {
+            setNotifications([]);
+          }
+        }
+
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        
+        if (isMounted) {
+          // More specific error messages based on error type
+          let errorMessage = 'Failed to load dashboard data.';
+          if (err.message?.includes('fetch') || err.name === 'TypeError') {
+            errorMessage = 'Unable to connect to vehicle services. Please check if the backend is running on port 8000.';
+          } else if (err.status === 404) {
+            errorMessage = 'Vehicle services not found. Please verify the vehicle ID and service configuration.';
+          } else if (err.status >= 500) {
+            errorMessage = 'Vehicle services are experiencing issues. Please try again later.';
+          }
+          
+          setError(errorMessage);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    getVehicleStatus();
+    loadDashboardData();
+    
+    // Use centralized interval configuration with proper cleanup
+    const interval = setInterval(() => {
+      if (isMounted) {
+        loadDashboardData();
+      }
+    }, INTERVALS.DASHBOARD_REFRESH);
+    
+    return () => {
+      setIsMounted(false);
+      clearInterval(interval);
+    };
   }, [selectedVehicle]);
 
-  // Navigation handlers
-  const handleViewVehicleDashboard = () => {
-    navigate('/vehicle-dashboard');
-  };
+  const quickStats = [
+    {
+      label: 'Current Speed',
+      value: vehicleStatus.speed,
+      rawValue: vehicleStatus.Speed,
+      icon: <SpeedIcon />,
+      color: 'primary',
+      unit: 'km/h'
+    },
+    {
+      label: 'Battery Level',
+      value: vehicleStatus.batteryLevel,
+      rawValue: vehicleStatus.Battery,
+      icon: <BatteryIcon />,
+      color: 'success',
+      unit: '%',
+      showProgress: true
+    },
+    {
+      label: 'Engine Temp',
+      value: vehicleStatus.engineTemp,
+      rawValue: vehicleStatus.Temperature,
+      icon: <TempIcon />,
+      color: 'warning',
+      unit: '°C'
+    },
+    {
+      label: 'Oil Level',
+      value: `${vehicleStatus.OilRemaining}%`,
+      rawValue: vehicleStatus.OilRemaining,
+      icon: <LocalGasStation />,
+      color: 'info',
+      unit: '%',
+      showProgress: true
+    }
+  ];
 
-  const handleViewNotifications = () => {
-    navigate('/notifications');
-  };
-
-  const handleViewServices = () => {
-    navigate('/services');
-  };
-
-  const handleChatWithAgent = () => {
-    navigate('/agent-chat');
-  };
-
-  return (
-    <Box sx={{ width: '100%' }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Connected Vehicle Platform
-      </Typography>
-      
-      {statusError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {statusError}
-        </Alert>
-      )}
-      
-      {!selectedVehicle ? (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Please select a vehicle from the dropdown to view its details.
-        </Alert>
-      ) : (
-        <Paper sx={{ p: 3, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <Typography variant="h5">
-                {selectedVehicle.Make} {selectedVehicle.Model}
-              </Typography>
-              <Typography variant="subtitle1">
-                Vehicle ID: {selectedVehicle.VehicleId}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1 }}>
-                Year: {selectedVehicle.Year} • VIN: {selectedVehicle.VIN}
-              </Typography>
-            </Grid>
-            <Grid item xs={12} md={6} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-              <Button 
-                variant="contained" 
-                color="secondary"
-                onClick={handleViewVehicleDashboard}
-                sx={{ mr: 1 }}
-              >
-                View Full Dashboard
-              </Button>
-              <Button 
-                variant="outlined" 
-                color="inherit"
-                onClick={() => navigate(`/simulator?vehicleId=${selectedVehicle.VehicleId}`)}
-              >
-                Test Simulator
-              </Button>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-      
-      {loading ? (
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress />
         </Box>
-      ) : (
-        <>
-          <Typography variant="h5" gutterBottom sx={{ mt: 3, mb: 2 }}>
-            Vehicle Status
-          </Typography>
-          
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            {selectedVehicle && vehicleStatus ? (
-              <>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <Speed color="primary" sx={{ fontSize: '2.5rem', mr: 2 }} />
-                        <Box>
-                          <Typography color="textSecondary" variant="body2">
-                            Current Speed
-                          </Typography>
-                          <Typography variant="h4" component="div">
-                            {vehicleStatus.Speed} km/h
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <Typography variant="body2" color="textSecondary">
-                        Last updated: {new Date().toLocaleTimeString()}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-                
-                <Grid item xs={12} sm={6} md={3}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <Battery90 color="success" sx={{ fontSize: '2.5rem', mr: 2 }} />
-                        <Box>
-                          <Typography color="textSecondary" variant="body2">
-                            Battery Level
-                          </Typography>
-                          <Typography variant="h4" component="div">
-                            {vehicleStatus.Battery}%
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <LinearProgress 
-                        variant="determinate"
-                        value={vehicleStatus.Battery} 
-                        sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                        color="success"
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-                
-                <Grid item xs={12} sm={6} md={3}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <LocalGasStation color="warning" sx={{ fontSize: '2.5rem', mr: 2 }} />
-                        <Box>
-                          <Typography color="textSecondary" variant="body2">
-                            Oil Level
-                          </Typography>
-                          <Typography variant="h4" component="div">
-                            {vehicleStatus.OilRemaining}%
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <LinearProgress 
-                        variant="determinate"
-                        value={vehicleStatus.OilRemaining} 
-                        sx={{ mb: 1, height: 8, borderRadius: 4 }}
-                        color="warning"
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-                
-                <Grid item xs={12} sm={6} md={3}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <AcUnit color="info" sx={{ fontSize: '2.5rem', mr: 2 }} />
-                        <Box>
-                          <Typography color="textSecondary" variant="body2">
-                            Temperature
-                          </Typography>
-                          <Typography variant="h4" component="div">
-                            {vehicleStatus.Temperature}°C
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <Typography variant="body2" color="textSecondary">
-                        Outside: 24°C
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </>
-            ) : (
-              <Grid item xs={12}>
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography color="textSecondary">
-                    No vehicle data available. Please select a vehicle.
-                  </Typography>
-                </Paper>
-              </Grid>
-            )}
-          </Grid>
-          
-          <Divider sx={{ my: 4 }} />
-          
-          <Typography variant="h5" gutterBottom sx={{ mt: 3, mb: 2 }}>
-            Quick Actions
-          </Typography>
-          
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={4}>
-              <Card>
-                <CardActionArea onClick={handleChatWithAgent}>
-                  <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                    <SupportAgent sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                    <Typography variant="h5" component="div" gutterBottom>
-                      Agent Chat
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Get assistance and control your vehicle with AI-powered chat
-                    </Typography>
-                    <Button 
-                      variant="contained" 
-                      color="primary" 
-                      sx={{ mt: 2 }}
-                      startIcon={<SupportAgent />}
-                    >
-                      Start Chat
-                    </Button>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} md={4}>
-              <Card>
-                <CardActionArea onClick={() => navigate('/simulator')}>
-                  <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                    <DirectionsCar sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                    <Typography variant="h5" component="div" gutterBottom>
-                      Car Simulator
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Test and simulate vehicle commands and responses
-                    </Typography>
-                    <Button 
-                      variant="contained" 
-                      color="primary" 
-                      sx={{ mt: 2 }}
-                      startIcon={<DirectionsCar />}
-                    >
-                      Launch Simulator
-                    </Button>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} md={4}>
-              <Card>
-                <CardActionArea onClick={handleViewServices}>
-                  <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                    <Build sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                    <Typography variant="h5" component="div" gutterBottom>
-                      Service Status
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      View upcoming maintenance and service details
-                    </Typography>
-                    <Button 
-                      variant="contained" 
-                      color="primary" 
-                      sx={{ mt: 2 }}
-                      startIcon={<Build />}
-                    >
-                      View Services
-                    </Button>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-          </Grid>
-          
-          {/* Enhanced Quick Settings with Vehicle Features */}
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardActionArea onClick={handleViewNotifications}>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
+
+  if (!selectedVehicle) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Alert severity="info">Please select a vehicle to view the dashboard.</Alert>
+      </Container>
+    );
+  }
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Vehicle Dashboard
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary">
+          {selectedVehicle.Make} {selectedVehicle.Model} ({selectedVehicle.VehicleId || selectedVehicle.vehicleId})
+        </Typography>
+      </Box>
+
+      <Grid container spacing={3}>
+        {/* Enhanced Quick Stats */}
+        <Grid item xs={12}>
+          <Grid container spacing={2}>
+            {quickStats.map((stat, index) => (
+              <Grid item xs={12} sm={6} md={3} key={index}>
+                <Card sx={{ height: '100%' }}>
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Notifications color="secondary" sx={{ fontSize: '2rem', mr: 2 }} />
-                      <Typography variant="h6">Recent Notifications</Typography>
-                    </Box>
-                    <Divider sx={{ mb: 2 }} />
-                    {selectedVehicle ? (
-                      <Box>
-                        <Typography variant="body2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                          <Box component="span" sx={{ 
-                            display: 'inline-block', 
-                            width: 8, 
-                            height: 8, 
-                            borderRadius: '50%', 
-                            bgcolor: 'error.main',
-                            mr: 1
-                          }} />
-                          Low tire pressure detected in rear left tire
+                      <Box sx={{ color: `${stat.color}.main`, mr: 2 }}>
+                        {stat.icon}
+                      </Box>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle2" color="text.secondary">
+                          {stat.label}
                         </Typography>
-                        <Typography variant="body2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                          <Box component="span" sx={{ 
-                            display: 'inline-block', 
-                            width: 8, 
-                            height: 8, 
-                            borderRadius: '50%', 
-                            bgcolor: 'warning.main',
-                            mr: 1
-                          }} />
-                          Scheduled maintenance due in 500km
-                        </Typography>
-                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Box component="span" sx={{ 
-                            display: 'inline-block', 
-                            width: 8, 
-                            height: 8, 
-                            borderRadius: '50%', 
-                            bgcolor: 'info.main',
-                            mr: 1
-                          }} />
-                          Weather alert: Heavy rain expected in your location
+                        <Typography variant="h5" component="div">
+                          {typeof stat.rawValue === 'number' ? stat.rawValue : 0}{stat.unit}
                         </Typography>
                       </Box>
-                    ) : (
-                      <Typography color="textSecondary">
-                        Select a vehicle to view notifications
-                      </Typography>
+                    </Box>
+                    {stat.showProgress && (
+                      <LinearProgress
+                        variant="determinate"
+                        value={stat.rawValue || 0}
+                        sx={{ height: 8, borderRadius: 4 }}
+                        color={stat.color}
+                      />
                     )}
-                    <Button 
-                      fullWidth 
-                      variant="text" 
-                      color="primary" 
-                      sx={{ mt: 2 }}
-                    >
-                      View All Notifications
-                    </Button>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      Last updated: {new Date().toLocaleTimeString()}
+                    </Typography>
                   </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardActionArea onClick={() => navigate('/settings')}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Settings color="primary" sx={{ fontSize: '2rem', mr: 2 }} />
-                      <Typography variant="h6">Vehicle Controls</Typography>
-                    </Box>
-                    <Divider sx={{ mb: 2 }} />
-                    <Grid container spacing={2}>
-                      <Grid item xs={6}>
-                        <Button 
-                          fullWidth 
-                          variant="outlined" 
-                          startIcon={<EnergySavingsLeaf />}
-                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=eco_mode&vehicleId=${selectedVehicle.VehicleId}`)}
-                          disabled={!selectedVehicle}
-                        >
-                          Eco Mode
-                        </Button>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Button 
-                          fullWidth 
-                          variant="outlined" 
-                          startIcon={<AcUnit />}
-                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=climate&vehicleId=${selectedVehicle.VehicleId}`)}
-                          disabled={!selectedVehicle}
-                        >
-                          Climate Control
-                        </Button>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Button 
-                          fullWidth 
-                          variant="outlined" 
-                          startIcon={<Speed />}
-                          onClick={() => selectedVehicle && navigate(`/agent-chat?action=diagnostics&vehicleId=${selectedVehicle.VehicleId}`)}
-                          disabled={!selectedVehicle}
-                        >
-                          Diagnostics
-                        </Button>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Button 
-                          fullWidth 
-                          variant="outlined" 
-                          startIcon={<Notifications />}
-                          onClick={() => navigate('/notifications')}
-                        >
-                          Alerts
-                        </Button>
-                      </Grid>
-                    </Grid>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
+                </Card>
+              </Grid>
+            ))}
           </Grid>
-        </>
-      )}
-    </Box>
+        </Grid>
+
+                {/* Enhanced Quick Actions */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <ServiceIcon sx={{ mr: 1 }} />
+              Quick Actions
+            </Typography>
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardActionArea onClick={() => navigate('/agent-chat')}>
+                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                      <SupportAgent sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                      <Typography variant="h6" component="div" gutterBottom>
+                        Agent Chat
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Get assistance and control your vehicle with AI-powered chat
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        sx={{ mt: 2 }}
+                        startIcon={<SupportAgent />}
+                      >
+                        Start Chat
+                      </Button>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardActionArea onClick={() => navigate('/simulator')}>
+                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                      <CarIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                      <Typography variant="h6" component="div" gutterBottom>
+                        Car Simulator
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Test and simulate vehicle commands and responses
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        sx={{ mt: 2 }}
+                        startIcon={<CarIcon />}
+                      >
+                        Launch Simulator
+                      </Button>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card>
+                  <CardActionArea onClick={() => navigate('/services')}>
+                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                      <ServiceIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                      <Typography variant="h6" component="div" gutterBottom>
+                        Service Status
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        View upcoming maintenance and service details
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        sx={{ mt: 2 }}
+                        startIcon={<ServiceIcon />}
+                      >
+                        View Services
+                      </Button>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            </Grid>
+
+            {/* Vehicle Controls */}
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Vehicle Controls
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<EnergySavingsLeaf />}
+                    onClick={() => navigate(`/agent-chat?query=enable eco mode&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                  >
+                    Eco Mode
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<AcUnit />}
+                    onClick={() => navigate(`/agent-chat?query=adjust climate control&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                  >
+                    Climate Control
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<SpeedIcon />}
+                    onClick={() => navigate(`/agent-chat?query=run vehicle diagnostics&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                  >
+                    Diagnostics
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    startIcon={<NotificationIcon />}
+                    onClick={() => navigate('/notifications')}
+                  >
+                    View Alerts
+                  </Button>
+                </Grid>
+              </Grid>
+              
+              {/* Emergency Controls */}
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Emergency Controls
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6}>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      color="warning"
+                      onClick={() => navigate(`/agent-chat?query=initiate emergency call&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                      sx={{ color: 'warning.main', borderColor: 'warning.main' }}
+                    >
+                      Emergency Call
+                    </Button>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      color="error"
+                      onClick={() => navigate(`/agent-chat?query=activate SOS&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                      sx={{ color: 'error.main', borderColor: 'error.main' }}
+                    >
+                      SOS Assistance
+                    </Button>
+                  </Grid>
+                </Grid>
+              </Box>
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* Vehicle Metrics Chart */}
+        <Grid item xs={12} md={8}>
+          <Paper sx={{ p: 3, height: '400px' }}>
+            <Typography variant="h6" gutterBottom>
+              Vehicle Metrics
+            </Typography>
+            <VehicleMetrics vehicleStatus={vehicleStatus} />
+          </Paper>
+        </Grid>
+
+        {/* Recent Notifications */}
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 3, height: '400px', overflow: 'auto' }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <NotificationIcon sx={{ mr: 1 }} />
+              Recent Notifications
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+
+            {notifications.length > 0 ? (
+              <List dense>
+                {notifications.map((notification, index) => (
+                  <div key={notification.id || index}>
+                    <ListItem sx={{ px: 0 }}>
+                      <ListItemIcon>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: notification.severity === 'error' ? 'error.main' :
+                              notification.severity === 'warning' ? 'warning.main' : 'info.main'
+                          }}
+                        />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={notification.message || notification.title}
+                        secondary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+                              {notification.timestamp ? new Date(notification.timestamp).toLocaleString() : 'Recent'}
+                            </Typography>
+                            {notification.severity && (
+                              <Chip
+                                label={notification.severity}
+                                size="small"
+                                color={notification.severity === 'error' ? 'error' :
+                                  notification.severity === 'warning' ? 'warning' : 'default'}
+                                variant="outlined"
+                              />
+                            )}
+                          </Box>
+                        }
+                      />
+                    </ListItem>
+                    {index < notifications.length - 1 && <Divider />}
+                  </div>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
+                No recent notifications
+              </Typography>
+            )}
+            <Button
+              fullWidth
+              variant="text"
+              color="primary"
+              sx={{ mt: 2 }}
+              onClick={() => navigate('/notifications')}
+            >
+              View All Notifications
+            </Button>
+          </Paper>
+        </Grid>
+
+
+      </Grid>
+    </Container>
   );
 };
 

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { 
-  Paper, Typography, Box, Button, TextField, CircularProgress 
+  Paper, Typography, Box, Button, CircularProgress 
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { ArrowUpward, ArrowDownward, Error, Link, LinkOff } from '@mui/icons-material';
@@ -65,7 +65,14 @@ const ConnectionControls = styled(Box)(({ theme }) => ({
   alignItems: 'center',
 }));
 
-const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId }) => {
+const LogsHeader = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: theme.spacing(2),
+}));
+
+const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId, onLoadHistory }) => {
   const logsRef = useRef(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   
@@ -79,15 +86,39 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId }) => {
   // Load command history when connected with a vehicle ID
   useEffect(() => {
     const loadCommandHistory = async () => {
-      if (isConnected && vehicleId) {
+      if (isConnected && vehicleId && onLoadHistory) {
         try {
           setIsLoadingHistory(true);
           
-          // Process history items and add them to logs
-          // This would typically be handled through the parent component
-          // via a callback, but we're showing the implementation here
+          // Fetch command history from the backend
+          const response = await fetch(`/api/vehicles/${vehicleId}/command-history`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch history: ${response.statusText}`);
+          }
+          
+          const historyData = await response.json();
+          
+          // Transform history data into log format
+          const historyLogs = historyData.map(item => ({
+            timestamp: new Date(item.timestamp).toLocaleTimeString(),
+            type: item.status === 'success' ? 'success' : 
+                  item.status === 'error' ? 'error' : 'sent',
+            message: `${item.command}: ${item.response || item.error || 'Command sent'}`
+          }));
+          
+          // Call parent callback to add history to logs
+          onLoadHistory(historyLogs);
+          
         } catch (error) {
           console.error('Failed to load command history:', error);
+          // Add error log entry
+          if (onLoadHistory) {
+            onLoadHistory([{
+              timestamp: new Date().toLocaleTimeString(),
+              type: 'error',
+              message: `Failed to load command history: ${error.message}`
+            }]);
+          }
         } finally {
           setIsLoadingHistory(false);
         }
@@ -95,7 +126,7 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId }) => {
     };
     
     loadCommandHistory();
-  }, [isConnected, vehicleId]);
+  }, [isConnected, vehicleId, onLoadHistory]);
 
   const getIconForLogType = (type) => {
     if (type === 'sent') return <ArrowUpward fontSize="small" color="success" sx={{ mr: 1 }} />;
@@ -105,48 +136,61 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId }) => {
 
   return (
     <StyledPaper elevation={3}>
-      <Typography variant="h6" gutterBottom>
-        <Box component="i" className="fas fa-list" sx={{ mr: 1 }} />
-        Communication Logs
-        {isLoadingHistory && <CircularProgress size={20} sx={{ ml: 1 }} />}
-      </Typography>
-      
-      <LogsContainer ref={logsRef}>
-        {logs.map((log, index) => {
-          // Check if we need to add a timestamp divider
-          const needsTimestamp = 
-            index === 0 || 
-            logs[index-1].timestamp !== log.timestamp;
-          
-          return (
-            <React.Fragment key={index}>
-              {needsTimestamp && (
-                <TimeStamp variant="caption">[{log.timestamp}]</TimeStamp>
-              )}
-              <LogEntry type={log.type}>
-                {getIconForLogType(log.type)}
-                {log.message}
-              </LogEntry>
-            </React.Fragment>
-          );
-        })}
+      <LogsContainer>
+        <LogsHeader>
+          <Typography variant="h6" sx={{ color: 'white', flexGrow: 1 }}>
+            Connection Logs
+          </Typography>
+        </LogsHeader>
+        
+        <Typography variant="h6" gutterBottom>
+          <Box component="i" className="fas fa-list" sx={{ mr: 1 }} />
+          Communication Logs
+          {isLoadingHistory && <CircularProgress size={20} sx={{ ml: 1 }} />}
+        </Typography>
+        
+        <LogsContainer ref={logsRef}>
+          {logs.map((log, index) => {
+            // Check if we need to add a timestamp divider
+            const needsTimestamp = 
+              index === 0 || 
+              logs[index-1].timestamp !== log.timestamp;
+            
+            return (
+              <React.Fragment key={index}>
+                {needsTimestamp && (
+                  <TimeStamp variant="caption">[{log.timestamp}]</TimeStamp>
+                )}
+                <LogEntry type={log.type}>
+                  {getIconForLogType(log.type)}
+                  {log.message}
+                </LogEntry>
+              </React.Fragment>
+            );
+          })}
+        </LogsContainer>
       </LogsContainer>
       
       <ConnectionControls>
         <Box component="i" className="fas fa-server" sx={{ mr: 1 }} />
-        <TextField
-          size="small"
-          value={`https://api.car-platform.example.com/v1/vehicles/${vehicleId || 'demo'}/commands`}
-          disabled
-          sx={{ mr: 1, flex: 1 }}
-        />
         <Button
           variant="contained"
-          color={isConnected ? "success" : "error"}
+          color="success"
           onClick={onToggleConnection}
-          startIcon={isConnected ? <Link /> : <LinkOff />}
+          startIcon={<Link />}
+          disabled={isConnected}
+          sx={{ mr: 1 }}
         >
-          {isConnected ? 'Connected' : 'Disconnected'}
+          Connect
+        </Button>
+        <Button
+          variant="contained"
+          color="error"
+          onClick={onToggleConnection}
+          startIcon={<LinkOff />}
+          disabled={!isConnected}
+        >
+          Disconnect
         </Button>
       </ConnectionControls>
     </StyledPaper>

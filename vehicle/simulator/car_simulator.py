@@ -91,7 +91,7 @@ class CarSimulator:
             "status_updates": 0
         }
         
-        logger.info("Enhanced Car Simulator initialized - no mock data generation")
+        logger.info("Car Simulator initialized")
     
     def _get_default_status(self) -> VehicleStatus:
         """Return empty status - no mock data, must be provided externally"""

@@ -3,6 +3,7 @@
  */
 
 import { API_BASE_URL } from './config';
+import { INTERVALS } from '../config/intervals';
 
 /**
  * Send a command to a vehicle
@@ -13,7 +14,8 @@ import { API_BASE_URL } from './config';
  */
 export const sendVehicleCommand = async (vehicleId, command, isCustom = false) => {
   try {
-    const url = `${API_BASE_URL}/command`;
+    // Update to match backend API structure
+    const url = `${API_BASE_URL}/api/command`;
     const payload = {
       vehicleId,
       commandType: command,
@@ -21,11 +23,17 @@ export const sendVehicleCommand = async (vehicleId, command, isCustom = false) =
       timestamp: new Date().toISOString(),
     };
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -47,8 +55,16 @@ export const sendVehicleCommand = async (vehicleId, command, isCustom = false) =
  */
 export const getCommandHistory = async (vehicleId, limit = 20) => {
   try {
-    const url = `${API_BASE_URL}/commands?vehicleId=${encodeURIComponent(vehicleId)}&limit=${limit}`;
-    const response = await fetch(url);
+    // Update to match backend API structure
+    const url = `${API_BASE_URL}/api/commands?vehicleId=${encodeURIComponent(vehicleId)}&limit=${limit}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -59,9 +75,36 @@ export const getCommandHistory = async (vehicleId, limit = 20) => {
   }
 };
 
+/**
+ * Get all commands (no vehicle filter)
+ * @param {number} limit - Maximum number of commands to return
+ * @returns {Promise<Array>} - Array of command history items
+ */
+export const getAllCommands = async (limit = 50) => {
+  try {
+    const url = `${API_BASE_URL}/api/commands?limit=${limit}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching all commands:', error);
+    throw error;
+  }
+};
+
 const commandsApi = {
   sendVehicleCommand,
   getCommandHistory,
+  getAllCommands,
 };
 
 export default commandsApi;

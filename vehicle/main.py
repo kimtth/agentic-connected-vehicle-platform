@@ -39,14 +39,20 @@ car_simulator = CarSimulator()
 # Import agent routes
 try:
     from apis.agent_routes import router as agent_router
+    from apis.vehicle_feature_routes import router as feature_router
+    from apis.remote_access_routes import router as remote_router
+    from apis.emergency_routes import router as emergency_router
 
     logger.info("Agent routes imported successfully")
 except Exception as e:
     logger.error(f"Error importing agent routes: {str(e)}")
-    # Create an empty router for fallback
+    # Create empty routers for fallback
     from fastapi import APIRouter
 
     agent_router = APIRouter()
+    feature_router = APIRouter()
+    remote_router = APIRouter()
+    emergency_router = APIRouter()
 
 
 @asynccontextmanager
@@ -77,8 +83,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the agent router
+# Include all routers
 app.include_router(agent_router, prefix="/api", tags=["Agents"])
+app.include_router(feature_router, tags=["Vehicle Features"])
+app.include_router(remote_router, tags=["Remote Access"])
+app.include_router(emergency_router, tags=["Emergency & Safety"])
 
 
 @app.get("/api/")
@@ -93,6 +102,56 @@ def get_status():
         "azure_cosmos_enabled": cosmos_enabled,
         "azure_cosmos_connected": cosmos_connected,
     }
+
+
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint for frontend API availability detection"""
+    cosmos_enabled = bool(cosmos_client.endpoint and (cosmos_client.key or cosmos_client.use_aad_auth))
+    cosmos_connected = cosmos_client.connected if cosmos_enabled else False
+    
+    return {
+        "status": "healthy",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "services": {
+            "api": "running",
+            "cosmos_db": "connected" if cosmos_connected else "disconnected",
+            "simulator": "running"
+        }
+    }
+
+
+@app.get("/api/vehicles/{vehicle_id}/command-history")
+async def get_vehicle_command_history(vehicle_id: str):
+    """Get command history for a specific vehicle"""
+    try:
+        # Try to ensure Cosmos DB is connected
+        cosmos_connected = await cosmos_client.ensure_connected()
+        if not cosmos_connected:
+            logger.warning("Cosmos DB not available, returning empty command history")
+            return []
+        
+        # Get commands for this specific vehicle
+        commands = await cosmos_client.list_commands(vehicle_id)
+        
+        # Transform commands to the format expected by frontend
+        history = []
+        for cmd in commands:
+            history.append({
+                "timestamp": cmd.get("timestamp", ""),
+                "command": cmd.get("commandType", "unknown"),
+                "status": cmd.get("status", "unknown"),
+                "response": cmd.get("response", ""),
+                "error": cmd.get("error", "")
+            })
+        
+        # Sort by timestamp (newest first)
+        history.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        return history
+    except Exception as e:
+        logger.error(f"Error retrieving command history for vehicle {vehicle_id}: {str(e)}")
+        return []
 
 
 # Submit a command (simulate external system)
@@ -139,24 +198,21 @@ async def get_commands(vehicleId: str = None):
 
 
 # Get vehicle status (from simulator or Cosmos DB)
-@app.get("/api/vehicle/{vehicleId}/status")
-async def get_vehicle_status(vehicleId: str):
-    """Get the status of a vehicle"""
-    # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
-
-    # Try to fetch from Cosmos DB first, fall back to simulator
+@app.get("/api/vehicles/{vehicle_id}/status")
+async def get_vehicle_status(vehicle_id: str):
+    """Get the current status of a vehicle"""
     try:
-        cosmos_status = await cosmos_client.get_vehicle_status(vehicleId)
-        if cosmos_status:
-            return cosmos_status
+        cosmos_connected = await cosmos_client.ensure_connected()
+        if cosmos_connected:
+            status = await cosmos_client.get_vehicle_status(vehicle_id)
+            if status:
+                return status
+        
+        # Fallback to simulator
+        return car_simulator.get_status(vehicle_id)
     except Exception as e:
-        logger.warning(
-            f"Failed to get status from Cosmos DB, falling back to simulator: {str(e)}"
-        )
-
-    # Fallback to simulator
-    return car_simulator.get_status(vehicleId)
+        logger.error(f"Error getting vehicle status: {str(e)}")
+        return car_simulator.get_status(vehicle_id)
 
 
 # Stream vehicle status updates
@@ -291,7 +347,7 @@ async def list_services(vehicleId: str):
 async def update_vehicle_status(vehicleId: str, status: VehicleStatus):
     """Update the status of a vehicle"""
     # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
+    cosmos_connected = await cosmos_client.ensure_connected()
 
     # Validate vehicleId
     if not vehicleId or not vehicleId.strip():
@@ -320,22 +376,51 @@ async def update_vehicle_status(vehicleId: str, status: VehicleStatus):
         except Exception as sim_error:
             logger.warning(f"Could not get original simulator state: {str(sim_error)}")
 
-        # Store in Cosmos DB first
-        result = await cosmos_client.update_vehicle_status(vehicleId, status_data)
-        cosmos_update_success = True
-        logger.info(f"Successfully updated vehicle {vehicleId} status in Cosmos DB")
+        # Store in Cosmos DB first if connected
+        if cosmos_connected:
+            try:
+                result = await cosmos_client.update_vehicle_status(vehicleId, status_data)
+                cosmos_update_success = True
+                logger.info(f"Successfully updated vehicle {vehicleId} status in Cosmos DB")
+            except Exception as cosmos_error:
+                logger.error(f"Failed to update Cosmos DB: {str(cosmos_error)}")
+                # Continue with simulator update even if Cosmos DB fails
+        else:
+            logger.warning("Cosmos DB not connected, updating simulator only")
+            result = status_data
 
-        # Update simulator state as well for consistency
-        car_simulator.update_status(vehicleId, status_data)
-        logger.info(f"Successfully updated vehicle {vehicleId} status in simulator")
+        # Update simulator state - use set_status instead of update_status
+        try:
+            # Check if the method exists before calling it
+            if hasattr(car_simulator, 'set_status'):
+                car_simulator.set_status(vehicleId, status_data)
+            elif hasattr(car_simulator, 'update_vehicle_status'):
+                car_simulator.update_vehicle_status(vehicleId, status_data)
+            else:
+                # Fallback: add vehicle if it doesn't exist, then try to update
+                car_simulator.add_vehicle(vehicleId)
+                logger.info(f"Added vehicle {vehicleId} to simulator")
+            
+            logger.info(f"Successfully updated vehicle {vehicleId} status in simulator")
+        except Exception as sim_error:
+            logger.error(f"Failed to update simulator: {str(sim_error)}")
+            # If simulator update fails but Cosmos DB succeeded, continue
+            if not cosmos_update_success:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to update status in both Cosmos DB and simulator: {str(sim_error)}"
+                )
 
-        return result
+        return result if cosmos_update_success else {"status": "updated", "vehicleId": vehicleId, "data": status_data}
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error updating vehicle status for {vehicleId}: {str(e)}")
         
         # If Cosmos DB update succeeded but simulator update failed, try to rollback Cosmos DB
-        if cosmos_update_success and original_simulator_state:
+        if cosmos_update_success and original_simulator_state and cosmos_connected:
             try:
                 await cosmos_client.update_vehicle_status(vehicleId, original_simulator_state)
                 logger.info(f"Rolled back Cosmos DB status for vehicle {vehicleId}")
@@ -358,7 +443,7 @@ async def update_vehicle_status(vehicleId: str, status: VehicleStatus):
 async def patch_vehicle_status(vehicleId: str, status_update: dict):
     """Update specific fields of a vehicle's status"""
     # Ensure Cosmos DB is connected
-    await cosmos_client.ensure_connected()
+    cosmos_connected = await cosmos_client.ensure_connected()
 
     # Validate vehicleId
     if not vehicleId:
@@ -367,6 +452,16 @@ async def patch_vehicle_status(vehicleId: str, status_update: dict):
     try:
         # First get current status
         current_status = await get_vehicle_status(vehicleId)
+        
+        # If no current status exists, create a default one
+        if not current_status:
+            current_status = {
+                "vehicleId": vehicleId,
+                "Battery": 0,
+                "Temperature": 0,
+                "Speed": 0,
+                "OilRemaining": 0
+            }
 
         # Update with new values
         current_status.update(status_update)
@@ -374,13 +469,33 @@ async def patch_vehicle_status(vehicleId: str, status_update: dict):
         # Add timestamp
         current_status["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Store updated status
-        result = await cosmos_client.update_vehicle_status(vehicleId, current_status)
+        # Store updated status in Cosmos DB if connected
+        if cosmos_connected:
+            try:
+                result = await cosmos_client.update_vehicle_status(vehicleId, current_status)
+            except Exception as cosmos_error:
+                logger.error(f"Failed to update Cosmos DB: {str(cosmos_error)}")
+                result = current_status
+        else:
+            result = current_status
         
-        # Update simulator as well
-        car_simulator.update_status(vehicleId, current_status)
+        # Update simulator as well - use appropriate method
+        try:
+            if hasattr(car_simulator, 'set_status'):
+                car_simulator.set_status(vehicleId, current_status)
+            elif hasattr(car_simulator, 'update_vehicle_status'):
+                car_simulator.update_vehicle_status(vehicleId, current_status)
+            else:
+                # Fallback: ensure vehicle exists in simulator
+                car_simulator.add_vehicle(vehicleId)
+                logger.info(f"Added vehicle {vehicleId} to simulator for status update")
+        except Exception as sim_error:
+            logger.warning(f"Failed to update simulator: {str(sim_error)}")
         
         return result
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error updating vehicle status: {str(e)}")
         raise HTTPException(
@@ -393,98 +508,119 @@ async def process_command_async(command):
     """Process a command asynchronously"""
     try:
         # Ensure Cosmos DB is connected
-        await cosmos_client.ensure_connected()
+        cosmos_connected = await cosmos_client.ensure_connected()
 
         # Extract command details
         command_id = command["commandId"]
         vehicleId = command["vehicleId"]
 
-        # Update command status to "processing"
-        await cosmos_client.update_command(
-            command_id=command_id,
-            vehicleId=vehicleId,
-            updated_data={"status": "processing"},
-        )
+        # Update command status to "processing" if Cosmos DB is available
+        if cosmos_connected:
+            try:
+                await cosmos_client.update_command(
+                    command_id=command_id,
+                    vehicleId=vehicleId,
+                    updated_data={"status": "processing"},
+                )
+            except Exception as cosmos_error:
+                logger.warning(f"Failed to update command status in Cosmos DB: {str(cosmos_error)}")
 
         # Send command to car simulator
         ack = await car_simulator.receive_command(command)
 
-        # Update command status to "completed"
-        await cosmos_client.update_command(
-            command_id=command_id,
-            vehicleId=vehicleId,
-            updated_data={
-                "status": "completed",
-                "completion_time": datetime.datetime.now(
-                    datetime.timezone.utc
-                ).isoformat(),
-            },
-        )
-
-        # Create notification
-        notification = {
-            "id": str(uuid.uuid4()),
-            "vehicleId": vehicleId,
-            "type": "command_executed",
-            "message": f"Command {command['commandType']} executed successfully",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "read": False,
-        }
-
-        await cosmos_client.create_notification(notification)
-
-    except Exception as e:
-        logger.error(f"Error processing command: {str(e)}")
-
-        # Update command status to "failed"
-        if "command_id" in locals() and "vehicleId" in locals():
-            await cosmos_client.update_command(
-                command_id=command_id,
-                vehicleId=vehicleId,
-                updated_data={
-                    "status": "failed",
-                    "error": str(e),
-                    "completion_time": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
-                },
-            )
-
+        # Update command status to "completed" if Cosmos DB is available
+        if cosmos_connected:
             try:
-                # Try to send the command to the simulator and use the acknowledgment
-                ack = await car_simulator.receive_command(command)
-                status = ack.get("status", "unknown")
+                await cosmos_client.update_command(
+                    command_id=command_id,
+                    vehicleId=vehicleId,
+                    updated_data={
+                        "status": "completed",
+                        "completion_time": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                    },
+                )
+            except Exception as cosmos_error:
+                logger.warning(f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}")
 
-                # Create notification with the simulator's response status
+        # Create notification if Cosmos DB is available
+        if cosmos_connected:
+            try:
                 notification = {
                     "id": str(uuid.uuid4()),
                     "vehicleId": vehicleId,
                     "type": "command_executed",
-                    "message": f"Command {command['commandType']} executed with status: {status}",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "message": f"Command {command['commandType']} executed successfully",
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "read": False,
-                    "error": str(e),
                 }
                 await cosmos_client.create_notification(notification)
+            except Exception as cosmos_error:
+                logger.warning(f"Failed to create notification in Cosmos DB: {str(cosmos_error)}")
 
-            except Exception as sim_error:
-                # If the simulator call also fails, log it and create a simplified notification
-                logger.error(f"Error communicating with simulator: {str(sim_error)}")
-                notification = {
-                    "id": str(uuid.uuid4()),
-                    "vehicleId": vehicleId,
-                    "type": "command_failed",
-                    "message": f"Failed to process command {command['commandType']}",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
-                    "read": False,
-                    "error": str(e),
-                }
-                await cosmos_client.create_notification(notification)
+    except Exception as e:
+        logger.error(f"Error processing command: {str(e)}")
 
+        # Update command status to "failed" if possible
+        if "command_id" in locals() and "vehicleId" in locals() and cosmos_connected:
+            try:
+                await cosmos_client.update_command(
+                    command_id=command_id,
+                    vehicleId=vehicleId,
+                    updated_data={
+                        "status": "failed",
+                        "error": str(e),
+                        "completion_time": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                    },
+                )
+            except Exception as cosmos_error:
+                logger.warning(f"Failed to update command failure status: {str(cosmos_error)}")
+
+        try:
+            # Try to send the command to the simulator and use the acknowledgment
+            ack = await car_simulator.receive_command(command)
+            status = ack.get("status", "unknown")
+
+            # Create notification with the simulator's response status if Cosmos DB is available
+            if cosmos_connected and "vehicleId" in locals():
+                try:
+                    notification = {
+                        "id": str(uuid.uuid4()),
+                        "vehicleId": vehicleId,
+                        "type": "command_executed",
+                        "message": f"Command {command['commandType']} executed with status: {status}",
+                        "timestamp": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                        "read": False,
+                        "error": str(e),
+                    }
+                    await cosmos_client.create_notification(notification)
+                except Exception as cosmos_error:
+                    logger.warning(f"Failed to create error notification: {str(cosmos_error)}")
+
+        except Exception as sim_error:
+            # If the simulator call also fails, log it and create a simplified notification
+            logger.error(f"Error communicating with simulator: {str(sim_error)}")
+            if cosmos_connected and "vehicleId" in locals():
+                try:
+                    notification = {
+                        "id": str(uuid.uuid4()),
+                        "vehicleId": vehicleId,
+                        "type": "command_failed",
+                        "message": f"Failed to process command {command['commandType']}",
+                        "timestamp": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                        "read": False,
+                        "error": str(e),
+                    }
+                    await cosmos_client.create_notification(notification)
+                except Exception as cosmos_error:
+                    logger.warning(f"Failed to create failure notification: {str(cosmos_error)}")
 
 # Top-level entry points for multiprocessing
 def run_weather_process():

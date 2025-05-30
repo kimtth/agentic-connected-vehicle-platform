@@ -69,7 +69,7 @@ class DiagnosticsBatteryPlugin:
             # Use the analyze_vehicle_data tool with real data
             metrics = [
                 "battery_health",
-                "tire_pressure",
+                "tire_pressure", 
                 "brake_wear",
                 "oil_level",
                 "engine_health",

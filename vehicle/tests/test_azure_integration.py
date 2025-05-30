@@ -139,7 +139,7 @@ async def test_agent_integration():
     query = "What services are available for vehicle test-vehicle-1?"
     
     # Call agent
-    response = client.post("/api/agent/ask", json={"query": query})
+    response = client.post("/agent/ask", json={"query": query})
     assert response.status_code == 200
     assert "response" in response.json()
     assert "plugins_used" in response.json()

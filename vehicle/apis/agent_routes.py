@@ -64,6 +64,26 @@ async def ask_agent(request: AgentQueryRequest):
         context = request.context or {}
         context["session_id"] = session_id
         
+        # Handle agent-specific routing based on context
+        agent_type = context.get("agentType") or context.get("agent_type")
+        if agent_type:
+            # Map frontend agent types to backend agent types
+            agent_type_mapping = {
+                "remote-access": "remote_access",
+                "safety-emergency": "safety_emergency", 
+                "charging-energy": "charging_energy",
+                "information-services": "information_services",
+                "feature-control": "vehicle_feature_control",
+                "diagnostics-battery": "diagnostics_battery",
+                "alerts-notifications": "alerts_notifications"
+            }
+            
+            # Convert frontend agent type to backend agent type
+            mapped_agent_type = agent_type_mapping.get(agent_type, agent_type)
+            context["agent_type"] = mapped_agent_type
+            
+            logger.info(f"Routing request to agent type: {mapped_agent_type}")
+        
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
@@ -88,12 +108,20 @@ async def ask_agent(request: AgentQueryRequest):
             try:
                 response = await agent_manager.process_request(request.query, context)
                 response["session_id"] = session_id
+                
+                # Ensure response has expected structure
+                if "response" not in response:
+                    response["response"] = "Request processed successfully"
+                if "success" not in response:
+                    response["success"] = True
+                    
                 return response
             except Exception as e:
                 logger.error(f"Error in agent processing: {str(e)}")
                 # Return a fallback response instead of failing
                 return {
                     "response": "I apologize, but I'm experiencing technical difficulties at the moment. Please try again later or contact support if the issue persists.",
+                    "success": False,
                     "error": "Agent service temporarily unavailable",
                     "session_id": session_id,
                     "plugins_used": [],
