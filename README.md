@@ -133,8 +133,6 @@ Users can interact with their vehicles using natural language through specialize
 
 The platform provides comprehensive vehicle management capabilities with real-time status monitoring and command execution.
 
-![Vehicle Control Panel](./doc/vehicle_dashboard.png)
-
 ![Car Simulator](./doc/car_simulator.png)
 *Vehicle control interface showing available commands and current status*
 

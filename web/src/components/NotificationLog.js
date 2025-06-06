@@ -46,7 +46,7 @@ const NotificationLog = ({ vehicleId }) => {
           <CircularProgress size={24} />
         </Box>
       ) : (
-        <TableContainer component={Paper} sx={{ maxHeight: 200 }}>
+        <TableContainer component={Paper} sx={{ maxHeight: 800 }}>
           <Table stickyHeader aria-label="notification log table" size="small" className="notification-log-table">
             <TableHead>
               <TableRow>
