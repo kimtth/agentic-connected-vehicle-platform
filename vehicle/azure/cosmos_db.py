@@ -37,8 +37,32 @@ async def _cleanup_all_clients():
         except Exception as e:
             logger.debug(f"Error during global cleanup: {str(e)}")
 
-# Register cleanup function
-atexit.register(lambda: asyncio.create_task(_cleanup_all_clients()) if asyncio.get_event_loop().is_running() else None)
+def _safe_atexit_cleanup():
+    """Safe cleanup function for atexit that handles missing event loop"""
+    try:
+        # Check if there's a running event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # If we get here, there's a running loop, create a task
+            asyncio.create_task(_cleanup_all_clients())
+        except RuntimeError:
+            # No running loop, try to get the event loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(_cleanup_all_clients())
+                else:
+                    # Loop exists but not running, run the cleanup
+                    loop.run_until_complete(_cleanup_all_clients())
+            except RuntimeError:
+                # No event loop available, skip cleanup
+                pass
+    except Exception as e:
+        # Silently ignore cleanup errors during shutdown
+        pass
+
+# Register cleanup function with improved error handling
+atexit.register(_safe_atexit_cleanup)
 
 class CosmosDBClient:
     """Azure Cosmos DB client implementation for Connected Car Platform"""

@@ -14,7 +14,6 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import BuildIcon from '@mui/icons-material/Build';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatIcon from '@mui/icons-material/Chat';
-import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import SecurityIcon from '@mui/icons-material/Security';
 import InfoIcon from '@mui/icons-material/Info';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
@@ -95,11 +94,10 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
   // Navigation items for sidebar
   const navigationItems = [
     { path: '/', icon: <DashboardIcon />, text: 'Dashboard' },
+    { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
     { path: '/simulator', icon: <DirectionsCarIcon />, text: 'Car Simulator' },
-    { path: '/vehicle-dashboard', icon: <DisplaySettingsIcon />, text: 'Vehicle Display' },
     { path: '/services', icon: <BuildIcon />, text: 'Services' },
     { path: '/notifications', icon: <NotificationsIcon />, text: 'Notifications' },
-    { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
   ];
 
   // System items for sidebar

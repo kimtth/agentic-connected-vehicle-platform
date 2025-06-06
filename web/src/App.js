@@ -6,7 +6,6 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
-import VehicleDashboard from './components/VehicleDashboard';
 import AgentChat from './components/AgentChat';
 import SimulatorPanel from './components/simulator/SimulatorPanel';
 import { fetchVehicles } from './api/vehicles';
@@ -182,21 +181,6 @@ function App() {
                 <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
                   <Typography variant="h5" color="textSecondary">
                     No vehicles available. Please add a vehicle to start.
-                  </Typography>
-                </Container>
-              )
-            } />
-            
-            {/* Vehicle Dashboard Route - now will work with proper navigation */}
-            <Route path="/vehicle-dashboard" element={
-              selectedVehicle ? (
-                <Container maxWidth="lg">
-                  <VehicleDashboard vehicleId={selectedVehicle.vehicleId || selectedVehicle.VehicleId} />
-                </Container>
-              ) : (
-                <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" color="textSecondary">
-                    No vehicles available. Please select a vehicle first.
                   </Typography>
                 </Container>
               )
