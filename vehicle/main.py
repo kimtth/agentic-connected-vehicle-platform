@@ -22,7 +22,6 @@ from plugin.mcp_server import start_weather_server
 
 # Configure loguru first, before importing any Azure modules
 from utils.logging_config import logger, configure_logging
-from agents.base.a2a_server_init import start_a2a_server
 
 # Configure loguru with environment variable or default to INFO
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -628,11 +627,6 @@ def run_weather_process():
     asyncio.run(start_weather_server(host="0.0.0.0", port=8001))
 
 
-def run_a2a_process():
-    """Entry for A2A server."""
-    asyncio.run(start_a2a_server(host="0.0.0.0", port=8002))
-
-
 # Entry point for running the application
 if __name__ == "__main__":
     # Initialize
@@ -653,14 +647,6 @@ if __name__ == "__main__":
         logger.info(f"MCP server started with PID {mcp_proc.pid}")
     except Exception as e:
         logger.error(f"Failed to start MCP server: {str(e)}")
-
-    try:
-        logger.info("Starting A2A server process on port 8002")
-        a2a_proc = Process(target=run_a2a_process, daemon=True)
-        a2a_proc.start()
-        logger.info(f"A2A server started with PID {a2a_proc.pid}")
-    except Exception as e:
-        logger.error(f"Failed to start A2A server: {str(e)}")
 
     # Always start the API server, even if other servers failed
     try:
