@@ -6,7 +6,6 @@ This agent oversees vehicle diagnostics, battery status, and system health repor
 
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
-from utils.agent_tools import analyze_vehicle_data
 from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -704,4 +703,5 @@ class DiagnosticsBatteryPlugin:
             "message": message,
             "data": data or {},
             "success": success,
+        }
         }

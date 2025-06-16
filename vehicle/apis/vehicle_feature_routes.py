@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional
 from pydantic import BaseModel
 
-from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -25,6 +24,12 @@ class WindowsControlRequest(BaseModel):
     windows: str = "all"  # all, driver, passenger
 
 
+# Import agent_manager locally to avoid circular import
+def get_agent_manager():
+    from agents.agent_manager import agent_manager
+    return agent_manager
+
+
 @router.post("/lights")
 async def control_lights(
     vehicle_id: str,
@@ -32,6 +37,7 @@ async def control_lights(
 ):
     """Control vehicle lights (headlights, interior, hazard)"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"turn {request.action} {request.light_type}",
@@ -64,6 +70,7 @@ async def control_climate(
 ):
     """Control vehicle climate settings"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"set climate to {request.temperature} degrees {request.action}",
@@ -96,6 +103,7 @@ async def control_windows(
 ):
     """Control vehicle windows"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"roll {request.action} {request.windows} windows",
@@ -127,6 +135,7 @@ async def get_feature_status(
 ):
     """Get current status of vehicle features"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "session_id": f"status_{vehicle_id}"

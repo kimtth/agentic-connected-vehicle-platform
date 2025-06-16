@@ -448,14 +448,14 @@ const reader = response.body.getReader();
 Extend the platform with custom agents:
 
 ```python
-from agents.base.base_agent import BasePlugin
 from semantic_kernel.functions import kernel_function
+from typing import Dict, Any, Optional
 
-class MyCustomPlugin(BasePlugin):
+class MyCustomPlugin:
     @kernel_function(description="Custom vehicle operation")
     async def my_custom_function(self, vehicle_id: str) -> Dict[str, Any]:
         # Implement custom logic
-        return self._format_response("Custom operation completed")
+        return {"message": "Custom operation completed", "success": True}
 ```
 
 ## Production Deployment

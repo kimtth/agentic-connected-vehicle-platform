@@ -10,9 +10,11 @@ import uuid
 import logging
 import json
 
-# Import the Agent Manager
-from agents.agent_manager import agent_manager
-    
+# Add this local import function to defer import:
+def get_agent_manager():
+    from agents.agent_manager import agent_manager
+    return agent_manager
+
 from utils.agent_tools import (
     search_vehicle_database,
     recommend_services,
@@ -26,7 +28,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create router
-router = APIRouter()
+router = APIRouter(
+    prefix="/agents",
+    tags=["Agents"], # Using "Agents" as a tag example
+)
 
 # Define request models
 class AgentQueryRequest(BaseModel):
@@ -88,6 +93,7 @@ async def ask_agent(request: AgentQueryRequest):
         if request.stream:
             async def stream_generator():
                 try:
+                    agent_manager = get_agent_manager()
                     async for chunk in agent_manager.process_request_stream(request.query, context):
                         yield f"data: {json.dumps(chunk)}\n\n"
                 except Exception as e:
@@ -106,6 +112,7 @@ async def ask_agent(request: AgentQueryRequest):
         else:
             # Regular non-streaming response
             try:
+                agent_manager = get_agent_manager()
                 response = await agent_manager.process_request(request.query, context)
                 response["session_id"] = session_id
                 
@@ -397,3 +404,6 @@ async def recommend_services_endpoint(request: ServiceRecommendationRequest):
     except Exception as e:
         logger.error(f"Error in service recommendations: {str(e)}")
         raise HTTPException(status_code=503, detail="Recommendation service temporarily unavailable")
+
+# Add a log at the end of the module to confirm it's fully parsed when imported
+logger.debug("vehicle.apis.agent_routes module loaded and router defined.")

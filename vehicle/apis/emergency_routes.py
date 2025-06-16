@@ -2,12 +2,15 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
-from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/vehicles/{vehicle_id}/emergency", tags=["Emergency & Safety"])
 
+# Import agent_manager locally to avoid circular import
+def get_agent_manager():
+    from agents.agent_manager import agent_manager
+    return agent_manager
 
 class EmergencyCallRequest(BaseModel):
     emergency_type: Optional[str] = "general"  # general, medical, fire, police
@@ -30,6 +33,7 @@ async def emergency_call(
 ):
     """Initiate an emergency call"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"emergency call {request.emergency_type}",
@@ -63,6 +67,7 @@ async def report_collision(
 ):
     """Report a collision incident"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"collision report {request.severity}",
@@ -97,6 +102,7 @@ async def report_theft(
 ):
     """Report vehicle theft"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"theft report",
@@ -130,6 +136,7 @@ async def activate_sos(
 ):
     """Activate SOS emergency response"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": "SOS emergency",

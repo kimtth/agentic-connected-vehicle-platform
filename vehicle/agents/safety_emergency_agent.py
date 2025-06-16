@@ -2,8 +2,6 @@ import datetime
 import uuid
 from typing import Dict, Any, Optional
 
-from utils.agent_tools import format_notification
-from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -525,5 +523,7 @@ class SafetyEmergencyPlugin:
         return {
             "message": message,
             "success": success,
+            "data": data or {},
+        }
             "data": data or {},
         }

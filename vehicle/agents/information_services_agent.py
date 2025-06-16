@@ -19,7 +19,6 @@ from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
-from agents.base.base_agent import BasePlugin
 
 logger = get_logger(__name__)
 
@@ -40,7 +39,7 @@ class InformationServicesAgent:
         )
 
 
-class InformationServicesPlugin(BasePlugin):
+class InformationServicesPlugin:
     """Plugin for information services operations."""
 
     @kernel_function(
@@ -225,4 +224,14 @@ class InformationServicesPlugin(BasePlugin):
             "traffic": "Check traffic conditions and incidents",
             "points_of_interest": "Find nearby points of interest",
             "navigation": "Set up and manage navigation to destinations",
+        }
+
+    def _format_response(
+        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Format the response to be returned by the agent."""
+        return {
+            "message": message,
+            "success": success,
+            "data": data or {},
         }

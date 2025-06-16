@@ -1,7 +1,6 @@
 import datetime
 import uuid
 from typing import Dict, Any, Optional
-from utils.agent_tools import format_notification
 from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -359,4 +358,5 @@ class AlertsNotificationsPlugin:
         response = {"message": message, "success": success}
         if data:
             response.update(data)
+        return response
         return response

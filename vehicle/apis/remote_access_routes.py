@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from agents.agent_manager import agent_manager
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -16,6 +15,12 @@ class EngineControlRequest(BaseModel):
     action: str  # start, stop
 
 
+# Import agent_manager locally to avoid circular import
+def get_agent_manager():
+    from agents.agent_manager import agent_manager
+    return agent_manager
+
+
 @router.post("/doors")
 async def control_doors(
     vehicle_id: str,
@@ -23,6 +28,7 @@ async def control_doors(
 ):
     """Lock or unlock vehicle doors remotely"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"{request.action} doors",
@@ -55,6 +61,7 @@ async def control_engine(
 ):
     """Start or stop vehicle engine remotely"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"{request.action} engine",
@@ -86,6 +93,7 @@ async def locate_vehicle(
 ):
     """Activate horn and lights to locate vehicle"""
     try:
+        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": "locate vehicle",

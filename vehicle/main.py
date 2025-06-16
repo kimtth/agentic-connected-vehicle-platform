@@ -2,12 +2,20 @@
 Main application for the connected vehicle platform.
 """
 
+from datetime import datetime
+import sys
 import os
-import uuid
-import datetime
-import json
 import asyncio
+import logging
+from pathlib import Path
+import uuid
+
 import uvicorn
+
+# Add the project root to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -19,9 +27,15 @@ from models.status import VehicleStatus
 from simulator.car_simulator import CarSimulator
 from dotenv import load_dotenv
 from plugin.mcp_server import start_weather_server
-
-# Configure loguru first, before importing any Azure modules
 from utils.logging_config import logger, configure_logging
+
+# Configure logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
 
 # Configure loguru with environment variable or default to INFO
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -35,12 +49,21 @@ from azure.cosmos_db import cosmos_client
 # Initialize the car simulator
 car_simulator = CarSimulator()
 
-# Import agent routes
+# Import agent routes with better error handling
 try:
-    from apis.agent_routes import router as agent_router
-    from apis.vehicle_feature_routes import router as feature_router
-    from apis.remote_access_routes import router as remote_router
-    from apis.emergency_routes import router as emergency_router
+    # Import routes with local imports to avoid circular dependencies
+    import importlib
+    
+    # Import modules individually to better isolate errors
+    agent_routes_module = importlib.import_module('apis.agent_routes')
+    feature_routes_module = importlib.import_module('apis.vehicle_feature_routes') 
+    remote_routes_module = importlib.import_module('apis.remote_access_routes')
+    emergency_routes_module = importlib.import_module('apis.emergency_routes')
+    
+    agent_router = agent_routes_module.router
+    feature_router = feature_routes_module.router
+    remote_router = remote_routes_module.router
+    emergency_router = emergency_routes_module.router
 
     logger.info("Agent routes imported successfully")
 except Exception as e:
@@ -52,6 +75,8 @@ except Exception as e:
     feature_router = APIRouter()
     remote_router = APIRouter()
     emergency_router = APIRouter()
+    
+    logger.warning("Using fallback empty routers due to import errors")
 
 
 @asynccontextmanager

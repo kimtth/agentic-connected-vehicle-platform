@@ -4,7 +4,6 @@ Uses real data from Azure Cosmos DB.
 """
 import datetime
 from typing import Dict, Any, List, Optional
-from azure.cosmos_db import cosmos_client
 
 # Configure logging
 from utils.logging_config import get_logger
@@ -25,6 +24,8 @@ async def get_vehicles_from_cosmos() -> List[Dict[str, Any]]:
     Returns:
         List of vehicles from Cosmos DB
     """
+    from azure.cosmos_db import cosmos_client
+    
     # Ensure connection before fetching data
     await cosmos_client.ensure_connected()
     
@@ -96,6 +97,8 @@ async def get_services_from_cosmos(vehicle_id: str) -> List[Dict[str, Any]]:
     Returns:
         List of services from Cosmos DB
     """
+    from azure.cosmos_db import cosmos_client
+    
     try:
         # Get services from Cosmos DB
         services = await cosmos_client.list_services(vehicle_id)
@@ -311,6 +314,8 @@ async def get_vehicle_status_from_cosmos(vehicle_id: str) -> Dict[str, Any]:
     Returns:
         Status data or empty dict if unavailable
     """
+    from azure.cosmos_db import cosmos_client
+    
     try:
         # Get status from Cosmos DB
         status = await cosmos_client.get_vehicle_status(vehicle_id)
@@ -329,6 +334,8 @@ async def get_latest_status_from_cosmos(vehicle_id: str) -> Dict[str, Any]:
     Returns:
         Latest status data or empty dict if unavailable
     """
+    from azure.cosmos_db import cosmos_client
+    
     # Ensure connection before fetching data
     await cosmos_client.ensure_connected()
     
@@ -380,6 +387,8 @@ async def analyze_vehicle_data(vehicle_id: str,
     Returns:
         Analysis results
     """
+    from azure.cosmos_db import cosmos_client
+    
     # Default metrics if none provided
     if not metrics:
         metrics = ["fuel_efficiency", "battery_health", "driving_behavior"]

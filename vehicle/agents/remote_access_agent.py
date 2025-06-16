@@ -2,8 +2,6 @@ import datetime
 import uuid
 from typing import Dict, Any, Optional
 
-from utils.agent_tools import validate_command
-from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -245,5 +243,7 @@ class RemoteAccessPlugin(BasePlugin):
         return {
             "door_control": "Lock and unlock vehicle doors",
             "engine_control": "Remotely start and stop the engine",
+            "locate_vehicle": "Activate horn and lights to locate the vehicle",
+        }
             "locate_vehicle": "Activate horn and lights to locate the vehicle",
         }
