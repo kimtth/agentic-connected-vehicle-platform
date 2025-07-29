@@ -7,7 +7,7 @@ import { INTERVALS } from '../config/intervals';
 import { createRetryInterceptor, DEV_HELPERS, getCurrentEnvConfig } from './config';
 
 // Get base URL from environment variable or use default
-const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const baseURL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
 
 // Create axios instance
 export const api = axios.create({

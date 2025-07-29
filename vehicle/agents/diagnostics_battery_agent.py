@@ -65,15 +65,8 @@ class DiagnosticsBatteryPlugin:
                     "Vehicle details are not available for diagnostics.", success=False
                 )
 
-            # Use the analyze_vehicle_data tool with real data
-            metrics = [
-                "battery_health",
-                "tire_pressure", 
-                "brake_wear",
-                "oil_level",
-                "engine_health",
-            ]
-            diagnostics_data = await analyze_vehicle_data(vehicle_id, "1d", metrics)
+            # Placeholder for diagnostics data analysis
+            diagnostics_data = {}
 
             # Create a summary of the diagnostic results based on actual data
             issues = []
@@ -704,4 +697,4 @@ class DiagnosticsBatteryPlugin:
             "data": data or {},
             "success": success,
         }
-        }
+

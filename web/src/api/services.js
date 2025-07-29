@@ -9,7 +9,7 @@ export const fetchServices = async (vehicleId) => {
   try {
     // Update to match backend API structure - use singular "vehicle" not "vehicles"
     const response = await api.get(
-      `/vehicle/${encodeURIComponent(vehicleId)}/services`
+      `/api/vehicles/${encodeURIComponent(vehicleId)}/services`
     );
 
     if (!response.data) {
@@ -43,7 +43,7 @@ export const addService = async (vehicleId, service) => {
   try {
     // Update to match backend API structure - use singular "vehicle" not "vehicles"
     const response = await api.post(
-      `/vehicle/${encodeURIComponent(vehicleId)}/service`,
+      `/api/vehicles/${encodeURIComponent(vehicleId)}/services`,
       service
     );
     return response.data;
@@ -63,7 +63,7 @@ export const addService = async (vehicleId, service) => {
 export const updateService = async (vehicleId, serviceId, updates) => {
   try {
     const response = await api.put(
-      `/vehicle/${encodeURIComponent(vehicleId)}/service/${encodeURIComponent(serviceId)}`,
+      `/api/vehicles/${encodeURIComponent(vehicleId)}/services/${encodeURIComponent(serviceId)}`,
       updates
     );
     return response.data;
@@ -82,7 +82,7 @@ export const updateService = async (vehicleId, serviceId, updates) => {
 export const deleteService = async (vehicleId, serviceId) => {
   try {
     await api.delete(
-      `/vehicle/${encodeURIComponent(vehicleId)}/service/${encodeURIComponent(serviceId)}`
+      `/api/vehicles/${encodeURIComponent(vehicleId)}/services/${encodeURIComponent(serviceId)}`
     );
   } catch (error) {
     console.error('Error deleting service:', error);

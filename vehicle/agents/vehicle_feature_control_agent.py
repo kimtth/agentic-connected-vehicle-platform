@@ -1,7 +1,7 @@
 import datetime
 from typing import Any, Dict, Optional
 import uuid
-
+from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -241,7 +241,5 @@ class VehicleFeatureControlPlugin(BasePlugin):
         return {
             "lights_control": "Control headlights, interior lights, and hazard lights",
             "climate_control": "Adjust temperature, heating, and air conditioning",
-            "windows_control": "Open and close vehicle windows",
-        }
             "windows_control": "Open and close vehicle windows",
         }

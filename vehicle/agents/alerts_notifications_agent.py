@@ -111,18 +111,13 @@ class AlertsNotificationsPlugin:
                 "parameters": {"speed_limit": speed_limit},
             }
             await cosmos_client.create_notification(notification)
-            formatted = format_notification(
-                notification_type="system_alert",
-                message=f"Speed alert set for {speed_limit} km/h",
-                severity="medium",
-            )
             return self._format_response(
                 f"I've set a speed alert for {speed_limit} km/h. You'll receive a notification if the vehicle exceeds this speed.",
                 data={
                     "action": "set_speed_alert",
                     "vehicle_id": vehicle_id,
                     "speed_limit": speed_limit,
-                    "notification": formatted,
+                    "notification": notification,
                 },
             )
         except Exception as e:
@@ -160,11 +155,6 @@ class AlertsNotificationsPlugin:
                 "parameters": {"start_time": start, "end_time": end},
             }
             await cosmos_client.create_notification(notification)
-            formatted = format_notification(
-                notification_type="system_alert",
-                message=f"Curfew alert set from {start} to {end}",
-                severity="medium",
-            )
             return self._format_response(
                 f"I've set a curfew alert from {start} to {end}. You'll receive a notification if the vehicle is used during these hours.",
                 data={
@@ -172,7 +162,7 @@ class AlertsNotificationsPlugin:
                     "vehicle_id": vehicle_id,
                     "start_time": start,
                     "end_time": end,
-                    "notification": formatted,
+                    "notification": notification,
                 },
             )
         except Exception as e:
@@ -218,18 +208,13 @@ class AlertsNotificationsPlugin:
                 "parameters": {"threshold": threshold},
             }
             await cosmos_client.create_notification(notification)
-            formatted = format_notification(
-                notification_type="system_alert",
-                message=f"Battery alert set for {threshold}%",
-                severity="medium",
-            )
             return self._format_response(
                 f"I've set a battery alert for {threshold}%. You'll receive a notification if the battery level falls below this threshold.",
                 data={
                     "action": "set_battery_alert",
                     "vehicle_id": vehicle_id,
                     "threshold": threshold,
-                    "notification": formatted,
+                    "notification": notification,
                 },
             )
         except Exception as e:
@@ -359,4 +344,4 @@ class AlertsNotificationsPlugin:
         if data:
             response.update(data)
         return response
-        return response
+

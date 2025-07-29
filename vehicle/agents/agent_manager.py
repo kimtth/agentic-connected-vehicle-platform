@@ -171,8 +171,9 @@ class AgentManager:
     async def _enrich_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Enrich context with vehicle data and status."""
         enriched_context = context.copy()
-        vehicle_id = context.get("vehicle_id")
-        
+        # support both keys from frontend payload
+        vehicle_id = context.get("vehicle_id") or context.get("vehicleId")
+
         if not vehicle_id:
             return enriched_context
             
@@ -181,6 +182,8 @@ class AgentManager:
             vehicle_data = await self._get_vehicle_data(vehicle_id)
             if vehicle_data:
                 enriched_context["vehicle_data"] = vehicle_data
+                # ensure a single, unified key
+                enriched_context["vehicle_id"] = vehicle_id
                 
             # Get vehicle status
             vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)

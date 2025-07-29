@@ -225,7 +225,6 @@ export const DEV_HELPERS = {
       '/vehicles/{vehicleId}/emergency/collision',
       '/vehicles/{vehicleId}/emergency/theft',
       '/vehicles/{vehicleId}/emergency/sos',
-      '/simulator/vehicles/{vehicleId}/status',
       // Agent endpoints
       '/agent/ask',
       '/agent/remote-access',

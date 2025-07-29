@@ -4,7 +4,10 @@ from pydantic import BaseModel
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/vehicles/{vehicle_id}/remote-access", tags=["Remote Access"])
+router = APIRouter(
+    prefix="/vehicles/{vehicle_id}/remote-access", 
+    tags=["Remote Access"]
+)
 
 
 class DoorControlRequest(BaseModel):

@@ -8,8 +8,8 @@ import { api } from './apiClient';
 export const fetchNotifications = async (vehicleId) => {
   try {
     const url = vehicleId
-      ? `/notifications?vehicleId=${encodeURIComponent(vehicleId)}`
-      : '/notifications';
+      ? `/api/notifications?vehicleId=${encodeURIComponent(vehicleId)}`
+      : '/api/notifications';
     const response = await api.get(url);
     return response.data;
   } catch (error) {
@@ -26,7 +26,7 @@ export const fetchNotifications = async (vehicleId) => {
 export const markNotificationRead = async (notificationId) => {
   try {
     const response = await api.put(
-      `/notifications/${encodeURIComponent(notificationId)}/read`
+      `/api/notifications/${encodeURIComponent(notificationId)}/read`
     );
     return response.data;
   } catch (error) {
@@ -43,7 +43,7 @@ export const markNotificationRead = async (notificationId) => {
 export const deleteNotification = async (notificationId) => {
   try {
     await api.delete(
-      `/notifications/${encodeURIComponent(notificationId)}`
+      `/api/notifications/${encodeURIComponent(notificationId)}`
     );
   } catch (error) {
     console.error('Error deleting notification:', error);
@@ -58,7 +58,7 @@ export const deleteNotification = async (notificationId) => {
  */
 export const createNotification = async (notificationData) => {
   try {
-    const response = await api.post('/notifications', notificationData);
+    const response = await api.post('/api/notifications', notificationData);
     return response.data;
   } catch (error) {
     console.error('Error creating notification:', error);
