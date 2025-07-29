@@ -113,9 +113,12 @@ graph TD
     
     subgraph "External Integrations"
         AzureAI[Azure OpenAI]
-        MCP[MCP Weather Service]
-        A2A[A2A Agent Network]
-        Simulator[Car Simulator]
+        subgraph "MCP Servers"
+            MCP_Weather[Weather Service]
+            MCP_Traffic[Traffic Service]
+            MCP_POI[Points of Interest Service]
+            MCP_Navigation[Navigation Service]
+        end
     end
     
     RA --> Core
@@ -124,15 +127,14 @@ graph TD
     FC --> Core
     
     Manager --> AzureAI
-    IS --> MCP
-    Manager --> A2A
+    IS --> MCP_Weather
+    IS --> MCP_Traffic
+    IS --> MCP_POI
+    IS --> MCP_Navigation
     
     Core --> Cosmos
     Status --> Cosmos
     Notif --> Cosmos
-    
-    Core --> Simulator
-    Simulator --> Status
     
     REST --> Core
     Core --> Vehicle[Connected Vehicle]
@@ -148,14 +150,14 @@ sequenceDiagram
     participant Agent as Specialized Agent
     participant Plugin as Agent Plugin
     participant Cosmos as Cosmos DB
-    participant Vehicle as Vehicle/Simulator
-    
+    participant Vehicle as Vehicle
+
     User->>AgentAPI: "Lock my car doors"
     AgentAPI->>Manager: Process with context
     Manager->>Manager: Analyze intent (SK)
     Manager->>Agent: Route to Remote Access Agent
     Agent->>Plugin: Execute door_lock function
-    
+
     Plugin->>Cosmos: Validate vehicle exists
     Cosmos-->>Plugin: Vehicle data
     Plugin->>Plugin: Validate command safety
@@ -164,7 +166,7 @@ sequenceDiagram
     Vehicle-->>Plugin: Command acknowledgment
     Plugin->>Cosmos: Update command status
     Plugin->>Cosmos: Create notification
-    
+
     Plugin-->>Agent: Execution result
     Agent->>Manager: Formatted response
     Manager->>AgentAPI: Structured response
@@ -191,14 +193,24 @@ sequenceDiagram
   Speed alerts, curfew monitoring, battery & maintenance notifications.
 
 ### Core Platform APIs
-- `GET /api/vehicles`                  List all vehicles  
-- `POST /api/vehicle`                  Add a new vehicle profile  
-- `GET /api/vehicle/{id}/status`       Get current status  
-- `GET /api/vehicle/{id}/status/stream` Stream real-time status  
-- `PUT /api/vehicle/{id}/status`       Update vehicle status  
-- `POST /api/command`                  Submit a control command  
-- `GET /api/commands`                  Retrieve command history  
-- `GET /api/notifications`             Retrieve system notifications
+- `GET    /api/vehicles`                                  List all vehicles  
+- `POST   /api/vehicle`                                   Add a new vehicle profile  
+- `GET    /api/vehicles/{vehicle_id}`                     Get a single vehicle by ID  
+- `GET    /api/vehicles/{vehicle_id}/status`              Get current status of a vehicle  
+- `GET    /api/vehicle/{vehicle_id}/status/stream`        Stream real-time status updates  
+- `PUT    /api/vehicle/{vehicle_id}/status`               Update full vehicle status  
+- `PATCH  /api/vehicle/{vehicle_id}/status`               Partially update vehicle status  
+- `POST   /api/vehicles/{vehicle_id}/services`            Add a service record to a vehicle  
+- `GET    /api/vehicles/{vehicle_id}/services`            List all services for a vehicle  
+- `PUT    /api/vehicles/{vehicle_id}/services/{service_id}`  Update a service record  
+- `DELETE /api/vehicles/{vehicle_id}/services/{service_id}`  Delete a service record  
+- `GET    /api/vehicles/{vehicle_id}/command-history`     Retrieve command history for a vehicle  
+- `POST   /api/command`                                   Submit a control command  
+- `GET    /api/commands`                                  Retrieve all commands (optional `vehicleId` filter)  
+- `GET    /api/notifications`                             Retrieve all notifications (optional `vehicleId` filter)  
+- `POST   /api/notifications`                             Create a notification  
+- `PUT    /api/notifications/{notificationId}/read`       Mark a notification as read  
+- `DELETE /api/notifications/{notificationId}`            Delete a notification  
 
 ```bash
 # List all vehicles

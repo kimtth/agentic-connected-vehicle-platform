@@ -26,15 +26,15 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 2. 🐍 Backend  
    ```bash
    cd vehicle
-   pip install -r requirements.txt
+   poetry install
    cp .env.sample .env   # add your Azure keys
    python main.py
    ```
 3. 🌐 Frontend  
    ```bash
    cd web
-   npm install
-   npm start
+   yarn install
+   yarn start
    ```
 4. 🎉 Open  
    - Backend: http://localhost:8000  
@@ -42,6 +42,15 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 
 ## 📖 Documentation
 For full API reference, architecture, and examples, see the project documentation.
+
+### Dashboard Overview
+![Platform Dashboard](./doc/dashboard.png)
+
+### Natural Language Agent Interface
+![Agent Chat Interface](./doc/agent_chat.png)
+
+### Vehicle Simulation & Control
+![Car Simulator](./doc/car_simulator.png)
 
 ## 📜 License
 MIT © kimtth
