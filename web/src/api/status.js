@@ -11,7 +11,7 @@ import { INTERVALS } from '../config/intervals';
 export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
   try {
     // Use the correct API endpoint that matches backend - use plural "vehicles" for status
-    const response = await api.get(`/vehicles/${encodeURIComponent(vehicleId)}/status`);
+    const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
     if (response.data) {
       return response.data;
     } else {
@@ -97,7 +97,7 @@ export const updateVehicleStatus = async (vehicleId, statusData) => {
 export const patchVehicleStatus = async (vehicleId, statusUpdates) => {
   try {
     // Backend uses singular "vehicle" for status patches
-    const response = await api.patch(`/vehicle/${encodeURIComponent(vehicleId)}/status`, statusUpdates);
+    const response = await api.patch(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusUpdates);
     return response.data;
   } catch (error) {
     console.error(`Error patching vehicle status for ${vehicleId}:`, error);
@@ -182,40 +182,4 @@ export const setupPolling = (vehicleId, onStatusUpdate, onError, interval = INTE
   return () => {
     isActive = false;
   };
-};
-
-/**
- * Get simulated vehicle status (for testing/simulator)
- * @param {string} vehicleId 
- * @returns {Promise<Object>} Vehicle status
- */
-export const getSimulatedStatus = async (vehicleId) => {
-  try {
-    const response = await api.get(`/simulator/vehicles/${encodeURIComponent(vehicleId)}/status`);
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching simulated status for ${vehicleId}:`, error);
-    // Return fallback status if simulator is not available
-    return {
-      Battery: 85,
-      Temperature: 22,
-      Speed: 0,
-      OilRemaining: 80,
-      engineStatus: "off",
-      doorStatus: {
-        frontLeft: false,
-        frontRight: false,
-        rearLeft: false,
-        rearRight: false
-      },
-      climateSettings: {
-        temperature: 22,
-        fanSpeed: 0,
-        mode: "off"
-      },
-      timestamp: new Date().toISOString(),
-      vehicleId: vehicleId,
-      source: "fallback"
-    };
-  }
 };

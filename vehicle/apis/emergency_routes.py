@@ -5,7 +5,10 @@ from pydantic import BaseModel
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/vehicles/{vehicle_id}/emergency", tags=["Emergency & Safety"])
+router = APIRouter(
+    prefix="/vehicles/{vehicle_id}/emergency", 
+    tags=["Emergency & Safety"]
+)
 
 # Import agent_manager locally to avoid circular import
 def get_agent_manager():

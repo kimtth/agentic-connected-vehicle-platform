@@ -121,11 +121,3 @@ def get_server_instance():
         The Server instance
     """
     return mcp_weather_server
-
-if __name__ == "__main__":
-    # Run the server using FastMCP's built-in CLI
-    import fastmcp.cli
-    fastmcp.cli.main()
-else:
-    # When imported as a module, expose the necessary components
-    logger.info("Weather MCP module loaded")

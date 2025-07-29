@@ -5,7 +5,10 @@ from pydantic import BaseModel
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/vehicles/features", tags=["Vehicle Features"])
+router = APIRouter(
+    prefix="/vehicles/{vehicle_id}/features", 
+    tags=["Vehicle Features"]
+)
 
 
 class LightsControlRequest(BaseModel):

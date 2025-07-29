@@ -249,6 +249,11 @@ const SimulatorPanel = ({ vehicleId }) => {
       cleanup();
     };
   }, [vehicleId, isConnected]); // Remove other dependencies to prevent recreating
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    initializeConnection();
+    return cleanup;
+  }, []);
 
   // Toggle connection
   const toggleConnection = useCallback(() => {

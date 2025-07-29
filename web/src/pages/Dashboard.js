@@ -52,13 +52,14 @@ const Dashboard = ({ selectedVehicle }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isMounted, setIsMounted] = useState(true);
+  const isMounted = React.useRef(true);
 
   useEffect(() => {
-    setIsMounted(true);
-    
+    // Fix: Remove the incorrect early return that prevents effect from running
+    isMounted.current = true;
+
     const loadDashboardData = async () => {
-      if (!selectedVehicle || !isMounted) {
+      if (!selectedVehicle || !isMounted.current) {
         setLoading(false);
         return;
       }
@@ -71,7 +72,7 @@ const Dashboard = ({ selectedVehicle }) => {
         const vehicleId = selectedVehicle.VehicleId || selectedVehicle.vehicleId;
         if (createVehicleStatusThrottle(vehicleId)) {
           const status = await fetchVehicleStatus(vehicleId);
-          if (status && Object.keys(status).length > 0 && isMounted) {
+          if (status && Object.keys(status).length > 0 && isMounted.current) {
             setVehicleStatus({
               engineTemp: `${status.Temperature || 0}°C`,
               speed: `${status.Speed || 0} km/h`,
@@ -88,14 +89,14 @@ const Dashboard = ({ selectedVehicle }) => {
         // Load recent notifications
         try {
           const notificationData = await fetchNotifications(vehicleId);
-          if (Array.isArray(notificationData) && isMounted) {
+          if (Array.isArray(notificationData) && isMounted.current) {
             setNotifications(notificationData.slice(0, 5)); // Show only recent 5
-          } else if (isMounted) {
+          } else if (isMounted.current) {
             setNotifications([]);
           }
         } catch (notificationError) {
           console.warn('Could not load notifications:', notificationError);
-          if (isMounted) {
+          if (isMounted.current) {
             setNotifications([]);
           }
         }
@@ -103,13 +104,13 @@ const Dashboard = ({ selectedVehicle }) => {
       } catch (err) {
         console.error('Error loading dashboard data:', err);
         
-        if (isMounted) {
+        if (isMounted.current) {
           // More specific error messages based on error type
           let errorMessage = 'Failed to load dashboard data.';
           if (err.message?.includes('fetch') || err.name === 'TypeError') {
             errorMessage = 'Unable to connect to vehicle services. Please check if the backend is running on port 8000.';
           } else if (err.status === 404) {
-            errorMessage = 'Vehicle services not found. Please verify the vehicle ID and service configuration.';
+            errorMessage = 'Vehicle not found. Please verify the vehicle ID.';
           } else if (err.status >= 500) {
             errorMessage = 'Vehicle services are experiencing issues. Please try again later.';
           }
@@ -117,7 +118,7 @@ const Dashboard = ({ selectedVehicle }) => {
           setError(errorMessage);
         }
       } finally {
-        if (isMounted) {
+        if (isMounted.current) {
           setLoading(false);
         }
       }
@@ -127,13 +128,13 @@ const Dashboard = ({ selectedVehicle }) => {
     
     // Use centralized interval configuration with proper cleanup
     const interval = setInterval(() => {
-      if (isMounted) {
+      if (isMounted.current) {
         loadDashboardData();
       }
     }, INTERVALS.DASHBOARD_REFRESH);
     
     return () => {
-      setIsMounted(false);
+      isMounted.current = false;
       clearInterval(interval);
     };
   }, [selectedVehicle]);

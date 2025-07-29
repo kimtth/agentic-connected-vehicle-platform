@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import { api } from '../api/apiClient';
+import { askAgent } from '../api/agent';
 import { styled } from '@mui/system';
 
 // Define available agents with their details
@@ -195,23 +195,23 @@ const AgentChat = ({ vehicleId }) => {
         console.log('🚀 Sending agent request:', requestPayload);
       }
       
-      const response = await api.post(`/agent/ask`, requestPayload);
+      const responseData = await askAgent(requestPayload);
       
       // Log the response in development
       if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Agent response received:', response.data);
+        console.log('✅ Agent response received:', responseData);
       }
       
       // Add agent response to chat history
       const agentMessage = {
         type: 'agent',
-        text: response.data.response || "Sorry, I couldn't process that request.",
+        text: responseData.response || "Sorry, I couldn't process that request.",
         agentType: selectedAgent.type,
         agentTitle: selectedAgent.title,
-        data: response.data.data,
-        pluginsUsed: response.data.plugins_used || [],
-        executionTime: response.data.execution_time || 0,
-        success: response.data.success !== false,
+        data: responseData.data,
+        pluginsUsed: responseData.plugins_used || [],
+        executionTime: responseData.execution_time || 0,
+        success: responseData.success !== false,
         timestamp: new Date().toISOString()
       };
       
@@ -392,13 +392,15 @@ const AgentChat = ({ vehicleId }) => {
         </FormControl>
         
         <Tooltip title="Clear chat history">
-          <IconButton 
-            color="error" 
-            onClick={clearChatHistory}
-            disabled={chatHistory.length === 0}
-          >
-            <DeleteIcon />
-          </IconButton>
+          <span>
+            <IconButton 
+              color="error" 
+              onClick={clearChatHistory}
+              disabled={chatHistory.length === 0}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
       

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(
-    prefix="/agents",
+    prefix="/agent",
     tags=["Agents"], # Using "Agents" as a tag example
 )
 
@@ -60,7 +60,7 @@ tool_handlers = {
 }
 
 # Agent system entry point with streaming support
-@router.post("/agent/ask")
+@router.post("/ask")
 async def ask_agent(request: AgentQueryRequest):
     """General agent system entry point to ask any question, with optional streaming"""
     try:
@@ -140,7 +140,7 @@ async def ask_agent(request: AgentQueryRequest):
         raise HTTPException(status_code=503, detail="Agent service temporarily unavailable")
 
 # Direct access to specialized agents
-@router.post("/agent/remote-access")
+@router.post("/remote-access")
 async def query_remote_access(request: AgentQueryRequest):
     """Query the Remote Access Agent directly"""
     try:
@@ -168,7 +168,7 @@ async def query_remote_access(request: AgentQueryRequest):
         logger.error(f"Error in remote access agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/safety-emergency")
+@router.post("/safety-emergency")
 async def query_safety_emergency(request: AgentQueryRequest):
     """Query the Safety & Emergency Agent directly"""
     try:
@@ -196,7 +196,7 @@ async def query_safety_emergency(request: AgentQueryRequest):
         logger.error(f"Error in safety emergency agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/charging-energy")
+@router.post("/charging-energy")
 async def query_charging_energy(request: AgentQueryRequest):
     """Query the Charging & Energy Agent directly"""
     try:
@@ -224,7 +224,7 @@ async def query_charging_energy(request: AgentQueryRequest):
         logger.error(f"Error in charging energy agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/information-services")
+@router.post("/information-services")
 async def query_information_services(request: AgentQueryRequest):
     """Query the Information Services Agent directly"""
     try:
@@ -252,7 +252,7 @@ async def query_information_services(request: AgentQueryRequest):
         logger.error(f"Error in information services agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/feature-control")
+@router.post("/feature-control")
 async def query_feature_control(request: AgentQueryRequest):
     """Query the Vehicle Feature Control Agent directly"""
     try:
@@ -280,7 +280,7 @@ async def query_feature_control(request: AgentQueryRequest):
         logger.error(f"Error in feature control agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/diagnostics-battery")
+@router.post("/diagnostics-battery")
 async def query_diagnostics_battery(request: AgentQueryRequest):
     """Query the Diagnostics & Battery Agent directly"""
     try:
@@ -308,7 +308,7 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
         logger.error(f"Error in diagnostics battery agent: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/agent/alerts-notifications")
+@router.post("/alerts-notifications")
 async def query_alerts_notifications(request: AgentQueryRequest):
     """Query the Alerts & Notifications Agent directly"""
     try:

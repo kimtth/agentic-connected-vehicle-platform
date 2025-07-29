@@ -4,21 +4,14 @@ Information Services Agent for the Connected Car Platform.
 This agent provides real-time vehicle-related information such as weather, traffic,
 and points of interest.
 """
-
-import os
-import sys
-import datetime
-import uuid
 from typing import Dict, Any, Optional
-from datetime import datetime
-
-# Use the weather MCP server to get weather data
 from semantic_kernel.connectors.mcp import MCPStdioPlugin
 from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
-from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
+from semantic_kernel import create_chat_service
+import json
 
 logger = get_logger(__name__)
 
@@ -41,6 +34,13 @@ class InformationServicesAgent:
 
 class InformationServicesPlugin:
     """Plugin for information services operations."""
+
+    def __init__(self):
+        # register MCP-based tools
+        self.weather_tool = MCPStdioPlugin("weather_service")
+        self.traffic_tool = MCPStdioPlugin("traffic_service")
+        self.poi_tool     = MCPStdioPlugin("poi_service")
+        self.nav_tool     = MCPStdioPlugin("navigation_service")
 
     @kernel_function(
         description="Get weather information for the vehicle's location",
@@ -70,7 +70,17 @@ class InformationServicesPlugin:
             location = "Toronto, ON"
             
         try:
-            return await weather_service.get_weather(location or "current location")
+            # Determine coordinates (fallback to default Toronto, ON)
+            coords = await self._get_vehicle_location(vehicle_id)
+            # TODO: If location is provided, use it to get coordinates
+            if not coords:
+                coords = {"latitude": 43.6532, "longitude": -79.3832}
+            latitude = coords.get("latitude", 43.6532)
+            longitude = coords.get("longitude", -79.3832)
+            # Call the MCP weather tool
+            return await self.weather_tool.invoke_async(
+                "get_weather", latitude, longitude
+            )
         except Exception as e:
             logger.error(f"Error getting weather: {e}")
             return f"Weather information is currently unavailable. Error: {str(e)}"
@@ -98,7 +108,13 @@ class InformationServicesPlugin:
         logger.info(f"Getting traffic information for route: {route}, vehicle: {vehicle_id}")
         
         try:
-            return await traffic_service.get_traffic_info(route or "current route")
+            coords = await self._get_vehicle_location(vehicle_id)
+            latitude = coords.get("latitude", 0.0)
+            longitude = coords.get("longitude", 0.0)
+            result = await self.traffic_tool.invoke_async(
+                "get_traffic", route or "current route", latitude, longitude
+            )
+            return json.dumps(result)
         except Exception as e:
             logger.error(f"Error getting traffic information: {e}")
             return f"Traffic information is currently unavailable. Error: {str(e)}"
@@ -126,10 +142,13 @@ class InformationServicesPlugin:
         logger.info(f"Finding POIs for category: {category}, vehicle: {vehicle_id}")
         
         try:
-            return await poi_service.find_points_of_interest(
-                category or "general", 
-                vehicle_id=vehicle_id
+            coords = await self._get_vehicle_location(vehicle_id)
+            latitude = coords.get("latitude", 0.0)
+            longitude = coords.get("longitude", 0.0)
+            result = await self.poi_tool.invoke_async(
+                "find_pois", category or "general", latitude, longitude
             )
+            return json.dumps(result)
         except Exception as e:
             logger.error(f"Error finding POIs: {e}")
             return f"Points of interest search is currently unavailable. Error: {str(e)}"
@@ -157,7 +176,13 @@ class InformationServicesPlugin:
         logger.info(f"Getting navigation to: {destination}, vehicle: {vehicle_id}")
         
         try:
-            return await navigation_service.get_directions(destination, vehicle_id=vehicle_id)
+            coords = await self._get_vehicle_location(vehicle_id)
+            latitude = coords.get("latitude", 0.0)
+            longitude = coords.get("longitude", 0.0)
+            result = await self.nav_tool.invoke_async(
+                "get_directions", destination, latitude, longitude
+            )
+            return json.dumps(result)
         except Exception as e:
             logger.error(f"Error getting navigation directions: {e}")
             return f"Navigation service is currently unavailable. Error: {str(e)}"

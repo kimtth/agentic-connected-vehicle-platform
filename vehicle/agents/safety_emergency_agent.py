@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from typing import Dict, Any, Optional
-
+from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -105,13 +105,6 @@ class SafetyEmergencyPlugin:
 
             await cosmos_client.create_notification(notification)
 
-            # Format notification for response
-            formatted_notification = format_notification(
-                notification_type="system_alert",
-                message="Emergency call initiated. Help is on the way.",
-                severity="critical",
-            )
-
             return self._format_response(
                 "Emergency call has been initiated. Help is on the way. "
                 "Stay on the line and follow any instructions from emergency services.",
@@ -119,7 +112,7 @@ class SafetyEmergencyPlugin:
                     "action": "emergency_call",
                     "vehicle_id": vehicle_id,
                     "status": "initiated",
-                    "notification": formatted_notification,
+                    "notification": notification,
                     "location": location,
                     "command_id": command_id,
                 },
@@ -212,13 +205,6 @@ class SafetyEmergencyPlugin:
 
             await cosmos_client.create_notification(notification)
 
-            # Format notification for response
-            formatted_notification = format_notification(
-                notification_type="system_alert",
-                message="Collision detected. Emergency services have been notified.",
-                severity="critical",
-            )
-
             return self._format_response(
                 "I've detected a collision and notified emergency services. "
                 "Are you okay? Do you need any immediate assistance?",
@@ -226,7 +212,7 @@ class SafetyEmergencyPlugin:
                     "action": "collision_alert",
                     "vehicle_id": vehicle_id,
                     "status": "processed",
-                    "notification": formatted_notification,
+                    "notification": notification,
                     "location": location,
                     "command_id": command_id,
                 },
@@ -319,13 +305,6 @@ class SafetyEmergencyPlugin:
 
             await cosmos_client.create_notification(notification)
 
-            # Format notification for response
-            formatted_notification = format_notification(
-                notification_type="system_alert",
-                message="Potential vehicle theft detected. Authorities have been notified.",
-                severity="high",
-            )
-
             return self._format_response(
                 "I've recorded your vehicle theft report and notified the authorities. "
                 "The vehicle's location is being tracked, and you'll receive updates on the situation.",
@@ -333,7 +312,7 @@ class SafetyEmergencyPlugin:
                     "action": "theft_notification",
                     "vehicle_id": vehicle_id,
                     "status": "processed",
-                    "notification": formatted_notification,
+                    "notification": notification,
                     "location": location,
                     "command_id": command_id,
                 },
@@ -420,12 +399,6 @@ class SafetyEmergencyPlugin:
 
             await cosmos_client.create_notification(notification)
 
-            formatted_notification = format_notification(
-                notification_type="emergency_alert",
-                message="SOS request activated. Emergency services have been contacted.",
-                severity="critical",
-            )
-
             return self._format_response(
                 "SOS request has been activated. Emergency services have been contacted and "
                 "are being dispatched to your location. Please stay calm and wait for assistance.",
@@ -433,7 +406,7 @@ class SafetyEmergencyPlugin:
                     "action": "sos_request",
                     "vehicle_id": vehicle_id,
                     "status": "activated",
-                    "notification": formatted_notification,
+                    "notification": notification,
                     "location": location,
                     "command_id": command_id,
                 },
@@ -523,7 +496,5 @@ class SafetyEmergencyPlugin:
         return {
             "message": message,
             "success": success,
-            "data": data or {},
-        }
             "data": data or {},
         }
