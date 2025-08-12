@@ -1,8 +1,11 @@
-from typing import Dict, Any, List
+from typing import Dict, Any
 from fastmcp import FastMCP
-from datetime import datetime
-from utils.logging_config import get_logger
 import asyncio
+import sys
+from pathlib import Path
+from utils.logging_config import get_logger  # type: ignore
+from plugin.sample_data import generate_directions  # type: ignore
+
 
 logger = get_logger(__name__)
 mcp_navigation_server = FastMCP("navigation_service")
@@ -13,13 +16,7 @@ async def get_directions(destination: str, latitude: float, longitude: float) ->
     Get navigation directions for a given destination and start location.
     """
     try:
-        steps = [
-            f"Head north for 1 km from ({latitude:.4f},{longitude:.4f})",
-            "Turn right at the next intersection",
-            f"Continue straight for 2 km towards {destination}",
-            f"Arrive at {destination}"
-        ]
-        return {"destination": destination, "start": {"lat": latitude, "lon": longitude}, "steps": steps, "timestamp": datetime.utcnow().isoformat()}
+        return generate_directions(destination, latitude, longitude)
     except Exception as e:
         logger.error(f"Error retrieving directions: {e}")
         raise

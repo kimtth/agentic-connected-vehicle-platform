@@ -11,6 +11,7 @@ from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -36,8 +37,8 @@ class DiagnosticsBatteryPlugin:
     async def _handle_diagnostics(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a diagnostics request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to run diagnostics for.",
                 success=False,
@@ -48,7 +49,7 @@ class DiagnosticsBatteryPlugin:
             await cosmos_client.ensure_connected()
 
             # Get vehicle status from Cosmos DB
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent vehicle status data is available for diagnostics.",
@@ -58,7 +59,7 @@ class DiagnosticsBatteryPlugin:
             # Get vehicle details to check specs
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
             if not vehicle:
                 return self._format_response(
@@ -107,7 +108,7 @@ class DiagnosticsBatteryPlugin:
                     issues.append("Low oil level detected")
 
             # Get service history to check maintenance status
-            services = await cosmos_client.list_services(vehicle_id)
+            services = await cosmos_client.list_services(vid)
             if services:
                 # Find most recent service
                 sorted_services = sorted(
@@ -146,7 +147,7 @@ class DiagnosticsBatteryPlugin:
                     "diagnostics": diagnostics_data,
                     "issues": issues,
                     "status": status,
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                 },
             )
         except Exception as e:
@@ -160,8 +161,8 @@ class DiagnosticsBatteryPlugin:
     async def _handle_battery_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a battery status request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check battery status for.",
                 success=False,
@@ -172,7 +173,7 @@ class DiagnosticsBatteryPlugin:
             await cosmos_client.ensure_connected()
 
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent battery status data is available.", success=False
@@ -180,9 +181,7 @@ class DiagnosticsBatteryPlugin:
 
             # Get vehicle details
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
             if not vehicle:
                 return self._format_response(
                     "Vehicle details are not available for battery status.",
@@ -223,7 +222,7 @@ class DiagnosticsBatteryPlugin:
 
                 # Looking at status history can help determine if charging is happening
                 status_history = await cosmos_client.list_vehicle_status(
-                    vehicle_id, limit=5
+                    vid, limit=5
                 )
                 if len(status_history) > 1:
                     # If the battery level has increased over time, the vehicle might be charging
@@ -282,7 +281,7 @@ class DiagnosticsBatteryPlugin:
                     f"Estimated battery replacement in {battery_data['estimated_replacement']}.",
                     data={
                         "battery": battery_data,
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "vehicle_type": "electric",
                     },
                 )
@@ -325,7 +324,7 @@ class DiagnosticsBatteryPlugin:
                     f"Recommendation: {battery_data['estimated_replacement']}.",
                     data={
                         "battery": battery_data,
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "vehicle_type": "combustion",
                     },
                 )
@@ -341,8 +340,8 @@ class DiagnosticsBatteryPlugin:
     async def _handle_system_health(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a system health request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check system health for.",
                 success=False,
@@ -353,7 +352,7 @@ class DiagnosticsBatteryPlugin:
             await cosmos_client.ensure_connected()
 
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent vehicle status data is available for system health check.",
@@ -363,7 +362,7 @@ class DiagnosticsBatteryPlugin:
             # Get vehicle details
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
             if not vehicle:
                 return self._format_response(
@@ -372,7 +371,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get command history to check for any failed commands
-            commands = await cosmos_client.list_commands(vehicle_id)
+            commands = await cosmos_client.list_commands(vid)
             recent_commands = sorted(
                 commands, key=lambda c: c.get("timestamp", ""), reverse=True
             )[:10]
@@ -444,7 +443,7 @@ class DiagnosticsBatteryPlugin:
                 response_text,
                 data={
                     "system_health": system_health,
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "failed_commands": len(failed_commands),
                 },
             )
@@ -460,8 +459,8 @@ class DiagnosticsBatteryPlugin:
     async def _handle_maintenance_check(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a maintenance check request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check maintenance for.",
                 success=False,
@@ -474,7 +473,7 @@ class DiagnosticsBatteryPlugin:
             # Get vehicle details
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
             if not vehicle:
                 return self._format_response(
@@ -483,7 +482,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get service history
-            services = await cosmos_client.list_services(vehicle_id)
+            services = await cosmos_client.list_services(vid)
 
             # Check vehicle properties
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
@@ -623,7 +622,7 @@ class DiagnosticsBatteryPlugin:
 
             return self._format_response(
                 response_text,
-                data={"maintenance_items": maintenance_items, "vehicle_id": vehicle_id},
+                data={"maintenance_items": maintenance_items, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error checking maintenance: {str(e)}")

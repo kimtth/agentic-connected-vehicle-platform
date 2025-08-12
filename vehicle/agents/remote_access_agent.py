@@ -2,12 +2,13 @@ import datetime
 import uuid
 from typing import Dict, Any, Optional
 from azure.cosmos_db import cosmos_client
-from plugin.sk_plugin import validate_command 
+from utils.agent_tools import validate_command  # correct source
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from agents.base.base_agent import BasePlugin
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -34,31 +35,35 @@ class RemoteAccessPlugin(BasePlugin):
     @kernel_function(description="Handle a door lock/unlock request.")
     async def _handle_door_lock(
         self,
-        vehicle_id: Optional[str],
-        lock: bool,
+        vehicle_id: Optional[str] = None,
+        lock: Optional[bool] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Handle a door lock/unlock request."""
-        if not vehicle_id:
+        # Validate lock flag
+        if lock is None:
+            return self._format_response(
+                "Please specify whether to lock or unlock the doors.", success=False
+            )
+
+        action = "lock" if lock else "unlock"
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control.", success=False
             )
 
         try:
-            action = "lock" if lock else "unlock"
-
             # Ensure Cosmos DB connection
             await cosmos_client.ensure_connected()
 
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             # Validate the command
@@ -81,7 +86,7 @@ class RemoteAccessPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": command_type,
                 "parameters": {"doors": "all"},
                 "status": "Sent",
@@ -95,7 +100,7 @@ class RemoteAccessPlugin(BasePlugin):
                 f"I've {action}ed your vehicle doors.",
                 data={
                     "action": f"door_{action}",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "command_id": command_id,
                 },
             )
@@ -110,31 +115,29 @@ class RemoteAccessPlugin(BasePlugin):
     @kernel_function(description="Handle remote engine start/stop request.")
     async def _handle_engine_control(
         self,
-        vehicle_id: Optional[str],
-        start: bool,
+        vehicle_id: Optional[str] = None,
+        start: bool = True,
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Handle remote engine start/stop request."""
-        if not vehicle_id:
+        action = "start" if start else "stop"
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control the engine for.",
                 success=False,
             )
 
         try:
-            action = "start" if start else "stop"
-            
             await cosmos_client.ensure_connected()
 
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             command_type = "START_ENGINE" if start else "STOP_ENGINE"
@@ -143,7 +146,7 @@ class RemoteAccessPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": command_type,
                 "parameters": {"remote": True},
                 "status": "Sent",
@@ -157,7 +160,7 @@ class RemoteAccessPlugin(BasePlugin):
                 f"I've {action}ed your vehicle engine remotely.",
                 data={
                     "action": f"engine_{action}",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "command_id": command_id,
                 },
             )
@@ -171,13 +174,13 @@ class RemoteAccessPlugin(BasePlugin):
 
     @kernel_function(description="Handle horn and lights activation.")
     async def _handle_horn_lights(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self, vehicle_id: Optional[str] = None, action: Optional[str] = "locate"
     ) -> Dict[str, Any]:
         """Handle horn and lights activation for vehicle location."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
-                "Please specify which vehicle you'd like to activate horn and lights for.",
-                success=False,
+                "vehicle_id is required", success=False
             )
 
         try:
@@ -188,7 +191,7 @@ class RemoteAccessPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "HORN_LIGHTS",
                 "parameters": {"duration": 10},
                 "status": "Sent",
@@ -202,7 +205,7 @@ class RemoteAccessPlugin(BasePlugin):
                 "I've activated the horn and lights to help you locate your vehicle.",
                 data={
                     "action": "horn_lights",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "command_id": command_id,
                 },
             )
@@ -230,7 +233,7 @@ class RemoteAccessPlugin(BasePlugin):
         elif "stop" in query_lower and "engine" in query_lower:
             return await self._handle_engine_control(vehicle_id, False, context)
         elif "horn" in query_lower or "locate" in query_lower:
-            return await self._handle_horn_lights(vehicle_id, context)
+            return await self._handle_horn_lights(vehicle_id)  # fixed: don't pass context as action
         else:
             return self._format_response(
                 "I can help you with remote vehicle access including locking/unlocking doors, "
@@ -246,3 +249,4 @@ class RemoteAccessPlugin(BasePlugin):
             "engine_control": "Remotely start and stop the engine",
             "locate_vehicle": "Activate horn and lights to locate the vehicle",
         }
+

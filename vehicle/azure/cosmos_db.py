@@ -120,6 +120,9 @@ class CosmosDBClient:
         self.notifications_container = None
         self.status_container = None
         
+        # Session/credential handle for proper cleanup
+        self._credential = None
+        
         # Connection state management
         self.is_connecting = False
         self.connected = False
@@ -246,19 +249,17 @@ class CosmosDBClient:
         """Connect using Azure AD authentication with proper configuration"""
         try:
             logger.info("Connecting to Cosmos DB with Azure AD authentication")
-            credential = DefaultAzureCredential(
+            # retain credential for cleanup
+            self._credential = DefaultAzureCredential(
                 exclude_interactive_browser_credential=True,
                 exclude_visual_studio_code_credential=True,
                 exclude_shared_token_cache_credential=True
             )
-            
-            # Create client with minimal configuration (following working pattern)
-            self.client = CosmosClient(self.endpoint, credential=credential)
-            
+            # Create client with minimal configuration
+            self.client = CosmosClient(self.endpoint, credential=self._credential)
             # Test connection
             self.database = self.client.get_database_client(self.database_name)
             await self.database.read()
-            
             self._initialize_containers()
             return True
         except Exception as e:
@@ -447,7 +448,17 @@ class CosmosDBClient:
             except Exception as e:
                 logger.debug(f"Error scheduling client cleanup: {str(e)}")
                 self.client = None
-        
+
+        # Close retained credential (closes underlying aiohttp sessions)
+        if self._credential:
+            try:
+                # DefaultAzureCredential has async close()
+                cleanup_tasks.append(self._credential.close())
+            except Exception as e:
+                logger.debug(f"Error scheduling credential cleanup: {str(e)}")
+            finally:
+                self._credential = None
+
         # Execute cleanup tasks
         if cleanup_tasks:
             try:
@@ -487,23 +498,6 @@ class CosmosDBClient:
             logger.info("Cosmos DB connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing Cosmos DB connection: {str(e)}")
-
-    async def ensure_connected(self):
-        """Ensure we have a valid connection with automatic retry"""
-        if self.connected and self._is_connection_healthy():
-            return True
-            
-        if not self.is_connecting:
-            return await self.connect()
-            
-        # Wait for existing connection attempt with timeout
-        max_wait = 30  # seconds
-        wait_time = 0
-        while self.is_connecting and wait_time < max_wait:
-            await asyncio.sleep(1)
-            wait_time += 1
-            
-        return self.connected
 
     # Context manager support for proper resource management
     async def __aenter__(self):
@@ -564,6 +558,26 @@ class CosmosDBClient:
         except Exception as e:
             logger.error(f"Error getting vehicle status for {vehicleId}: {str(e)}")
             return {}
+
+    async def list_vehicle_status(self, vehicleId: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """List recent status entries for a vehicle (supports diagnostics/energy agents)."""
+        if not await self.ensure_connected() or not self.status_container:
+            logger.warning("No Cosmos DB connection. Cannot list vehicle status history.")
+            return []
+        try:
+            query = "SELECT TOP @limit * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
+            parameters = [
+                {"name": "@vehicleId", "value": vehicleId},
+                {"name": "@limit", "value": limit},
+            ]
+            items = self.status_container.query_items(query=query, parameters=parameters, partition_key=vehicleId)
+            result: List[Dict[str, Any]] = []
+            async for item in items:
+                result.append(item)
+            return result
+        except Exception as e:
+            logger.error(f"Error listing vehicle status for {vehicleId}: {e}")
+            return []
 
     async def subscribe_to_vehicle_status(self, vehicleId: str) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -659,15 +673,31 @@ class CosmosDBClient:
             logger.warning("No Cosmos DB connection. Cannot update vehicle status.")
             return status_data
         
+        # Normalize incoming fields to storage schema
+        def _normalize(data: Dict[str, Any]) -> Dict[str, Any]:
+            out = dict(data)  # shallow copy
+            # Canonical keys
+            if "Battery" in out and "batteryLevel" not in out:
+                out["batteryLevel"] = out.pop("Battery")
+            if "Temperature" in out and "temperature" not in out:
+                out["temperature"] = out.pop("Temperature")
+            if "Speed" in out and "speed" not in out:
+                out["speed"] = out.pop("Speed")
+            if "OilRemaining" in out and "oilLevel" not in out:
+                out["oilLevel"] = out.pop("OilRemaining")
+            if "Odometer" in out and "odometer" not in out:
+                out["odometer"] = out.pop("Odometer")
+            # Ensure required fields
+            out["vehicleId"] = vehicleId
+            return out
+
         try:
+            normalized = _normalize(status_data)
+
             # Check if status exists
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 1"
             parameters = [{"name": "@vehicleId", "value": vehicleId}]
-            
-            items = self.status_container.query_items(
-                query=query,
-                parameters=parameters
-            )
+            items = self.status_container.query_items(query=query, parameters=parameters, partition_key=vehicleId)
             
             existing_status = None
             async for item in items:
@@ -676,26 +706,19 @@ class CosmosDBClient:
                 
             if existing_status:
                 # Update existing status
-                for key, value in status_data.items():
+                for key, value in normalized.items():
                     existing_status[key] = value
-                    
                 existing_status["_ts"] = int(datetime.now().timestamp())
-                
                 result = await self.status_container.replace_item(
-                    item=existing_status["id"],
-                    body=existing_status
+                    item=existing_status["id"], body=existing_status
                 )
-                
                 logger.info(f"Updated status for vehicle {vehicleId}")
                 return result
             else:
                 # Create new status
-                status_data["id"] = str(uuid.uuid4())
-                status_data["vehicleId"] = vehicleId
-                status_data["_ts"] = int(datetime.now().timestamp())
-                
-                result = await self.status_container.create_item(body=status_data)
-                
+                normalized["id"] = str(uuid.uuid4())
+                normalized["_ts"] = int(datetime.now().timestamp())
+                result = await self.status_container.create_item(body=normalized)
                 logger.info(f"Created status for vehicle {vehicleId}")
                 return result
         except Exception as e:
@@ -740,6 +763,33 @@ class CosmosDBClient:
         except Exception as e:
             logger.error(f"Error listing vehicles: {str(e)}")
             return []
+
+    async def get_vehicle(self, vehicleId: str) -> Optional[Dict[str, Any]]:
+        """Get a single vehicle by VehicleId."""
+        if not await self.ensure_connected() or not self.vehicles_container:
+            logger.warning("No Cosmos DB connection. Cannot get vehicle.")
+            return None
+        try:
+            query = "SELECT TOP 1 * FROM c WHERE c.vehicleId = @vehicleId OR c.VehicleId = @vehicleId"
+            parameters = [{"name": "@vehicleId", "value": vehicleId}]
+            items = self.vehicles_container.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=vehicleId
+            )
+            async for item in items:
+                return item
+            # Fallback cross-partition (in case partition key mismatch)
+            items = self.vehicles_container.query_items(
+                query=query,
+                parameters=parameters
+            )
+            async for item in items:
+                return item
+            return None
+        except Exception as e:
+            logger.error(f"Error getting vehicle {vehicleId}: {e}")
+            return None
 
     # Services operations
     
@@ -923,6 +973,44 @@ class CosmosDBClient:
             logger.error(f"Error listing notifications: {str(e)}")
             return []
 
+    async def mark_notification_read(self, notificationId: str) -> Optional[Dict[str, Any]]:
+        """Mark a notification as read by its id."""
+        if not await self.ensure_connected() or not self.notifications_container:
+            logger.warning("No Cosmos DB connection. Cannot mark notification read.")
+            return None
+        try:
+            # Find notification by id (cross-partition)
+            query = "SELECT TOP 1 * FROM c WHERE c.id = @id"
+            parameters = [{"name": "@id", "value": notificationId}]
+            items = self.notifications_container.query_items(query=query, parameters=parameters)
+            async for item in items:
+                item["read"] = True
+                result = await self.notifications_container.replace_item(item=item["id"], body=item, partition_key=item.get("vehicleId"))
+                return result
+            logger.warning(f"Notification {notificationId} not found")
+            return None
+        except Exception as e:
+            logger.error(f"Error marking notification read: {e}")
+            return None
+
+    async def delete_notification(self, notificationId: str) -> bool:
+        """Delete a notification by its id."""
+        if not await self.ensure_connected() or not self.notifications_container:
+            logger.warning("No Cosmos DB connection. Cannot delete notification.")
+            return False
+        try:
+            # Find notification by id to get partition key
+            query = "SELECT TOP 1 c.id, c.vehicleId FROM c WHERE c.id = @id"
+            parameters = [{"name": "@id", "value": notificationId}]
+            items = self.notifications_container.query_items(query=query, parameters=parameters)
+            async for item in items:
+                await self.notifications_container.delete_item(item=notificationId, partition_key=item.get("vehicleId"))
+                return True
+            logger.warning(f"Notification {notificationId} not found")
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting notification: {e}")
+            return False
 
 # Create a singleton instance
 cosmos_client = CosmosDBClient()

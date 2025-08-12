@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, Container, Grid, Paper, Typography, Alert, CircularProgress } from '@mui/material';
+import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import NotificationLog from './components/NotificationLog';
@@ -14,15 +14,9 @@ import Dashboard from './pages/Dashboard';
 
 const theme = createTheme({
   palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-    background: {
-      default: '#f5f5f5',
-    },
+    primary: { main: '#1976d2' },
+    secondary: { main: '#dc004e' },
+    background: { default: '#f5f5f5' },
   },
 });
 
@@ -30,80 +24,42 @@ function App() {
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [offlineMode, setOfflineMode] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const navigate = useNavigate();
   // eslint-disable-next-line no-unused-vars
   const location = useLocation();
 
-  const loadVehicles = useCallback(async (isRetry = false) => {
-    if (!isRetry) {
-      setLoading(true);
-      setError(null);
-    }
-    
+  const loadVehicles = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await fetchVehicles();
-      setVehicles(data);
-      if (data.length > 0) {
+      setVehicles(data || []);
+      if ((data || []).length > 0) {
         setSelectedVehicle(data[0]);
       }
-      setOfflineMode(false);
-      setRetryCount(0);
-    } catch (error) {
-      console.error('Error loading vehicles:', error);
-      
-      // Check if this is a connection error
-      if (error.message.includes('backend server') || error.message.includes('timeout') || error.message.includes('not reachable')) {
-        setOfflineMode(true);
-        setError('Backend server is not available. Running in offline mode.');
-        
-        // Create mock data for offline mode
-        const mockVehicles = [
-          {
-            VehicleId: 'demo-vehicle-001',
-            vehicleId: 'demo-vehicle-001',
-            Make: 'Demo',
-            Model: 'Car',
-            Year: 2024,
-            Status: 'Demo Mode'
-          }
-        ];
-        setVehicles(mockVehicles);
-        setSelectedVehicle(mockVehicles[0]);
-      } else {
-        setError('Failed to load vehicles. Please check your connection and try again.');
-      }
-      
-      setRetryCount(prev => prev + 1);
+    } catch {
+      // Simple fallback for hackathon use
+      const mockVehicles = [
+        {
+          VehicleId: 'demo-vehicle-001',
+          vehicleId: 'demo-vehicle-001',
+          Make: 'Demo',
+          Model: 'Car',
+          Year: 2024,
+          Status: 'Demo Mode'
+        }
+      ];
+      setVehicles(mockVehicles);
+      setSelectedVehicle(mockVehicles[0]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const handleRetry = useCallback(() => {
-    loadVehicles(true);
-  }, [loadVehicles]);
-
   useEffect(() => {
     loadVehicles();
   }, [loadVehicles]);
 
-  // Auto-retry logic for connection issues
-  useEffect(() => {
-    if (offlineMode && retryCount < 3) {
-      const retryTimeout = setTimeout(() => {
-        console.log(`Auto-retry attempt ${retryCount + 1}/3`);
-        loadVehicles(true);
-      }, 10000 * (retryCount + 1)); // 10s, 20s, 30s delays
-      
-      return () => clearTimeout(retryTimeout);
-    }
-  }, [offlineMode, retryCount, loadVehicles]);
-
-  // Show loading state
   if (loading && vehicles.length === 0) {
     return (
       <ThemeProvider theme={theme}>
@@ -111,48 +67,8 @@ function App() {
         <Container maxWidth="sm" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh' }}>
           <CircularProgress />
           <Typography variant="h6" sx={{ mt: 2 }}>
-            Loading vehicles data...
+            Loading vehicles...
           </Typography>
-          {retryCount > 0 && (
-            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-              Retry attempt {retryCount}...
-            </Typography>
-          )}
-        </Container>
-      </ThemeProvider>
-    );
-  }
-
-  // Show error state with retry option
-  if (error && !offlineMode) {
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Container maxWidth="sm" sx={{ p: 2 }}>
-          <Alert 
-            severity="error" 
-            sx={{ mb: 2 }}
-            action={
-              <button onClick={handleRetry} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>
-                Retry
-              </button>
-            }
-          >
-            {error}
-          </Alert>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h5" gutterBottom>
-              Connection Error
-            </Typography>
-            <Typography variant="body1" paragraph>
-              Could not connect to the backend server. Please verify:
-            </Typography>
-            <Typography component="ol" sx={{ pl: 2 }}>
-              <li>The backend server is running on port 8000</li>
-              <li>There are no firewall or network issues blocking the connection</li>
-              <li>The API URL in the .env file is correctly configured</li>
-            </Typography>
-          </Paper>
         </Container>
       </ThemeProvider>
     );
@@ -162,12 +78,6 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box className="App">
-        {offlineMode && (
-          <Alert severity="warning" sx={{ mb: 0, borderRadius: 0 }}>
-            Running in offline mode - some features may be limited. 
-            {retryCount < 3 && ` Retrying connection... (${retryCount}/3)`}
-          </Alert>
-        )}
         <DashboardLayout 
           vehicles={vehicles} 
           selectedVehicle={selectedVehicle} 
@@ -185,28 +95,23 @@ function App() {
                 </Container>
               )
             } />
-            
             {/* Agent Chat Route */}
             <Route path="/agent-chat" element={
               <Container maxWidth="lg">
                 <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
               </Container>
             } />
-            
             {/* Car Simulator Route */}
             <Route path="/simulator" element={
               <Container maxWidth="lg">
                 <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
               </Container>
             } />
-            
             {/* Services Route */}
             <Route path="/services" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Services
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>Services</Typography>
                   <Typography variant="body1" paragraph>
                     This page displays all available services for your vehicles.
                   </Typography>
@@ -220,14 +125,11 @@ function App() {
                 </Paper>
               </Container>
             } />
-            
             {/* Notifications Route */}
             <Route path="/notifications" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Notifications
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>Notifications</Typography>
                   <Typography variant="body1" paragraph>
                     This page displays all notifications from your connected vehicles.
                   </Typography>
@@ -235,14 +137,11 @@ function App() {
                 </Paper>
               </Container>
             } />
-            
-            {/* Settings Route */}
+            {/* Settings */}
             <Route path="/settings" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Settings
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>Settings</Typography>
                   <Typography variant="body1" paragraph>
                     Configure your account and application preferences.
                   </Typography>
@@ -267,14 +166,11 @@ function App() {
                 </Paper>
               </Container>
             } />
-            
-            {/* Security Route */}
+            {/* Security */}
             <Route path="/security" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Security
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>Security</Typography>
                   <Typography variant="body1" paragraph>
                     Manage your security settings and access control.
                   </Typography>
@@ -299,14 +195,11 @@ function App() {
                 </Paper>
               </Container>
             } />
-            
-            {/* About Route */}
+            {/* About */}
             <Route path="/about" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    About
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>About</Typography>
                   <Typography variant="body1" paragraph>
                     Learn more about the Connected Vehicle Platform.
                   </Typography>
@@ -331,14 +224,11 @@ function App() {
                 </Paper>
               </Container>
             } />
-            
-            {/* Profile Route */}
+            {/* Profile */}
             <Route path="/profile" element={
               <Container maxWidth="lg">
                 <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>
-                    User Profile
-                  </Typography>
+                  <Typography variant="h4" gutterBottom>User Profile</Typography>
                   <Typography variant="body1" paragraph>
                     Manage your personal information and account settings.
                   </Typography>

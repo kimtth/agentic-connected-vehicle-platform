@@ -1,0 +1,17 @@
+# Base URL
+@host = http://localhost:8000
+
+###
+# Seed default test vehicle and status
+POST {{host}}/api/dev/seed
+Accept: application/json
+
+###
+# Seed a specific vehicle by ID
+@vehicleId = a640f210-dca4-4db7-931a-9f119bbe54e0
+POST {{host}}/api/dev/seed?vehicleId={{vehicleId}}
+Accept: application/json
+
+# Verify status
+GET {{host}}/api/dev/seed/status
+Accept: application/json

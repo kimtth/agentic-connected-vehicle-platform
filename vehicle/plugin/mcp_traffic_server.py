@@ -1,8 +1,11 @@
 from typing import Dict, Any
 from fastmcp import FastMCP
-from datetime import datetime
-from utils.logging_config import get_logger
 import asyncio
+import sys
+from pathlib import Path
+from utils.logging_config import get_logger  # type: ignore
+from plugin.sample_data import generate_traffic  # type: ignore
+
 
 logger = get_logger(__name__)
 mcp_traffic_server = FastMCP("traffic_service")
@@ -13,14 +16,7 @@ async def get_traffic(route: str, latitude: float, longitude: float) -> Dict[str
     Get traffic information for a given route or location.
     """
     try:
-        level = "Heavy" if len(route) % 3 == 0 else "Moderate" if len(route) % 3 == 1 else "Light"
-        incidents = [{"type": "Accident", "location": f"{round(latitude,2)},{round(longitude,2)}"}] if level == "Heavy" else []
-        return {
-            "route": route,
-            "level": level,
-            "incidents": incidents,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        return generate_traffic(route, latitude, longitude)
     except Exception as e:
         logger.error(f"Error retrieving traffic info: {e}")
         raise
@@ -38,3 +34,4 @@ async def start_traffic_server(host: str = "0.0.0.0", port: int = 8002):
         loop.create_task(mcp_traffic_server.run_async(transport="sse", host=host, port=port))
     else:
         await mcp_traffic_server.run_async(transport="sse", host=host, port=port)
+

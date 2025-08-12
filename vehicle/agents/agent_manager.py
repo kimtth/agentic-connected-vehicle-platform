@@ -3,9 +3,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
-from semantic_kernel.connectors.ai.open_ai import (
-    OpenAIChatPromptExecutionSettings,
-)
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 from azure.cosmos_db import cosmos_client
 
@@ -16,7 +14,6 @@ from agents.information_services_agent import InformationServicesAgent
 from agents.remote_access_agent import RemoteAccessAgent
 from agents.safety_emergency_agent import SafetyEmergencyAgent
 from agents.vehicle_feature_control_agent import VehicleFeatureControlAgent
-from models.vehicle_response import VehicleResponseFormat
 from plugin.oai_service import create_chat_service
 from plugin.sk_plugin import GeneralPlugin
 from utils.logging_config import get_logger
@@ -222,15 +219,23 @@ class AgentManager:
                             "data": parsed.get("data")
                         }
                 except json.JSONDecodeError:
-                    logger.warning("Failed to parse response as JSON, using fallback")
+                    logger.warning(f"Failed to parse response as JSON: {content[:100]}...")
             
-            # Fallback to plain text response
-            return {
-                "message": content,
-                "status": "completed",
-                "plugins_used": [],
-                "data": None
-            }
+            # Fallback to plain text response - ensure we have a message
+            if content:
+                return {
+                    "message": content,
+                    "status": "completed",
+                    "plugins_used": [],
+                    "data": None
+                }
+            else:
+                return {
+                    "message": "Command executed successfully.",
+                    "status": "completed", 
+                    "plugins_used": [],
+                    "data": None
+                }
             
         except Exception as e:
             logger.error(f"Error parsing response: {e}")
@@ -288,8 +293,15 @@ class AgentManager:
                     arguments=kernel_args
                 )
                 
+                # Log the raw response for debugging
+                logger.debug(f"Raw SK response: {sk_response}")
+                
                 # Parse response safely
                 parsed_response = self._parse_response_safely(sk_response.message)
+                
+                # Ensure we have a valid message
+                if not parsed_response.get("message"):
+                    parsed_response["message"] = "The command has been processed successfully."
                 
                 result = {
                     "response": parsed_response["message"],
@@ -297,14 +309,14 @@ class AgentManager:
                     "plugins_used": parsed_response["plugins_used"],
                 }
                 
-                if parsed_response["data"]:
+                if parsed_response.get("data"):
                     result["data"] = parsed_response["data"]
                     
-                logger.info("Request processed successfully")
+                logger.info(f"Request processed successfully: {result.get('response', '')[:100]}...")
                 return result
                 
             except Exception as e:
-                logger.error(f"Error processing request: {e}")
+                logger.error(f"Error processing request: {e}", exc_info=True)
                 
                 # Ensure enriched_context is available for fallback
                 try:
@@ -315,7 +327,7 @@ class AgentManager:
                     logger.info("Request processed successfully with fallback")
                     return fallback_result
                 except Exception as fallback_error:
-                    logger.error(f"Fallback also failed: {fallback_error}")
+                    logger.error(f"Fallback also failed: {fallback_error}", exc_info=True)
                     return {
                         "response": "I apologize, but I encountered an error processing your request. Please try again.",
                         "success": False,

@@ -6,6 +6,7 @@ from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -31,7 +32,8 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle an emergency call request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle needs emergency assistance.",
                 success=False,
@@ -43,17 +45,15 @@ class SafetyEmergencyPlugin:
 
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             # Get vehicle location for emergency response
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -73,7 +73,7 @@ class SafetyEmergencyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "EMERGENCY_CALL",
                 "parameters": {
                     "location": location,
@@ -92,7 +92,7 @@ class SafetyEmergencyPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": notification_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "emergency_call",
                 "message": "Emergency call initiated. Help is on the way.",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -110,7 +110,7 @@ class SafetyEmergencyPlugin:
                 "Stay on the line and follow any instructions from emergency services.",
                 data={
                     "action": "emergency_call",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "status": "initiated",
                     "notification": notification,
                     "location": location,
@@ -131,7 +131,8 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle a collision alert."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle was involved in the collision.",
                 success=False,
@@ -143,17 +144,15 @@ class SafetyEmergencyPlugin:
 
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             # Get vehicle location for emergency response
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -173,7 +172,7 @@ class SafetyEmergencyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "COLLISION_ALERT",
                 "parameters": {
                     "location": location,
@@ -192,7 +191,7 @@ class SafetyEmergencyPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": notification_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "collision_alert",
                 "message": "Collision detected. Emergency services have been notified.",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -210,7 +209,7 @@ class SafetyEmergencyPlugin:
                 "Are you okay? Do you need any immediate assistance?",
                 data={
                     "action": "collision_alert",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "status": "processed",
                     "notification": notification,
                     "location": location,
@@ -231,7 +230,8 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle a theft notification."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you believe has been stolen.",
                 success=False,
@@ -243,17 +243,15 @@ class SafetyEmergencyPlugin:
 
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             # Get vehicle location for tracking
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -273,7 +271,7 @@ class SafetyEmergencyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "THEFT_NOTIFICATION",
                 "parameters": {
                     "location": location,
@@ -292,7 +290,7 @@ class SafetyEmergencyPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": notification_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "theft_alert",
                 "message": "Potential vehicle theft detected. Authorities have been notified.",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -310,7 +308,7 @@ class SafetyEmergencyPlugin:
                 "The vehicle's location is being tracked, and you'll receive updates on the situation.",
                 data={
                     "action": "theft_notification",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "status": "processed",
                     "notification": notification,
                     "location": location,
@@ -331,7 +329,8 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle an SOS request with immediate emergency response."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle needs SOS assistance.",
                 success=False,
@@ -343,16 +342,16 @@ class SafetyEmergencyPlugin:
             # Check if vehicle exists
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
 
             if not vehicle:
                 return self._format_response(
-                    f"Vehicle with ID {vehicle_id} not found.", success=False
+                    f"Vehicle with ID {vid} not found.", success=False
                 )
 
             # Get vehicle location
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
             location = None
             if vehicle_status and "location" in vehicle_status:
                 location = vehicle_status["location"]
@@ -368,7 +367,7 @@ class SafetyEmergencyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": command_id,
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "SOS_REQUEST",
                 "parameters": {
                     "location": location,
@@ -386,7 +385,7 @@ class SafetyEmergencyPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "sos_request",
                 "message": "SOS request activated. Emergency services have been contacted.",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -404,7 +403,7 @@ class SafetyEmergencyPlugin:
                 "are being dispatched to your location. Please stay calm and wait for assistance.",
                 data={
                     "action": "sos_request",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "status": "activated",
                     "notification": notification,
                     "location": location,
@@ -498,3 +497,4 @@ class SafetyEmergencyPlugin:
             "success": success,
             "data": data or {},
         }
+
