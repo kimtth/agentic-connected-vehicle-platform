@@ -6,6 +6,7 @@ from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -30,14 +31,15 @@ class AlertsNotificationsPlugin:
     async def _handle_alert_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check alert status for.",
                 success=False,
             )
         try:
             await cosmos_client.ensure_connected()
-            alerts = await cosmos_client.list_notifications(vehicle_id)
+            alerts = await cosmos_client.list_notifications(vid)
             alerts = [
                 a
                 for a in alerts
@@ -47,7 +49,7 @@ class AlertsNotificationsPlugin:
             if not alerts:
                 return self._format_response(
                     "There are no active alerts for your vehicle at this time.",
-                    data={"alerts": [], "vehicle_id": vehicle_id},
+                    data={"alerts": [], "vehicle_id": vid},
                 )
             unack = [a for a in alerts if not a.get("read", False)]
             text = "\n".join(
@@ -63,7 +65,7 @@ class AlertsNotificationsPlugin:
                 data={
                     "alerts": alerts,
                     "unacknowledged_count": len(unack),
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                 },
             )
         except Exception as e:
@@ -77,13 +79,14 @@ class AlertsNotificationsPlugin:
     async def _handle_speed_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        # context expected to contain 'query' key
-        query = context.get("query", "") if context else ""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a speed alert for.",
                 success=False,
             )
+        # context expected to contain 'query' key
+        query = context.get("query", "") if context else ""
         # extract speed limit
         speed_limit = None
         for w in query.split():
@@ -100,7 +103,7 @@ class AlertsNotificationsPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "speed_alert",
                 "message": f"Speed alert set for {speed_limit} km/h",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -115,7 +118,7 @@ class AlertsNotificationsPlugin:
                 f"I've set a speed alert for {speed_limit} km/h. You'll receive a notification if the vehicle exceeds this speed.",
                 data={
                     "action": "set_speed_alert",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "speed_limit": speed_limit,
                     "notification": notification,
                 },
@@ -131,12 +134,13 @@ class AlertsNotificationsPlugin:
     async def _handle_curfew_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        query = context.get("query", "") if context else ""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a curfew alert for.",
                 success=False,
             )
+        query = context.get("query", "") if context else ""
         start = context.get("curfew_start") or "22:00"
         end = context.get("curfew_end") or "06:00"
         try:
@@ -144,7 +148,7 @@ class AlertsNotificationsPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "curfew_alert",
                 "message": f"Curfew alert set from {start} to {end}",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -159,7 +163,7 @@ class AlertsNotificationsPlugin:
                 f"I've set a curfew alert from {start} to {end}. You'll receive a notification if the vehicle is used during these hours.",
                 data={
                     "action": "set_curfew_alert",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "start_time": start,
                     "end_time": end,
                     "notification": notification,
@@ -176,12 +180,13 @@ class AlertsNotificationsPlugin:
     async def _handle_battery_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        query = context.get("query", "") if context else ""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a battery alert for.",
                 success=False,
             )
+        query = context.get("query", "") if context else ""
         threshold = None
         for w in query.split():
             try:
@@ -197,7 +202,7 @@ class AlertsNotificationsPlugin:
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "type": "battery_alert",
                 "message": f"Battery alert set for {threshold}%",
                 "timestamp": datetime.datetime.now().isoformat(),
@@ -212,7 +217,7 @@ class AlertsNotificationsPlugin:
                 f"I've set a battery alert for {threshold}%. You'll receive a notification if the battery level falls below this threshold.",
                 data={
                     "action": "set_battery_alert",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "threshold": threshold,
                     "notification": notification,
                 },
@@ -228,14 +233,15 @@ class AlertsNotificationsPlugin:
     async def _handle_notification_settings(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check notification settings for.",
                 success=False,
             )
         try:
             await cosmos_client.ensure_connected()
-            notifications = await cosmos_client.list_notifications(vehicle_id)
+            notifications = await cosmos_client.list_notifications(vid)
             types = {
                 n.get("type", "")
                 for n in notifications
@@ -259,7 +265,7 @@ class AlertsNotificationsPlugin:
             text = f"Enabled alerts: {', '.join(enabled) if enabled else 'None'}\nNotification channels: {', '.join(ch)}"
             return self._format_response(
                 f"Notification settings for your vehicle:\n\n{text}",
-                data={"settings": settings, "vehicle_id": vehicle_id},
+                data={"settings": settings, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving notification settings: {e}")
@@ -344,4 +350,5 @@ class AlertsNotificationsPlugin:
         if data:
             response.update(data)
         return response
+
 

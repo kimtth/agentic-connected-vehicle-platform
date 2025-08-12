@@ -17,6 +17,10 @@ const SimulatorContainer = styled(Box)(({ theme }) => ({
   margin: '0 auto',
   padding: 0,
   height: 'calc(100vh - 120px)',
+  overflow: 'hidden',
+  '&::-webkit-scrollbar': { display: 'none' },
+  msOverflowStyle: 'none',
+  scrollbarWidth: 'none',
 }));
 
 const Header = styled(Paper)(({ theme }) => ({
@@ -233,6 +237,7 @@ const SimulatorPanel = ({ vehicleId }) => {
     }
   }, [vehicleId, addLog, performStatusCheck, cleanup, isInitializing, isMounted]);
 
+  /* eslint-disable react-hooks/exhaustive-deps */
   // Initialize on component mount
   useEffect(() => {
     setIsMounted(true);
@@ -248,12 +253,13 @@ const SimulatorPanel = ({ vehicleId }) => {
       setIsMounted(false);
       cleanup();
     };
-  }, [vehicleId, isConnected]); // Remove other dependencies to prevent recreating
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleId, isConnected]);
+
   useEffect(() => {
     initializeConnection();
     return cleanup;
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Toggle connection
   const toggleConnection = useCallback(() => {

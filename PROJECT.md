@@ -10,6 +10,9 @@ An intelligent vehicle management platform where specialized AI agents handle di
 - **Deployment**  
   Azure App Service, Azure Cosmos DB, Azure OpenAI Service, AAD authentication.
 
+Notes:
+- MCP services use plugin/sample_data.py (no external keys needed by default).
+
 ## System Overview
 
 ### Core Architecture
@@ -26,7 +29,7 @@ The platform implements a sophisticated multi-agent system that provides two pri
 - **Vehicle Management** - Comprehensive vehicle profiles, status monitoring, and service records
 - **Command Execution** - Asynchronous vehicle control operations with real-time status tracking
 - **Azure Integration** - Cosmos DB for persistence, Azure OpenAI for intelligence
-- **MCP Integration** – Model Context Protocol servers for weather, traffic, points of interest, and navigation
+- **MCP Integration** – Model Context Protocol servers for weather, traffic, points of interest, and navigation using deterministic sample data centralized in plugin/sample_data.py (easy to swap to real APIs later)
 - **Car Simulator** - Advanced vehicle behavior simulation for testing and development
 
 ## Specialized Agent System
@@ -295,22 +298,20 @@ curl http://localhost:8000/api/notifications
      --resource-group rg-connected-car \
      --account-name cosmos-connected-car \
      --role-definition-id 00000000-0000-0000-0000-000000000002 \
-     --principal-id $PRINCIPAL_ID
+     --principal-id $PRINCIPAL_ID \
      --scope "/"
    ```
 
-3. **Backend Setup**
-   ```bash
-   cd vehicle
-   poetry install
-   cp .env.sample .env
-   # Generate sample data
-   poetry run python tests/cosmos_data_generator.py --vehicles 10 --services 5 --commands 8
-   # Run tests
-   poetry run pytest
-   # Run the server
-   python main.py
-   ```
+3. Backend Setup
+```bash
+cd vehicle
+poetry install
+cp .env.sample .env
+# Run tests (optional)
+poetry run pytest
+# Run the server
+python main.py
+```
 
 4. **Frontend Setup**
    ```bash
@@ -348,11 +349,19 @@ AZURE_OPENAI_API_KEY=<your_openai_key>
 AZURE_OPENAI_DEPLOYMENT_NAME=
 AZURE_OPENAI_API_VERSION=
 
+# Public OpenAI (optional fallback)
+OPENAI_API_KEY=
+OPENAI_CHAT_MODEL_NAME=gpt-3.5-turbo
+
 # Application Settings
 LOG_LEVEL=INFO
 API_HOST=0.0.0.0
 API_PORT=8000
 ```
+
+Notes:
+- MCP servers (weather/traffic/poi/navigation) use plugin/sample_data.py and do not require external API keys by default.
+- Cosmos DB is required; configure AAD or key as above.
 
 ## Advanced Features
 
@@ -423,6 +432,7 @@ from azure.keyvault.secrets import SecretClient
 ```python
 from utils.logging_config import get_logger
 logger = get_logger(__name__)
+```
 
 ### Health Checks
 - `GET /api/health` - Application health status

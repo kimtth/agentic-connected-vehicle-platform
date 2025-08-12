@@ -11,6 +11,8 @@ from pathlib import Path
 import uuid
 import json
 import uvicorn
+import atexit
+from typing import Optional
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -25,6 +27,7 @@ from models.vehicle_profile import VehicleProfile
 from models.service import Service
 from models.status import VehicleStatus
 from dotenv import load_dotenv
+from importlib import import_module
 
 # Configure logging first
 logging.basicConfig(
@@ -45,116 +48,113 @@ try:
 except ImportError as e:
     logger.warning(f"Could not import logging config: {e}")
 
-# Import Azure modules with error handling
+# Enforce Cosmos DB client availability
 cosmos_client = None
 try:
     from azure.cosmos_db import cosmos_client
     logger.info("Cosmos DB client imported successfully")
 except ImportError as e:
-    logger.error(f"Could not import cosmos_client: {e}")
-    # Create a mock client to prevent crashes
-    class MockCosmosClient:
-        connected = False
-        endpoint = None
-        key = None
-        use_aad_auth = False
-        
-        async def connect(self): pass
-        async def close(self): pass
-        async def ensure_connected(self): return False
-        
-    cosmos_client = MockCosmosClient()
+    logger.critical(f"Cosmos DB client is required for this showcase: {e}")
+    raise
 
-# Import agent routes with better error handling and timeout
-agent_router = None
-feature_router = None
-remote_router = None
-emergency_router = None
+def _cosmos_status():
+    """Small helper to report Cosmos status consistently."""
+    enabled = bool(
+        getattr(cosmos_client, "endpoint", None)
+        and (getattr(cosmos_client, "key", None) or getattr(cosmos_client, "use_aad_auth", False))
+    )
+    connected = getattr(cosmos_client, "connected", False) if enabled else False
+    return enabled, connected
 
-async def import_routes_with_timeout():
-    """Import routes with timeout to prevent hanging"""
+# Track MCP processes for graceful shutdown
+MCP_PROCESSES = []
+
+def _stop_mcp_processes(timeout: float = 5.0):
+    """Gracefully stop MCP subprocesses."""
     try:
-        import asyncio
-        from fastapi import APIRouter
-        
-        # Create default empty routers first
-        global agent_router, feature_router, remote_router, emergency_router
-        agent_router = APIRouter()
-        feature_router = APIRouter()
-        remote_router = APIRouter()
-        emergency_router = APIRouter()
-        
-        # Try to import actual routes with timeout
-        try:
-            async with asyncio.timeout(10):  # 10 second timeout
-                import importlib
-                
-                agent_routes_module = importlib.import_module('apis.agent_routes')
-                feature_routes_module = importlib.import_module('apis.vehicle_feature_routes') 
-                remote_routes_module = importlib.import_module('apis.remote_access_routes')
-                emergency_routes_module = importlib.import_module('apis.emergency_routes')
-                
-                agent_router = agent_routes_module.router
-                feature_router = feature_routes_module.router
-                remote_router = remote_routes_module.router
-                emergency_router = emergency_routes_module.router
-                
-                logger.info("All route modules imported successfully")
-        except asyncio.TimeoutError:
-            logger.error("Route import timed out after 10 seconds - using empty routers")
-        except Exception as e:
-            logger.error(f"Error importing routes: {str(e)} - using empty routers")
-            
-    except Exception as e:
-        logger.error(f"Critical error in route import: {str(e)}")
+        for p in MCP_PROCESSES:
+            try:
+                if p.is_alive():
+                    logger.info(f"Stopping MCP process PID {p.pid}...")
+                    p.terminate()
+                    p.join(timeout)
+                    if p.is_alive():
+                        logger.warning(f"MCP process PID {p.pid} did not terminate, killing...")
+                        p.kill()
+                        p.join(2.0)
+            except Exception as e:
+                logger.debug(f"Error stopping MCP process: {e}")
+    except Exception:
+        pass
+
+# Ensure cleanup on unexpected interpreter exit (best-effort)
+@atexit.register
+def _cleanup_at_exit():
+    try:
+        # Stop MCP servers first
+        _stop_mcp_processes()
+        if cosmos_client and hasattr(cosmos_client, "close"):
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(cosmos_client.close())
+                loop.close()
+            except Exception:
+                # Ignore errors during interpreter shutdown
+                pass
+    except Exception:
+        pass
 
 @asynccontextmanager
 async def lifespan(app):
-    # Startup: import routes, connect DB, then include routers
     logger.info("Starting up the application...")
-
+    # Connect Cosmos
     try:
-        # Import routes first
-        await import_routes_with_timeout()
-        
-        # Initialize Cosmos DB connection with timeout
-        if cosmos_client and hasattr(cosmos_client, 'connect'):
-            try:
-                await asyncio.wait_for(cosmos_client.connect(), timeout=5.0)
-                logger.info("Cosmos DB connected successfully")
-            except asyncio.TimeoutError:
-                logger.error("Cosmos DB connection timed out")
-            except Exception as e:
-                logger.error(f"Cosmos DB connection failed: {e}")
+        if hasattr(cosmos_client, "connect"):
+            await cosmos_client.connect()
+            logger.info("Cosmos DB connected")
     except Exception as e:
-        logger.error(f"Startup error: {e}")
+        logger.error(f"Cosmos DB connection failed: {e}")
 
-    # include routers under /api
-    if agent_router:
-        app.include_router(agent_router, prefix="/api", tags=["Agents"])
-    if feature_router:
-        app.include_router(feature_router, prefix="/api", tags=["Vehicle Features"])
-    if remote_router:
-        app.include_router(remote_router, prefix="/api", tags=["Remote Access"])
-    if emergency_router:
-        app.include_router(emergency_router, prefix="/api", tags=["Emergency & Safety"])
-    
-    yield  # app is now running
+    # Best-effort router loading (keeps app running even if optional routers are missing)
+    for name, modpath in [
+        ("Agents", "apis.agent_routes"),
+        ("Vehicle Features", "apis.vehicle_feature_routes"),
+        ("Remote Access", "apis.remote_access_routes"),
+        ("Emergency & Safety", "apis.emergency_routes"),
+    ]:
+        try:
+            module = import_module(modpath)
+            app.include_router(module.router, prefix="/api", tags=[name])
+            logger.info(f"Loaded router: {name}")
+        except Exception as e:
+            logger.warning(f"Router not available ({name}): {e}")
 
-    # Shutdown: cleanup resources
+    yield
+
     logger.info("Shutting down the application...")
     try:
-        if cosmos_client and hasattr(cosmos_client, 'close'):
+        if hasattr(cosmos_client, "close"):
             await cosmos_client.close()
+        # Defensive: close any exposed aiohttp session if present
+        session = getattr(cosmos_client, "session", None)
+        if session:
+            closer = getattr(session, "close", None)
+            if closer:
+                res = closer()
+                if asyncio.iscoroutine(res):
+                    await res
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
+    finally:
+        # Always attempt to stop MCP processes
+        _stop_mcp_processes()
 
 app = FastAPI(title="Connected Car Platform", lifespan=lifespan)
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -162,29 +162,23 @@ app.add_middleware(
 
 @app.get("/api/")
 def get_status():
-    # Check if cosmos client has valid configuration
-    cosmos_enabled = bool(cosmos_client and hasattr(cosmos_client, 'endpoint') and cosmos_client.endpoint and (cosmos_client.key or cosmos_client.use_aad_auth))
-    cosmos_connected = getattr(cosmos_client, 'connected', False) if cosmos_enabled else False
-    
+    enabled, connected = _cosmos_status()
     return {
         "status": "Connected Car Platform running",
         "version": "2.0.0",
-        "azure_cosmos_enabled": cosmos_enabled,
-        "azure_cosmos_connected": cosmos_connected,
+        "azure_cosmos_enabled": enabled,
+        "azure_cosmos_connected": connected,
     }
 
 @app.get("/api/health")
 def health_check():
-    """Health check endpoint for frontend API availability detection"""
-    cosmos_enabled = bool(cosmos_client and hasattr(cosmos_client, 'endpoint') and cosmos_client.endpoint and (cosmos_client.key or cosmos_client.use_aad_auth))
-    cosmos_connected = getattr(cosmos_client, 'connected', False) if cosmos_enabled else False
-    
+    enabled, connected = _cosmos_status()
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": {
             "api": "running",
-            "cosmos_db": "connected" if cosmos_connected else "disconnected"
+            "cosmos_db": "connected" if connected else "disconnected"
         }
     }
 
@@ -289,21 +283,28 @@ async def get_vehicle_status(vehicle_id: str):
 @app.get("/api/vehicle/{vehicleId}/status/stream")
 async def stream_vehicle_status(vehicleId: str):
     """Stream real-time status updates for a vehicle"""
-    cosmos_connected = await cosmos_client.ensure_connected()
-    
     async def status_stream_generator():
+        agen = None
+        cosmos_connected = await cosmos_client.ensure_connected()
         if not cosmos_connected:
             error_status = {"error": "Database service unavailable", "vehicleId": vehicleId}
             yield f"data: {json.dumps(error_status)}\n\n"
             return
-        
         try:
-            async for status in cosmos_client.subscribe_to_vehicle_status(vehicleId):
+            agen = cosmos_client.subscribe_to_vehicle_status(vehicleId)
+            async for status in agen:
                 yield f"data: {json.dumps(status)}\n\n"
         except Exception as e:
             logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
             error_status = {"error": "Status streaming unavailable", "vehicleId": vehicleId}
             yield f"data: {json.dumps(error_status)}\n\n"
+        finally:
+            # Ensure the async generator is properly closed to release underlying resources
+            if agen and hasattr(agen, "aclose"):
+                try:
+                    await agen.aclose()
+                except Exception as close_err:
+                    logger.debug(f"Ignored stream close error: {close_err}")
 
     return StreamingResponse(status_stream_generator(), media_type="text/event-stream")
 
@@ -612,37 +613,126 @@ async def delete_notification(notificationId: str):
     return {"detail": f"Notification {notificationId} deleted"}
 
 
+# Dev: seed a test vehicle and status
+@app.post("/api/dev/seed")
+async def seed_dev_data(vehicleId: Optional[str] = None):
+    """Create a test vehicle profile and initial status for development."""
+    # Ensure DB is available
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+
+    # Use provided or default test vehicle ID
+    vehicle_id = (vehicleId or "a640f210-dca4-4db7-931a-9f119bbe54e0").strip()
+
+    created_vehicle = False
+    try:
+        # Check if vehicle exists
+        vehicle = await cosmos_client.get_vehicle(vehicle_id)
+        if not vehicle:
+            # Create a minimal profile (fields commonly used by UI)
+            profile = {
+                "VehicleId": vehicle_id,
+                "vehicleId": vehicle_id,
+                "Make": "Demo",
+                "Model": "Car",
+                "Year": 2024,
+                "Status": "Active",
+                "LastLocation": { "Latitude": 43.6532, "Longitude": -79.3832 }
+            }
+            await cosmos_client.create_vehicle(profile)
+            created_vehicle = True
+
+        # Seed/Upsert vehicle status
+        status_data = {
+            "vehicleId": vehicle_id,
+            "Battery": 82,
+            "Temperature": 36,
+            "Speed": 0,
+            "OilRemaining": 75,
+            "Odometer": 12456,
+            "location": { "latitude": 43.6532, "longitude": -79.3832 },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        await cosmos_client.update_vehicle_status(vehicle_id, status_data)
+
+        return {
+            "vehicleId": vehicle_id,
+            "createdVehicle": created_vehicle,
+            "statusSeeded": True
+        }
+    except Exception as e:
+        logger.error(f"Seed failed for {vehicle_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
+
+
 # Top-level entry points for multiprocessing
 def run_weather_process():
     """Entry for MCP weather server."""
+    import sys
+    from pathlib import Path
+    # Add the project root to Python path for the subprocess
+    project_root = Path(__file__).parent
+    sys.path.insert(0, str(project_root))
+    
     try:
-        from vehicle.plugin.mcp_weather_server import start_weather_server
+        from plugin.mcp_weather_server import start_weather_server
+        import asyncio
         asyncio.run(start_weather_server(host="0.0.0.0", port=8001))
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Weather server failed to start: {e}")
 
 def run_traffic_process():
     """Entry for MCP traffic server."""
+    import sys
+    from pathlib import Path
+    # Add the project root to Python path for the subprocess
+    project_root = Path(__file__).parent
+    sys.path.insert(0, str(project_root))
+    
     try:
         from plugin.mcp_traffic_server import start_traffic_server
+        import asyncio
         asyncio.run(start_traffic_server(host="0.0.0.0", port=8002))
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Traffic server failed to start: {e}")
 
 def run_poi_process():
     """Entry for MCP POI server."""
+    import sys
+    from pathlib import Path
+    # Add the project root to Python path for the subprocess
+    project_root = Path(__file__).parent
+    sys.path.insert(0, str(project_root))
+    
     try:
         from plugin.mcp_poi_server import start_poi_server
+        import asyncio
         asyncio.run(start_poi_server(host="0.0.0.0", port=8003))
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"POI server failed to start: {e}")
 
 def run_navigation_process():
     """Entry for MCP navigation server."""
+    import sys
+    from pathlib import Path
+    # Add the project root to Python path for the subprocess
+    project_root = Path(__file__).parent
+    sys.path.insert(0, str(project_root))
+    
     try:
         from plugin.mcp_navigation_server import start_navigation_server
+        import asyncio
         asyncio.run(start_navigation_server(host="0.0.0.0", port=8004))
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Navigation server failed to start: {e}")
 
 if __name__ == "__main__":
@@ -650,28 +740,33 @@ if __name__ == "__main__":
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", 8000))
     logger.info(f"Starting server at http://{host}:{port}")
+    ENABLE_MCP = True
 
-    # Launch MCP servers in separate processes
-    try:
-        from multiprocessing import Process, set_start_method
-        set_start_method("spawn", force=True)
-        for name, target, mcp_port in [
-            ("weather", run_weather_process, 8001),
-            ("traffic", run_traffic_process, 8002),
-            ("poi", run_poi_process, 8003),
-            ("navigation", run_navigation_process, 8004),
-        ]:
-            try:
-                logger.info(f"Starting MCP ({name}) server on port {mcp_port}")
-                p = Process(target=target, daemon=True)
-                p.start()
-                logger.info(f"{name.title()} MCP server PID: {p.pid}")
-            except Exception as e:
-                logger.error(f"Failed to start {name} MCP server: {e}")
-    except Exception as e:
-        logger.error(f"Failed to start MCP servers: {e}")
+    # Launch MCP servers
+    if ENABLE_MCP == True:
+        try:
+            from multiprocessing import Process, set_start_method
+            set_start_method("spawn", force=True)
+            for name, target, mcp_port in [
+                ("weather", run_weather_process, 8001),
+                ("traffic", run_traffic_process, 8002),
+                ("poi", run_poi_process, 8003),
+                ("navigation", run_navigation_process, 8004),
+            ]:
+                try:
+                    logger.info(f"Starting MCP ({name}) server on port {mcp_port}")
+                    p = Process(target=target, daemon=True)
+                    p.start()
+                    MCP_PROCESSES.append(p)  # track for shutdown
+                    logger.info(f"{name.title()} MCP server PID: {p.pid}")
+                except Exception as e:
+                    logger.error(f"Failed to start {name} MCP server: {e}")
+        except Exception as e:
+            logger.error(f"Failed to start MCP servers: {e}")
+    else:
+        logger.info("MCP servers disabled")
 
-    # Finally, start the FastAPI app
+    # Start the FastAPI app
     logger.info(f"Starting API server at http://{host}:{port}")
     try:
         uvicorn.run("main:app", host=host, port=port, reload=False)

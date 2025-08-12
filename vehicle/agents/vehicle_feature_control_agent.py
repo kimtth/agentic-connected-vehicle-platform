@@ -7,6 +7,7 @@ from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from agents.base.base_agent import BasePlugin
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -34,8 +35,8 @@ class VehicleFeatureControlPlugin(BasePlugin):
     async def _handle_lights_control(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle lights control requests."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control lights for.",
                 success=False,
@@ -61,7 +62,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": f"lights_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": f"LIGHTS_{action.upper()}",
                 "parameters": {"light_type": light_type},
                 "status": "Sent",
@@ -75,7 +76,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 f"I've turned {action} the {light_type.replace('_', ' ')} for your vehicle.",
                 data={
                     "action": f"lights_{action}",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "light_type": light_type,
                     "command_id": command["commandId"],
                 },
@@ -92,8 +93,8 @@ class VehicleFeatureControlPlugin(BasePlugin):
     async def _handle_climate_control(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle climate control requests."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control climate for.",
                 success=False,
@@ -127,7 +128,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": f"climate_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "CLIMATE_CONTROL",
                 "parameters": {
                     "action": action,
@@ -145,7 +146,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 f"I've set the climate control to {temperature}°C with {action} mode.",
                 data={
                     "action": "climate_control",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "temperature": temperature,
                     "mode": action,
                     "command_id": command["commandId"],
@@ -163,8 +164,8 @@ class VehicleFeatureControlPlugin(BasePlugin):
     async def _handle_windows_control(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle window control requests."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control windows for.",
                 success=False,
@@ -186,7 +187,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": f"windows_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": f"WINDOWS_{action.upper()}",
                 "parameters": {"windows": window_position},
                 "status": "Sent",
@@ -203,7 +204,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 f"I've {action_text} the {window_text} for your vehicle.",
                 data={
                     "action": f"windows_{action}",
-                    "vehicle_id": vehicle_id,
+                    "vehicle_id": vid,
                     "windows": window_position,
                     "command_id": command["commandId"],
                 },

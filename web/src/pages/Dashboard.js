@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Grid,
@@ -29,13 +29,13 @@ import {
   SupportAgent,
   LocalGasStation,
   EnergySavingsLeaf,
-  AcUnit
+  AcUnit,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
 import { fetchNotifications } from '../api/notifications';
-import { INTERVALS, createVehicleStatusThrottle } from '../config/intervals';
 
 const Dashboard = ({ selectedVehicle }) => {
   const navigate = useNavigate();
@@ -52,92 +52,46 @@ const Dashboard = ({ selectedVehicle }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const isMounted = React.useRef(true);
+
+  const refreshDashboard = useCallback(async () => {
+    if (!selectedVehicle) {
+      setLoading(false);
+      return;
+    }
+    const vehicleId = selectedVehicle.VehicleId || selectedVehicle.vehicleId;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch status
+      const status = await fetchVehicleStatus(vehicleId).catch(() => null);
+      if (status) {
+        setVehicleStatus({
+          engineTemp: `${status.Temperature || 0}°C`,
+          speed: `${status.Speed || 0} km/h`,
+          batteryLevel: `${status.Battery || 0}%`,
+          odometer: status.Odometer ? `${status.Odometer} km` : '0 km',
+          Speed: status.Speed || 0,
+          Battery: status.Battery || 0,
+          Temperature: status.Temperature || 0,
+          OilRemaining: status.OilRemaining || 0
+        });
+      }
+
+      // Fetch notifications
+      const notificationData = await fetchNotifications(vehicleId).catch(() => []);
+      setNotifications(Array.isArray(notificationData) ? notificationData.slice(0, 5) : []);
+    } catch {
+      setError('Failed to load dashboard data. Is the backend running on port 8000?');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedVehicle]);
 
   useEffect(() => {
-    // Fix: Remove the incorrect early return that prevents effect from running
-    isMounted.current = true;
-
-    const loadDashboardData = async () => {
-      if (!selectedVehicle || !isMounted.current) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Load vehicle status with throttling
-        const vehicleId = selectedVehicle.VehicleId || selectedVehicle.vehicleId;
-        if (createVehicleStatusThrottle(vehicleId)) {
-          const status = await fetchVehicleStatus(vehicleId);
-          if (status && Object.keys(status).length > 0 && isMounted.current) {
-            setVehicleStatus({
-              engineTemp: `${status.Temperature || 0}°C`,
-              speed: `${status.Speed || 0} km/h`,
-              batteryLevel: `${status.Battery || 0}%`,
-              odometer: status.Odometer ? `${status.Odometer} km` : '0 km',
-              Speed: status.Speed || 0,
-              Battery: status.Battery || 0,
-              Temperature: status.Temperature || 0,
-              OilRemaining: status.OilRemaining || 0
-            });
-          }
-        }
-
-        // Load recent notifications
-        try {
-          const notificationData = await fetchNotifications(vehicleId);
-          if (Array.isArray(notificationData) && isMounted.current) {
-            setNotifications(notificationData.slice(0, 5)); // Show only recent 5
-          } else if (isMounted.current) {
-            setNotifications([]);
-          }
-        } catch (notificationError) {
-          console.warn('Could not load notifications:', notificationError);
-          if (isMounted.current) {
-            setNotifications([]);
-          }
-        }
-
-      } catch (err) {
-        console.error('Error loading dashboard data:', err);
-        
-        if (isMounted.current) {
-          // More specific error messages based on error type
-          let errorMessage = 'Failed to load dashboard data.';
-          if (err.message?.includes('fetch') || err.name === 'TypeError') {
-            errorMessage = 'Unable to connect to vehicle services. Please check if the backend is running on port 8000.';
-          } else if (err.status === 404) {
-            errorMessage = 'Vehicle not found. Please verify the vehicle ID.';
-          } else if (err.status >= 500) {
-            errorMessage = 'Vehicle services are experiencing issues. Please try again later.';
-          }
-          
-          setError(errorMessage);
-        }
-      } finally {
-        if (isMounted.current) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadDashboardData();
-    
-    // Use centralized interval configuration with proper cleanup
-    const interval = setInterval(() => {
-      if (isMounted.current) {
-        loadDashboardData();
-      }
-    }, INTERVALS.DASHBOARD_REFRESH);
-    
-    return () => {
-      isMounted.current = false;
-      clearInterval(interval);
-    };
-  }, [selectedVehicle]);
+    refreshDashboard();
+  }, [refreshDashboard]);
 
   const quickStats = [
     {
@@ -203,7 +157,13 @@ const Dashboard = ({ selectedVehicle }) => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Container maxWidth="lg" sx={{ 
+      py: 3,
+      overflow: 'hidden',
+      '&::-webkit-scrollbar': { display: 'none' },
+      msOverflowStyle: 'none',
+      scrollbarWidth: 'none',
+    }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" gutterBottom>
@@ -212,6 +172,16 @@ const Dashboard = ({ selectedVehicle }) => {
         <Typography variant="subtitle1" color="text.secondary">
           {selectedVehicle.Make} {selectedVehicle.Model} ({selectedVehicle.VehicleId || selectedVehicle.vehicleId})
         </Typography>
+        <Box sx={{ mt: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={refreshDashboard}
+            disabled={loading || !selectedVehicle}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </Box>
       </Box>
 
       <Grid container spacing={3}>

@@ -7,6 +7,7 @@ from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
+from utils.agent_context import extract_vehicle_id
 
 logger = get_logger(__name__)
 
@@ -27,8 +28,8 @@ class ChargingEnergyPlugin:
     async def _handle_charging_stations(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a request for nearby charging stations."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you're using to search for charging stations.",
                 success=False,
@@ -36,7 +37,7 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle location from Cosmos DB
-            location = await self._get_vehicle_location(vehicle_id)
+            location = await self._get_vehicle_location(vid)
 
             if not location:
                 return self._format_response(
@@ -110,7 +111,7 @@ class ChargingEnergyPlugin:
 
             return self._format_response(
                 f"I found {len(nearby_stations)} charging stations near you:\n\n{stations_text}",
-                data={"stations": nearby_stations, "vehicle_id": vehicle_id},
+                data={"stations": nearby_stations, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving charging stations: {str(e)}")
@@ -123,8 +124,8 @@ class ChargingEnergyPlugin:
     async def _handle_charging_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a charging status request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check the charging status for.",
                 success=False,
@@ -132,7 +133,7 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status from Cosmos DB
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             if not vehicle_status:
                 return self._format_response(
@@ -146,9 +147,7 @@ class ChargingEnergyPlugin:
 
             # Get vehicle details to check if it's electric
             vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
                 return self._format_response(
@@ -187,7 +186,7 @@ class ChargingEnergyPlugin:
 
             return self._format_response(
                 response_text,
-                data={"charging_status": charging_status, "vehicle_id": vehicle_id},
+                data={"charging_status": charging_status, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving charging status: {str(e)}")
@@ -200,8 +199,8 @@ class ChargingEnergyPlugin:
     async def _handle_start_charging(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a start charging request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to start charging.",
                 success=False,
@@ -209,12 +208,12 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details to check if it's electric
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
 
             if not vehicle:
@@ -240,7 +239,7 @@ class ChargingEnergyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": f"charge-{str(uuid.uuid4())[:8]}",
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "START_CHARGING",
                 "parameters": {},
                 "status": "pending",
@@ -258,7 +257,7 @@ class ChargingEnergyPlugin:
                     f"about {(100 - battery_level) * 2} minutes at a standard charging rate.",
                     data={
                         "action": "start_charging",
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "status": "success",
                         "command_id": command["commandId"],
                     },
@@ -269,7 +268,7 @@ class ChargingEnergyPlugin:
                     success=False,
                     data={
                         "action": "start_charging",
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "status": "failed",
                         "error": "Command processing failed",
                     },
@@ -285,8 +284,8 @@ class ChargingEnergyPlugin:
     async def _handle_stop_charging(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a stop charging request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to stop charging.",
                 success=False,
@@ -294,12 +293,12 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details to check if it's electric
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
 
             if not vehicle:
@@ -325,7 +324,7 @@ class ChargingEnergyPlugin:
             command = {
                 "id": str(uuid.uuid4()),
                 "commandId": f"stop-charge-{str(uuid.uuid4())[:8]}",
-                "vehicleId": vehicle_id,
+                "vehicleId": vid,
                 "commandType": "STOP_CHARGING",
                 "parameters": {},
                 "status": "pending",
@@ -342,7 +341,7 @@ class ChargingEnergyPlugin:
                     f"{battery_level}%.",
                     data={
                         "action": "stop_charging",
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "status": "success",
                         "command_id": command["commandId"],
                     },
@@ -353,7 +352,7 @@ class ChargingEnergyPlugin:
                     success=False,
                     data={
                         "action": "stop_charging",
-                        "vehicle_id": vehicle_id,
+                        "vehicle_id": vid,
                         "status": "failed",
                         "error": "Command processing failed",
                     },
@@ -369,8 +368,8 @@ class ChargingEnergyPlugin:
     async def _handle_energy_usage(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle an energy usage request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check energy usage for.",
                 success=False,
@@ -383,7 +382,7 @@ class ChargingEnergyPlugin:
             # Get vehicle details to check if it's electric
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
 
             if not vehicle:
@@ -404,7 +403,7 @@ class ChargingEnergyPlugin:
 
             # Query for recent status entries of this vehicle
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 20"
-            parameters = [{"name": "@vehicleId", "value": vehicle_id}]
+            parameters = [{"name": "@vehicleId", "value": vid}]
 
             items = status_container.query_items(query=query, parameters=parameters)
 
@@ -481,7 +480,7 @@ class ChargingEnergyPlugin:
                 f"• Average efficiency: {energy_usage['avg_efficiency']} kWh/100 km\n"
                 f"• Energy recovered from regenerative braking: {energy_usage['regenerative_braking']} kWh\n"
                 f"• Estimated cost: ${energy_usage['cost_estimate']}",
-                data={"energy_usage": energy_usage, "vehicle_id": vehicle_id},
+                data={"energy_usage": energy_usage, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving energy usage: {str(e)}")
@@ -494,8 +493,8 @@ class ChargingEnergyPlugin:
     async def _handle_range_estimation(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Handle a range estimation request."""
-        if not vehicle_id:
+        vid = extract_vehicle_id(vehicle_id)
+        if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to estimate range for.",
                 success=False,
@@ -503,12 +502,12 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details
             vehicles = await cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("VehicleId") == vid), None
             )
 
             if not vehicle:
@@ -558,9 +557,7 @@ class ChargingEnergyPlugin:
             estimated_range_eco_km = int(estimated_range_km * 1.12)
 
             # Get nearest charging station distance
-            nearest_station_km = await self._get_nearest_charging_station_distance(
-                vehicle_id
-            )
+            nearest_station_km = await self._get_nearest_charging_station_distance(vid)
 
             range_data = {
                 "battery_level": battery_level,
@@ -576,7 +573,7 @@ class ChargingEnergyPlugin:
                 f"your estimated range is {range_data['estimated_range_km']} km. "
                 f"In eco mode, you could potentially reach {range_data['estimated_range_eco_km']} km. "
                 f"The nearest charging station is {range_data['nearest_station_km']} km away.",
-                data={"range_data": range_data, "vehicle_id": vehicle_id},
+                data={"range_data": range_data, "vehicle_id": vid},
             )
         except Exception as e:
             logger.error(f"Error estimating range: {str(e)}")

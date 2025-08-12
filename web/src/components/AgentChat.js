@@ -7,8 +7,10 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import { askAgent } from '../api/agent';
+import { askAgent } from '../api/apiClient';  // Changed from '../api/agent' to '../api/apiClient'
 import { styled } from '@mui/system';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Define available agents with their details
 const AVAILABLE_AGENTS = [
@@ -86,6 +88,22 @@ const QuickActionButton = styled(Button)(({ theme, category }) => {
   };
 });
 
+// Markdown renderer with basic styling
+const MarkdownText = ({ children }) => (
+  <Box sx={{
+    '& p': { m: 0 },
+    '& code': { bgcolor: 'rgba(0,0,0,0.06)', px: 0.5, py: 0.25, borderRadius: 0.5, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', fontSize: '0.85em' },
+    '& pre': { bgcolor: 'rgba(0,0,0,0.06)', p: 1.5, borderRadius: 1, overflow: 'auto' },
+    '& a': { color: 'primary.main' },
+    '& ul, & ol': { pl: 2, my: 1 },
+    '& h1, & h2, & h3': { mt: 0, mb: 1 }
+  }}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+      {children || ''}
+    </ReactMarkdown>
+  </Box>
+);
+
 // Modified component to accept vehicleId prop
 const AgentChat = ({ vehicleId }) => {
   const [selectedAgent, setSelectedAgent] = useState(AVAILABLE_AGENTS[0]);
@@ -133,6 +151,20 @@ const AgentChat = ({ vehicleId }) => {
     }
   }, [chatHistory]);
 
+  // Hide window scrollbar while AgentChat is mounted
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    
+    // Add a class to hide scrollbars globally
+    document.documentElement.style.overflow = 'hidden';
+    
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.documentElement.style.overflow = '';
+    };
+  }, []);
+
   const handleAgentChange = (event) => {
     const selectedType = event.target.value;
     const agent = AVAILABLE_AGENTS.find(a => a.type === selectedType);
@@ -164,13 +196,14 @@ const AgentChat = ({ vehicleId }) => {
     }
   };
 
-  const submitQuery = async () => {
-    if (!query.trim()) return;
-    
+  const submitQuery = async (textParam) => {
+    const textToSend = (typeof textParam === 'string' ? textParam : query).trim();
+    if (!textToSend) return;
+
     // Add user message to chat history
     const userMessage = {
       type: 'user',
-      text: query,
+      text: textToSend,
       timestamp: new Date().toISOString()
     };
     setChatHistory(prev => [...prev, userMessage]);
@@ -180,10 +213,11 @@ const AgentChat = ({ vehicleId }) => {
     try {
       // Prepare the request payload with proper structure
       const requestPayload = {
-        query: query,
+        query: textToSend,
         context: { 
           agentType: selectedAgent.type, // Frontend agent type
           vehicleId: vehicleId, // Include vehicleId in all requests
+          vehicle_id: vehicleId, // added snake_case for backend agents
           timestamp: new Date().toISOString()
         },
         session_id: sessionId,
@@ -223,7 +257,15 @@ const AgentChat = ({ vehicleId }) => {
       let errorMessage = "Sorry, there was an error processing your request.";
       let errorDetails = null;
       
-      if (error.response) {
+      // Check for custom error messages from the API client
+      if (error.userMessage) {
+        errorMessage = error.userMessage;
+        errorDetails = {
+          type: error.isTimeout ? 'timeout' : error.isNetworkError ? 'network_error' : 'api_error',
+          agentType: selectedAgent.type,
+          timestamp: new Date().toISOString()
+        };
+      } else if (error.response) {
         // Server responded with error status
         const status = error.response.status;
         const data = error.response.data;
@@ -238,6 +280,9 @@ const AgentChat = ({ vehicleId }) => {
           case 500:
             errorMessage = "Internal server error. Please try again later.";
             break;
+          case 504:
+            errorMessage = "Gateway timeout - the request took too long. Please try again with a simpler query.";
+            break;
           default:
             errorMessage = `Server error (${status}): ${data?.detail || data?.message || error.response.statusText}`;
         }
@@ -250,13 +295,25 @@ const AgentChat = ({ vehicleId }) => {
         };
       } else if (error.request) {
         // Request was made but no response received
-        errorMessage = "Unable to connect to the server. Please check your internet connection and try again.";
-        errorDetails = {
-          type: 'network_error',
-          endpoint: '/agent/ask',
-          agentType: selectedAgent.type,
-          timestamp: new Date().toISOString()
-        };
+        if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
+          errorMessage = "The request is taking longer than expected. The agent might be processing a complex operation. Please try again or simplify your request.";
+          errorDetails = {
+            type: 'timeout',
+            endpoint: '/agent/ask',
+            agentType: selectedAgent.type,
+            timestamp: new Date().toISOString(),
+            hint: 'Agent operations can take 10-30 seconds. Consider increasing timeout if this persists.'
+          };
+        } else {
+          errorMessage = "Unable to connect to the server. Please ensure the backend service is running on port 8000.";
+          errorDetails = {
+            type: 'network_error',
+            endpoint: '/agent/ask',
+            agentType: selectedAgent.type,
+            timestamp: new Date().toISOString(),
+            hint: 'Check if the backend is running: python main.py'
+          };
+        }
       } else {
         // Something else happened
         errorMessage = `Request error: ${error.message}`;
@@ -268,7 +325,7 @@ const AgentChat = ({ vehicleId }) => {
         };
       }
       
-      // Add error response to chat history
+      // Add error response to chat history with more detail
       const errorResponseMessage = {
         type: 'error',
         text: errorMessage,
@@ -277,6 +334,11 @@ const AgentChat = ({ vehicleId }) => {
       };
       
       setChatHistory(prev => [...prev, errorResponseMessage]);
+      
+      // Show hint in development mode
+      if (process.env.NODE_ENV === 'development' && errorDetails?.hint) {
+        console.log('💡 Hint:', errorDetails.hint);
+      }
     } finally {
       setLoading(false);
       setQuery(''); // Clear input field after submission
@@ -284,7 +346,6 @@ const AgentChat = ({ vehicleId }) => {
   };
 
   const handleQuickAction = (message) => {
-    setQuery(message);
     submitQuery(message);
   };
 
@@ -366,7 +427,11 @@ const AgentChat = ({ vehicleId }) => {
       display: 'flex', 
       flexDirection: 'column',
       maxWidth: '1800px',
-      mx: 'auto'
+      mx: 'auto',
+      overflow: 'hidden', // prevent window scrollbar
+      '&::-webkit-scrollbar': { display: 'none' }, // Hide scrollbar for Chrome, Safari and Opera
+      msOverflowStyle: 'none', // Hide scrollbar for IE and Edge
+      scrollbarWidth: 'none', // Hide scrollbar for Firefox
     }}>
       <Typography variant="h5" component="h1" gutterBottom>
         Connected Vehicle Agent Chat
@@ -460,9 +525,14 @@ const AgentChat = ({ vehicleId }) => {
                             {message.type === 'agent' ? message.agentTitle : 'System Message'}
                           </Typography>
                         )}
-                        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                          {message.text}
-                        </Typography>
+                        {/* Render agent messages as Markdown; others as plain text */}
+                        {message.type === 'agent' ? (
+                          <MarkdownText>{message.text}</MarkdownText>
+                        ) : (
+                          <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                            {message.text}
+                          </Typography>
+                        )}
                         {message.data && (
                           <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>

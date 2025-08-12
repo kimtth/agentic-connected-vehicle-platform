@@ -1,20 +1,17 @@
 """
 Information Services Agent for the Connected Car Platform.
-
-This agent provides real-time vehicle-related information such as weather, traffic,
-and points of interest.
 """
 from typing import Dict, Any, Optional
-from semantic_kernel.connectors.mcp import MCPStdioPlugin
+import aiohttp
 from azure.cosmos_db import cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from utils.logging_config import get_logger
-from semantic_kernel import create_chat_service
+from plugin.oai_service import create_chat_service  # fixed import
 import json
+import os
 
 logger = get_logger(__name__)
-
 
 class InformationServicesAgent:
     """
@@ -31,26 +28,70 @@ class InformationServicesAgent:
             plugins=[InformationServicesPlugin()],
         )
 
+class MCPSSEClient:
+    """Simple SSE client for MCP servers."""
+    
+    def __init__(self, base_url: str, service_name: str):
+        self.base_url = base_url
+        self.service_name = service_name
+        self.session = None
+    
+    async def invoke_async(self, tool_name: str, *args, **kwargs):
+        """Invoke a tool on the MCP server via HTTP."""
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        
+        # Construct the request payload
+        payload = {
+            "tool": tool_name,
+            "arguments": {
+                **{f"arg{i}": arg for i, arg in enumerate(args)},
+                **kwargs
+            }
+        }
+        
+        try:
+            async with self.session.post(
+                f"{self.base_url}/invoke",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    logger.error(f"MCP server error: {error_text}")
+                    return {"error": f"Server returned {response.status}: {error_text}"}
+        except Exception as e:
+            logger.error(f"Error invoking MCP tool {tool_name}: {e}")
+            return {"error": str(e)}
+    
+    async def close(self):
+        """Close the HTTP session."""
+        if self.session:
+            await self.session.close()
 
 class InformationServicesPlugin:
     """Plugin for information services operations."""
 
     def __init__(self):
-        # register MCP-based tools
-        self.weather_tool = MCPStdioPlugin("weather_service")
-        self.traffic_tool = MCPStdioPlugin("traffic_service")
-        self.poi_tool     = MCPStdioPlugin("poi_service")
-        self.nav_tool     = MCPStdioPlugin("navigation_service")
+        try:
+            # Get base URLs for each MCP server
+            base_host = os.environ.get("MCP_SERVER_HOST", "localhost")
+            
+            # Initialize SSE clients for each MCP server running on different ports
+            self.weather_tool = MCPSSEClient(f"http://{base_host}:8001", "weather_service")
+            self.traffic_tool = MCPSSEClient(f"http://{base_host}:8002", "traffic_service")
+            self.poi_tool = MCPSSEClient(f"http://{base_host}:8003", "poi_service")
+            self.nav_tool = MCPSSEClient(f"http://{base_host}:8004", "navigation_service")
+            
+            logger.info(f"MCP SSE clients initialized for host: {base_host}")
+        except Exception as e:
+            logger.warning(f"MCP tools not initialized: {e}")
+            self.weather_tool = self.traffic_tool = self.poi_tool = self.nav_tool = None
 
-    @kernel_function(
-        description="Get weather information for the vehicle's location",
-        name="get_weather",
-    )
-    async def _handle_weather(
-        self, 
-        location: Optional[str] = None,
-        vehicle_id: Optional[str] = None
-    ) -> str:
+    @kernel_function(description="Get weather information for the vehicle's location", name="get_weather")
+    async def _handle_weather(self, location: Optional[str] = None, vehicle_id: Optional[str] = None) -> str:
         """Get weather information for a specific location or vehicle."""
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
@@ -77,23 +118,21 @@ class InformationServicesPlugin:
                 coords = {"latitude": 43.6532, "longitude": -79.3832}
             latitude = coords.get("latitude", 43.6532)
             longitude = coords.get("longitude", -79.3832)
-            # Call the MCP weather tool
-            return await self.weather_tool.invoke_async(
-                "get_weather", latitude, longitude
+            if not self.weather_tool:
+                return json.dumps({"error": "weather tool unavailable"})
+            # Call the MCP weather tool with proper argument names
+            result = await self.weather_tool.invoke_async(
+                "get_weather", 
+                latitude=latitude, 
+                longitude=longitude
             )
+            return json.dumps(result) if isinstance(result, dict) else result
         except Exception as e:
             logger.error(f"Error getting weather: {e}")
             return f"Weather information is currently unavailable. Error: {str(e)}"
 
-    @kernel_function(
-        description="Get traffic information for the vehicle's route",
-        name="get_traffic",
-    )
-    async def _handle_traffic(
-        self, 
-        route: Optional[str] = None,
-        vehicle_id: Optional[str] = None
-    ) -> str:
+    @kernel_function(description="Get traffic information for the vehicle's route", name="get_traffic")
+    async def _handle_traffic(self, route: Optional[str] = None, vehicle_id: Optional[str] = None) -> str:
         """Get traffic information for a specific route or vehicle location."""
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
@@ -109,25 +148,21 @@ class InformationServicesPlugin:
         
         try:
             coords = await self._get_vehicle_location(vehicle_id)
-            latitude = coords.get("latitude", 0.0)
-            longitude = coords.get("longitude", 0.0)
+            if not self.traffic_tool:
+                return json.dumps({"error": "traffic tool unavailable"})
             result = await self.traffic_tool.invoke_async(
-                "get_traffic", route or "current route", latitude, longitude
+                "get_traffic", 
+                route=route or "current route", 
+                latitude=coords.get("latitude", 0.0), 
+                longitude=coords.get("longitude", 0.0)
             )
-            return json.dumps(result)
+            return json.dumps(result) if isinstance(result, dict) else result
         except Exception as e:
             logger.error(f"Error getting traffic information: {e}")
             return f"Traffic information is currently unavailable. Error: {str(e)}"
 
-    @kernel_function(
-        description="Find points of interest near the vehicle's location",
-        name="find_pois",
-    )
-    async def _handle_pois(
-        self, 
-        category: Optional[str] = None,
-        vehicle_id: Optional[str] = None
-    ) -> str:
+    @kernel_function(description="Find points of interest near the vehicle's location", name="find_pois")
+    async def _handle_pois(self, category: Optional[str] = None, vehicle_id: Optional[str] = None) -> str:
         """Find points of interest near the vehicle's location."""
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
@@ -143,25 +178,21 @@ class InformationServicesPlugin:
         
         try:
             coords = await self._get_vehicle_location(vehicle_id)
-            latitude = coords.get("latitude", 0.0)
-            longitude = coords.get("longitude", 0.0)
+            if not self.poi_tool:
+                return json.dumps({"error": "poi tool unavailable"})
             result = await self.poi_tool.invoke_async(
-                "find_pois", category or "general", latitude, longitude
+                "find_pois", 
+                category=category or "general", 
+                latitude=coords.get("latitude", 0.0), 
+                longitude=coords.get("longitude", 0.0)
             )
-            return json.dumps(result)
+            return json.dumps(result) if isinstance(result, dict) else result
         except Exception as e:
             logger.error(f"Error finding POIs: {e}")
             return f"Points of interest search is currently unavailable. Error: {str(e)}"
 
-    @kernel_function(
-        description="Get navigation directions to a destination",
-        name="get_directions",
-    )
-    async def _handle_navigation(
-        self, 
-        destination: str,
-        vehicle_id: Optional[str] = None
-    ) -> str:
+    @kernel_function(description="Get navigation directions to a destination", name="get_directions")
+    async def _handle_navigation(self, destination: str, vehicle_id: Optional[str] = None) -> str:
         """Get navigation directions to a destination."""
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
@@ -177,12 +208,15 @@ class InformationServicesPlugin:
         
         try:
             coords = await self._get_vehicle_location(vehicle_id)
-            latitude = coords.get("latitude", 0.0)
-            longitude = coords.get("longitude", 0.0)
+            if not self.nav_tool:
+                return json.dumps({"error": "navigation tool unavailable"})
             result = await self.nav_tool.invoke_async(
-                "get_directions", destination, latitude, longitude
+                "get_directions", 
+                destination=destination, 
+                latitude=coords.get("latitude", 0.0), 
+                longitude=coords.get("longitude", 0.0)
             )
-            return json.dumps(result)
+            return json.dumps(result) if isinstance(result, dict) else result
         except Exception as e:
             logger.error(f"Error getting navigation directions: {e}")
             return f"Navigation service is currently unavailable. Error: {str(e)}"
@@ -219,28 +253,44 @@ class InformationServicesPlugin:
             logger.error(f"Error getting vehicle location: {e}")
             return {}
 
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Process information services requests."""
+    async def process(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Process information services requests and wrap tool output."""
         vehicle_id = context.get("vehicle_id") if context else None
-        query_lower = query.lower()
+        q = (query or "").lower()
 
-        if "weather" in query_lower:
-            return await self._handle_weather(vehicle_id, context)
-        elif "traffic" in query_lower:
-            return await self._handle_traffic(vehicle_id, context)
-        elif "poi" in query_lower or "point of interest" in query_lower or "places" in query_lower:
-            return await self._handle_pois(vehicle_id, context)
-        elif "navigation" in query_lower or "directions" in query_lower or "route" in query_lower:
-            return await self._handle_navigation(vehicle_id, query, context)
-        else:
-            return self._format_response(
-                "I can provide you with real-time information related to your vehicle and journey, "
-                "including weather updates, traffic conditions, points of interest, and navigation assistance. "
-                "What kind of information would you like?",
-                data=self._get_capabilities(),
-            )
+        try:
+            if "weather" in q:
+                raw = await self._handle_weather(vehicle_id=vehicle_id)
+                data = self._safe_json(raw)
+                return self._format_response("Here is the current weather.", data={"weather": data, "vehicle_id": vehicle_id})
+            elif "traffic" in q:
+                raw = await self._handle_traffic(route=None, vehicle_id=vehicle_id)
+                data = self._safe_json(raw)
+                return self._format_response("Here are the current traffic conditions.", data={"traffic": data, "vehicle_id": vehicle_id})
+            elif "poi" in q or "point of interest" in q or "places" in q:
+                raw = await self._handle_pois(category=None, vehicle_id=vehicle_id)
+                data = self._safe_json(raw)
+                return self._format_response("Here are nearby points of interest.", data={"pois": data, "vehicle_id": vehicle_id})
+            elif "navigation" in q or "directions" in q or "route" in q:
+                # naive destination extraction, fallback to 'destination'
+                destination = context.get("destination") if context else "destination"
+                raw = await self._handle_navigation(destination=destination, vehicle_id=vehicle_id)
+                data = self._safe_json(raw)
+                return self._format_response(f"Directions to {destination}.", data={"navigation": data, "vehicle_id": vehicle_id})
+            else:
+                return self._format_response(
+                    "I can provide weather updates, traffic conditions, points of interest, and navigation assistance. What do you need?",
+                    data=self._get_capabilities(),
+                )
+        except Exception as e:
+            logger.error(f"Information services processing error: {e}")
+            return self._format_response("Information services are temporarily unavailable.", success=False)
+
+    def _safe_json(self, value: Any) -> Any:
+        try:
+            return value if isinstance(value, (dict, list)) else json.loads(value)
+        except Exception:
+            return {"raw": value}
 
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""
@@ -251,12 +301,5 @@ class InformationServicesPlugin:
             "navigation": "Set up and manage navigation to destinations",
         }
 
-    def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Format the response to be returned by the agent."""
-        return {
-            "message": message,
-            "success": success,
-            "data": data or {},
-        }
+    def _format_response(self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return {"message": message, "success": success, "data": data or {}}
