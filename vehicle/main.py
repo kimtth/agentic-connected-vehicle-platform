@@ -13,6 +13,8 @@ import json
 import uvicorn
 import atexit
 from typing import Optional
+from fastapi import Body
+import random
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -664,6 +666,164 @@ async def seed_dev_data(vehicleId: Optional[str] = None):
     except Exception as e:
         logger.error(f"Seed failed for {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
+
+
+# Track last seed summary (dev utility)
+LAST_SEED_SUMMARY = {}
+
+@app.post("/api/dev/seed/bulk")
+async def seed_dev_data_bulk(config: dict = Body(default=None)):
+    """
+    Bulk-generate test data and insert into Cosmos DB.
+    Body (optional):
+    {
+      "vehicles": 10,
+      "commandsPerVehicle": 2,
+      "notificationsPerVehicle": 2,
+      "servicesPerVehicle": 1,
+      "statusesPerVehicle": 1
+    }
+    """
+    # Ensure DB is available
+    cosmos_connected = await cosmos_client.ensure_connected()
+    if not cosmos_connected:
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+
+    # Defaults
+    cfg = {
+        "vehicles": 10,
+        "commandsPerVehicle": 2,
+        "notificationsPerVehicle": 2,
+        "servicesPerVehicle": 1,
+        "statusesPerVehicle": 1,
+    }
+    if isinstance(config, dict):
+        cfg.update({k: v for k, v in config.items() if k in cfg and isinstance(v, int) and v >= 0})
+
+    created = {
+        "vehicles": 0,
+        "statuses": 0,
+        "services": 0,
+        "commands": 0,
+        "notifications": 0,
+        "vehicleIds": []
+    }
+
+    # Simple test data pools
+    makes = ["Demo", "Tesla", "Toyota", "Ford", "BMW"]
+    models = ["Car", "Model 3", "RAV4", "F-150", "X3"]
+
+    try:
+        for _ in range(cfg["vehicles"]):
+            vehicle_id = str(uuid.uuid4())
+
+            # Minimal vehicle profile used by UI and DB (ensure partition key)
+            profile = {
+                "id": str(uuid.uuid4()),
+                "VehicleId": vehicle_id,
+                "vehicleId": vehicle_id,  # partition key
+                "Make": random.choice(makes),
+                "Model": random.choice(models),
+                "Year": random.choice([2021, 2022, 2023, 2024]),
+                "Status": random.choice(["Active", "Inactive", "Maintenance"]),
+                "LastLocation": {"Latitude": 43.6532, "Longitude": -79.3832}
+            }
+            await cosmos_client.create_vehicle(profile)
+            created["vehicles"] += 1
+            created["vehicleIds"].append(vehicle_id)
+
+            # Status history
+            for _n in range(cfg["statusesPerVehicle"]):
+                status_data = {
+                    "vehicleId": vehicle_id,  # partition key
+                    "Battery": random.randint(50, 100),
+                    "Temperature": random.randint(15, 40),
+                    "Speed": random.choice([0, random.randint(10, 120)]),
+                    "OilRemaining": random.randint(40, 100),
+                    "Odometer": random.randint(1000, 150000),
+                    "location": {"latitude": 43.6532, "longitude": -79.3832},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await cosmos_client.update_vehicle_status(vehicle_id, status_data)
+                created["statuses"] += 1
+
+            # Services
+            for _n in range(cfg["servicesPerVehicle"]):
+                service = {
+                    "id": str(uuid.uuid4()),
+                    "vehicleId": vehicle_id,  # partition key
+                    "ServiceCode": random.choice(["OIL_CHANGE", "TIRE_ROTATION", "BRAKE_SERVICE"]),
+                    "Description": "Auto-generated test service",
+                    "StartDate": datetime.now(timezone.utc).isoformat(),
+                    "EndDate": datetime.now(timezone.utc).isoformat(),
+                    "NextServiceDate": datetime.now(timezone.utc).isoformat(),
+                    "mileage": random.randint(1000, 150000),
+                    "nextServiceMileage": random.randint(1000, 150000) + 5000,
+                    "cost": round(random.uniform(50.0, 500.0), 2),
+                    "location": "Service Center 1",
+                    "technician": "Tech A",
+                    "invoiceNumber": f"INV-{random.randint(10000, 99999)}",
+                    "serviceStatus": "Completed",
+                    "serviceType": random.choice(["Scheduled", "Repair"]),
+                }
+                await cosmos_client.create_service(service)
+                created["services"] += 1
+
+            # Commands
+            for _n in range(cfg["commandsPerVehicle"]):
+                command = {
+                    "id": str(uuid.uuid4()),
+                    "commandId": str(uuid.uuid4()),
+                    "vehicleId": vehicle_id,  # partition key
+                    "commandType": random.choice(["LOCK_DOORS", "UNLOCK_DOORS", "START_ENGINE", "STOP_ENGINE"]),
+                    "parameters": {},
+                    "status": random.choice(["Sent", "Processing", "Completed"]),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                await cosmos_client.create_command(command)
+                created["commands"] += 1
+
+            # Notifications
+            for _n in range(cfg["notificationsPerVehicle"]):
+                notification = {
+                    "id": str(uuid.uuid4()),
+                    "vehicleId": vehicle_id,  # partition key
+                    "type": random.choice(["service_reminder", "low_battery_alert", "speed_alert"]),
+                    "message": "Auto-generated test notification",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "read": False,
+                    "severity": random.choice(["low", "medium", "high"]),
+                    "source": random.choice(["Vehicle", "System"]),
+                    "actionRequired": False,
+                }
+                await cosmos_client.create_notification(notification)
+                created["notifications"] += 1
+
+        summary = {
+            "ok": True,
+            "config": cfg,
+            "created": created,
+            "azure_cosmos_connected": True
+        }
+        # Save last seed summary for status endpoint
+        global LAST_SEED_SUMMARY
+        LAST_SEED_SUMMARY = summary
+        return summary
+
+    except Exception as e:
+        logger.error(f"Bulk seed failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Bulk seeding failed: {str(e)}")
+
+
+@app.get("/api/dev/seed/status")
+async def seed_status():
+    """Return the last bulk seed summary (if any) and current Cosmos connectivity."""
+    enabled, connected = _cosmos_status()
+    return {
+        "azure_cosmos_enabled": enabled,
+        "azure_cosmos_connected": connected,
+        "last_seed": LAST_SEED_SUMMARY or {}
+    }
 
 
 # Top-level entry points for multiprocessing

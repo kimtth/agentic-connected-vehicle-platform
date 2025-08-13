@@ -1,17 +1,54 @@
 # Base URL
 @host = http://localhost:8000
+# Optional auth (uncomment header lines below if your API requires it)
+@authToken = YOUR_TOKEN_HERE
+
+# Bulk seed defaults
+@vehicles = 5
+@commandsPerVehicle = 2
+@notificationsPerVehicle = 2
+@servicesPerVehicle = 1
+@statusesPerVehicle = 1
+
+# Known and random vehicle IDs
+@vehicleId = a640f210-dca4-4db7-931a-9f119bbe54e0
+@newVehicleId = {{$guid}}
 
 ###
+# @name seedDefault
 # Seed default test vehicle and status
 POST {{host}}/api/dev/seed
 Accept: application/json
 
 ###
+# @name seedById
 # Seed a specific vehicle by ID
-@vehicleId = a640f210-dca4-4db7-931a-9f119bbe54e0
 POST {{host}}/api/dev/seed?vehicleId={{vehicleId}}
 Accept: application/json
 
-# Verify status
+###
+# @name seedRandomVehicle
+# Seed a new random vehicle by generated GUID
+POST {{host}}/api/dev/seed?vehicleId={{newVehicleId}}
+Accept: application/json
+
+###
+# @name seedBulk
+# Bulk seed multiple vehicles and related data
+POST {{host}}/api/dev/seed/bulk
+Content-Type: application/json
+Accept: application/json
+
+{
+  "vehicles": {{vehicles}},
+  "commandsPerVehicle": {{commandsPerVehicle}},
+  "notificationsPerVehicle": {{notificationsPerVehicle}},
+  "servicesPerVehicle": {{servicesPerVehicle}},
+  "statusesPerVehicle": {{statusesPerVehicle}}
+}
+
+###
+# @name seedStatus
+# Verify seed status
 GET {{host}}/api/dev/seed/status
 Accept: application/json
