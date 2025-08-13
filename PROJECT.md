@@ -13,6 +13,34 @@ An intelligent vehicle management platform where specialized AI agents handle di
 Notes:
 - MCP services use plugin/sample_data.py (no external keys needed by default).
 
+## Dev Test Data Seeding
+
+Use the built-in dev seed endpoints to create sample data for local development.
+
+```bash
+# Default seed (creates a demo vehicle if not present)
+curl -X POST http://localhost:8000/api/dev/seed
+
+# Seed a specific vehicleId
+curl -X POST "http://localhost:8000/api/dev/seed?vehicleId=a640f210-dca4-4db7-931a-9f119bbe54e0"
+
+# Bulk seed multiple vehicles and related data
+curl -X POST http://localhost:8000/api/dev/seed/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vehicles": 5,
+    "commandsPerVehicle": 2,
+    "notificationsPerVehicle": 2,
+    "servicesPerVehicle": 1,
+    "statusesPerVehicle": 1
+  }'
+
+# Check last seed status
+curl http://localhost:8000/api/dev/seed/status
+```
+
+Note: The legacy local JSON generator (vehicle/tests/generator/* and vehicle/tests/generate_sample_data.py) is deprecated and removed.
+
 ## System Overview
 
 ### Core Architecture
