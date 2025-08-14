@@ -330,16 +330,16 @@ curl http://localhost:8000/api/notifications
      --scope "/"
    ```
 
-3. Backend Setup
-```bash
-cd vehicle
-poetry install
-cp .env.sample .env
-# Run tests (optional)
-poetry run pytest
-# Run the server
-python main.py
-```
+3. **Backend Setup**
+    ```bash
+    cd vehicle
+    poetry install
+    cp .env.sample .env
+    # Run tests (optional)
+    poetry run pytest
+    # Run the server
+    python main.py
+    ```
 
 4. **Frontend Setup**
    ```bash
@@ -379,7 +379,7 @@ AZURE_OPENAI_API_VERSION=
 
 # Public OpenAI (optional fallback)
 OPENAI_API_KEY=
-OPENAI_CHAT_MODEL_NAME=gpt-3.5-turbo
+OPENAI_CHAT_MODEL_NAME=
 
 # Application Settings
 LOG_LEVEL=INFO
@@ -390,6 +390,22 @@ API_PORT=8000
 Notes:
 - MCP servers (weather/traffic/poi/navigation) use plugin/sample_data.py and do not require external API keys by default.
 - Cosmos DB is required; configure AAD or key as above.
+
+## Frontend Authentication (Microsoft Entra ID)
+Add a `.env` inside `web/` (do not commit secrets):
+
+```
+REACT_APP_AZURE_CLIENT_ID=<app-registration-client-id>
+REACT_APP_AZURE_TENANT_ID=<directory-tenant-id>
+# Optional explicit redirect (defaults to window.origin)
+REACT_APP_AZURE_REDIRECT_URI=http://localhost:3000
+```
+
+After setting variables:
+1. First load will redirect to Microsoft sign-in
+2. Tokens injected automatically for API calls when scope configured
+
+- [Tutorial: Create a React single-page application and prepare it for authentication](https://learn.microsoft.com/en-us/entra/identity-platform/tutorial-single-page-app-react-prepare-app?tabs=workforce-tenant)
 
 ## Advanced Features
 

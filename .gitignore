@@ -318,3 +318,4 @@ poetry.lock
 /backend/a2a_sk/semantic_kernel_(framework)
 *.lock
 /.vscode
+memo.md

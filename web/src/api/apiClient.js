@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { INTERVALS } from '../config/intervals';
 import { createRetryInterceptor, DEV_HELPERS, getCurrentEnvConfig } from './config';
+import { msalInstance, acquireApiToken } from '../auth/msalConfig'; // ensure path inside src
 
 // Support both env var names for base URL
 const baseURL = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -30,6 +31,24 @@ export const agentClient = axios.create({
 /**
  * Add request and response interceptors if needed
  */
+// Authorization interceptor (silent token injection)
+api.interceptors.request.use(async (config) => {
+  try {
+    // Simple readiness check – if internal cache not ready getAllAccounts may throw
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length && !config.headers.Authorization) {
+      const token = await acquireApiToken();
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch {
+    // MSAL not initialized yet – proceed without token
+  }
+  return config;
+}, (error) => {
+  console.error('Authorization error:', error);
+  return Promise.reject(error);
+});
+
 // Request interceptor for main API
 api.interceptors.request.use(
   (config) => {
