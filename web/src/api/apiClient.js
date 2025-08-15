@@ -4,7 +4,7 @@
 
 import axios from 'axios';
 import { INTERVALS } from '../config/intervals';
-import { createRetryInterceptor, DEV_HELPERS, getCurrentEnvConfig } from './config';
+import { createRetryInterceptor } from './config';
 import { msalInstance, acquireApiToken } from '../auth/msalConfig'; // ensure path inside src
 
 // Support both env var names for base URL
@@ -28,13 +28,28 @@ export const agentClient = axios.create({
   },
 });
 
+// Helper to create a correlation/request id
+function createRequestId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch {}
+  return 'req-' + Math.random().toString(36).slice(2);
+}
+
 /**
  * Add request and response interceptors if needed
  */
-// Authorization interceptor (silent token injection)
+// Authorization + correlation id interceptor (silent token injection)
 api.interceptors.request.use(async (config) => {
+  // Correlation ID
+  if (!config.headers['X-Client-Request-Id']) {
+    config.headers['X-Client-Request-Id'] = createRequestId();
+  }
+  // Identify client for backend auditing
+  if (!config.headers['X-Client-App']) {
+    config.headers['X-Client-App'] = 'web';
+  }
   try {
-    // Simple readiness check – if internal cache not ready getAllAccounts may throw
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length && !config.headers.Authorization) {
       const token = await acquireApiToken();
@@ -45,55 +60,31 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 }, (error) => {
-  console.error('Authorization error:', error);
   return Promise.reject(error);
 });
 
-// Request interceptor for main API
-api.interceptors.request.use(
-  (config) => {
-    DEV_HELPERS.logApiCall(config.method, config.url, config.data);
-    
-    // Only validate endpoint in development and only log warning if it's truly unknown
-    const currentEnvConfig = getCurrentEnvConfig();
-    if (currentEnvConfig.enableDebugLogs) {
-      const isValid = DEV_HELPERS.validateEndpoint(config.url);
-      // Only show validation details for completely unknown patterns
-      if (!isValid && !config.url.includes('vehicles/') && !config.url.includes('notifications')) {
-        console.info('🔍 Endpoint validation details:', {
-          url: config.url,
-          method: config.method,
-          baseURL: config.baseURL
-        });
-      }
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
+// Agent client correlation id (keep separate to avoid duplication)
+agentClient.interceptors.request.use((config) => {
+  if (!config.headers['X-Client-Request-Id']) {
+    config.headers['X-Client-Request-Id'] = createRequestId();
   }
-);
-
-// Request interceptor for agent client
-agentClient.interceptors.request.use(
-  (config) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🚀 Agent API Request:', {
-        url: config.url,
-        method: config.method,
-        data: config.data,
-        timeout: config.timeout
-      });
-    }
-    return config;
-  },
-  (error) => {
-    console.error('❌ Agent API Request Error:', error);
-    return Promise.reject(error);
+  // Identify client for backend auditing
+  if (!config.headers['X-Client-App']) {
+    config.headers['X-Client-App'] = 'web-agent';
   }
-);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🚀 Agent API Request:', {
+      url: config.url,
+      method: config.method,
+      data: config.data,
+      timeout: config.timeout
+    });
+  }
+  return config;
+}, (error) => {
+  console.error('❌ Agent API Request Error:', error);
+  return Promise.reject(error);
+});
 
 // Add retry interceptor for automatic endpoint correction
 createRetryInterceptor(api);

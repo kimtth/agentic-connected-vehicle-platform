@@ -85,14 +85,26 @@ export const getAccessToken = async (scopes) => {
 export async function acquireApiToken() {
   const accounts = msalInstance.getAllAccounts();
   if (!accounts.length) return null;
+  
   try {
+    // Try silent acquisition
     const r = await msalInstance.acquireTokenSilent({
       account: accounts[0],
       scopes: loginRequest.scopes
     });
     return r.accessToken;
-  } catch {
-    return null;
+  } catch (silentError) {
+    // If silent fails, try popup
+    try {
+      const r = await msalInstance.acquireTokenPopup({
+        account: accounts[0],
+        scopes: loginRequest.scopes
+      });
+      return r.accessToken;
+    } catch (popupError) {
+      console.debug('Token acquisition failed:', popupError.message);
+      return null;
+    }
   }
 }
 

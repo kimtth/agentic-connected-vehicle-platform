@@ -292,6 +292,16 @@ curl http://localhost:8000/api/notifications
 - `POST /api/analyze/vehicle-data`     Vehicle telemetry analysis  
 - `POST /api/recommend/services`       Service & maintenance recommendations
 
+## API Authentication (Azure AD / JWT)
+
+All protected API routes use Microsoft Entra ID (Azure AD) access tokens (JWTs). The React frontend acquires a token via MSAL and the Axios client auto‑adds `Authorization: Bearer <token>`. The FastAPI middleware (`AzureADMiddleware`) then:
+
+1. Skips public paths (health/docs/dev seed).
+2. Requires a token if `AZURE_AUTH_REQUIRED=true`.
+3. Validates signature using Azure’s JWKS (public keys), plus issuer, audience, and expiry.
+4. On success attaches decoded claims to `request.state.user` (e.g. `oid`, `sub`, `preferred_username`).
+5. On failure: 401 (missing/invalid) or 500 (bad config) when auth required; otherwise proceeds anonymously.
+
 ## Getting Started
 
 ### Prerequisites
