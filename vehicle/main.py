@@ -2,19 +2,22 @@
 Main application for the connected vehicle platform.
 """
 
-from datetime import datetime, timezone
+
 import sys
 import os
 import asyncio
 import logging
-from pathlib import Path
 import uuid
 import json
 import uvicorn
 import atexit
+import random
+import time
+from pathlib import Path
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import Body
-import random
+from uuid import uuid4
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -30,6 +33,9 @@ from models.service import Service
 from models.status import VehicleStatus
 from dotenv import load_dotenv
 from importlib import import_module
+from azure.azure_auth import AzureADMiddleware
+from fastapi import Request
+
 
 # Configure logging first
 logging.basicConfig(
@@ -161,6 +167,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Azure AD middleware
+app.add_middleware(AzureADMiddleware)
 
 @app.get("/api/")
 def get_status():
@@ -933,3 +942,18 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"API server failed to start: {e}")
         raise
+
+# Add user monitoring middleware
+@app.middleware("http")
+async def log_user_requests(request: Request):
+    """Log API calls with authenticated user (if any) and correlation id."""
+    # Correlation ID: reuse incoming or create
+    corr_id = request.headers.get("X-Client-Request-Id") or str(uuid4())
+    # User info from AzureADMiddleware
+    user = getattr(request.state, "user", None)
+    if user and isinstance(user, dict):
+        user_id = user.get("preferred_username") or user.get("upn") or user.get("sub")
+    else:
+        user_id = "anonymous"
+    user_label = user_id or "anonymous"
+    logger.info(f"[REQ] id={corr_id} {request.method} {request.url.path} user={user_label}")

@@ -11,6 +11,8 @@ import SimulatorPanel from './components/simulator/SimulatorPanel';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import Dashboard from './pages/Dashboard';
+import AuthButtons from './components/auth/AuthButtons';
+import ProtectedRoute from './auth/ProtectedRoute';
 
 const theme = createTheme({
   palette: {
@@ -78,52 +80,60 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box className="App">
-        <DashboardLayout 
-          vehicles={vehicles} 
-          selectedVehicle={selectedVehicle} 
+        <DashboardLayout
+          vehicles={vehicles}
+          selectedVehicle={selectedVehicle}
           onVehicleChange={setSelectedVehicle}
+          extraHeaderRight={<AuthButtons />} // if DashboardLayout supports custom header slot
         >
           <Routes>
             <Route path="/" element={
-              selectedVehicle ? (
-                <Dashboard selectedVehicle={selectedVehicle} />
-              ) : (
-                <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" color="textSecondary">
-                    No vehicles available. Please add a vehicle to start.
-                  </Typography>
-                </Container>
-              )
+              <ProtectedRoute>
+                {selectedVehicle ? (
+                  <Dashboard selectedVehicle={selectedVehicle} />
+                ) : (
+                  <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
+                    <Typography variant="h5" color="textSecondary">
+                      No vehicles available. Please add a vehicle to start.
+                    </Typography>
+                  </Container>
+                )}
+              </ProtectedRoute>
             } />
-            {/* Agent Chat Route */}
             <Route path="/agent-chat" element={
-              <Container maxWidth="lg">
-                <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
-              </Container>
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                </Container>
+              </ProtectedRoute>
             } />
-            {/* Car Simulator Route */}
             <Route path="/simulator" element={
-              <Container maxWidth="lg">
-                <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
-              </Container>
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                </Container>
+              </ProtectedRoute>
             } />
+            {/* Public example route (About) left unprotected */}
             {/* Services Route */}
             <Route path="/services" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>Services</Typography>
-                  <Typography variant="body1" paragraph>
-                    This page displays all available services for your vehicles.
-                  </Typography>
-                  {selectedVehicle ? (
-                    <ServiceInfo vehicleId={selectedVehicle.VehicleId} />
-                  ) : (
-                    <Typography variant="subtitle1" color="text.secondary">
-                      Please select a vehicle to view services.
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <Paper sx={{ p: 3 }}>
+                    <Typography variant="h4" gutterBottom>Services</Typography>
+                    <Typography variant="body1" paragraph>
+                      This page displays all available services for your vehicles.
                     </Typography>
-                  )}
-                </Paper>
-              </Container>
+                    {selectedVehicle ? (
+                      <ServiceInfo vehicleId={selectedVehicle.VehicleId} />
+                    ) : (
+                      <Typography variant="subtitle1" color="text.secondary">
+                        Please select a vehicle to view services.
+                      </Typography>
+                    )}
+                  </Paper>
+                </Container>
+              </ProtectedRoute>
             } />
             {/* Notifications Route */}
             <Route path="/notifications" element={
