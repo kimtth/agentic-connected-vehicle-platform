@@ -280,7 +280,7 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
         </Button>
 
         {vehicleId && (
-          <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
             Target: Vehicle {vehicleId}
           </Typography>
         )}

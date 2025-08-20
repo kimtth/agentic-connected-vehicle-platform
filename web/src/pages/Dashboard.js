@@ -36,8 +36,10 @@ import { useNavigate } from 'react-router-dom';
 import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
 import { fetchNotifications } from '../api/notifications';
+import { useTheme } from '@mui/material/styles';
 
 const Dashboard = ({ selectedVehicle }) => {
+  const theme = useTheme();
   const navigate = useNavigate();
   const [vehicleStatus, setVehicleStatus] = useState({
     engineTemp: '0°C',
@@ -92,6 +94,15 @@ const Dashboard = ({ selectedVehicle }) => {
   useEffect(() => {
     refreshDashboard();
   }, [refreshDashboard]);
+
+  useEffect(() => {
+    // Apply theme class to body for CSS variables
+    document.body.setAttribute('data-theme', theme?.palette?.mode || 'dark');
+    
+    return () => {
+      document.body.removeAttribute('data-theme');
+    };
+  }, [theme?.palette?.mode]);
 
   const quickStats = [
     {
@@ -157,7 +168,7 @@ const Dashboard = ({ selectedVehicle }) => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ 
+    <Box sx={{ 
       py: 3,
       overflow: 'hidden',
       '&::-webkit-scrollbar': { display: 'none' },
@@ -464,7 +475,7 @@ const Dashboard = ({ selectedVehicle }) => {
 
 
       </Grid>
-    </Container>
+    </Box>
   );
 };
 

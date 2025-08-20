@@ -151,11 +151,26 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
         open={drawerOpen}
         onClose={isMobile ? handleDrawerToggle : undefined}
         sx={{
-          width: drawerWidth,
+          width: (!isMobile && drawerOpen) ? drawerWidth : 0,
           flexShrink: 0,
+          transition: (theme) => theme.transitions.create('width', {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.leavingScreen,
+          }),
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
+            ...(theme.palette.mode === 'dark'
+              ? {
+                  backgroundImage: 'linear-gradient(180deg, rgba(10,18,32,0.95) 0%, rgba(5,8,15,0.95) 100%)',
+                  backdropFilter: 'blur(10px) saturate(140%)',
+                  borderRight: '1px solid rgba(255,255,255,0.14)',
+                }
+              : {
+                  backgroundColor: '#f8f9fa',
+                  borderRight: '1px solid #e5e7eb',
+                }),
+            // No font color overrides; rely on theme text colors
           },
         }}
       >
@@ -207,11 +222,10 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
           width: '100%'
         }}>
           <Box sx={{ 
-            width: '100%', 
-            maxWidth: { xs: '100%', lg: '1600px', xl: '1800px' }, 
-            mx: 'auto', 
-            p: { xs: 2, md: 3, lg: 4 }, 
-            flexGrow: 1 
+            width: '100%',
+            mx: 'auto',            // center horizontally
+            p: { xs: 2, md: 3, lg: 4 },
+            flexGrow: 1
           }}>
             {children}
           </Box>

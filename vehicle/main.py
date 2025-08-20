@@ -171,6 +171,33 @@ app.add_middleware(
 # Add Azure AD middleware
 app.add_middleware(AzureADMiddleware)
 
+# Register request logging middleware BEFORE server starts
+from fastapi import Request
+from uuid import uuid4
+
+@app.middleware("http")
+async def log_user_requests(request: Request, call_next):
+    """Log API calls with authenticated user (if any) and correlation id."""
+    try:
+        # Correlation ID: reuse incoming or create
+        corr_id = request.headers.get("X-Client-Request-Id") or str(uuid4())
+        # User info from AzureADMiddleware
+        user = getattr(request.state, "user", None)
+        if user and isinstance(user, dict):
+            user_id = user.get("preferred_username") or user.get("upn") or user.get("sub")
+        else:
+            user_id = "anonymous"
+        user_label = user_id or "anonymous"
+        logger.info(f"[REQ] id={corr_id} {request.method} {request.url.path} user={user_label}")
+        
+        # Call the next middleware/endpoint and return the response
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        logger.error(f"Error in log_user_requests middleware: {e}")
+        # Still try to call the next middleware even if logging fails
+        return await call_next(request)
+
 @app.get("/api/")
 def get_status():
     enabled, connected = _cosmos_status()
@@ -942,18 +969,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"API server failed to start: {e}")
         raise
-
-# Add user monitoring middleware
-@app.middleware("http")
-async def log_user_requests(request: Request):
-    """Log API calls with authenticated user (if any) and correlation id."""
-    # Correlation ID: reuse incoming or create
-    corr_id = request.headers.get("X-Client-Request-Id") or str(uuid4())
-    # User info from AzureADMiddleware
-    user = getattr(request.state, "user", None)
-    if user and isinstance(user, dict):
-        user_id = user.get("preferred_username") or user.get("upn") or user.get("sub")
-    else:
-        user_id = "anonymous"
-    user_label = user_id or "anonymous"
-    logger.info(f"[REQ] id={corr_id} {request.method} {request.url.path} user={user_label}")

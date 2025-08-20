@@ -27,7 +27,16 @@ const menuItems = [
 
 export default function Sidebar() {
   return (
-    <Paper style={{ height: '100%', borderRadius: 0, borderRight: '1px solid #ccc' }}>
+    <Paper
+      elevation={0}
+      sx={{
+        height: '100%',
+        borderRadius: 0,
+        borderRight: '1px solid rgba(255,255,255,0.14)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)',
+        backdropFilter: 'blur(10px) saturate(140%)',
+      }}
+    >
       <List>
         {menuItems.map(item => (
           <NavLink to={item.path} key={item.title} style={{ textDecoration: 'none', color: 'inherit' }}>

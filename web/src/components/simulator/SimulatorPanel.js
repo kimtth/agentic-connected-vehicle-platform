@@ -24,14 +24,19 @@ const SimulatorContainer = styled(Box)(({ theme }) => ({
 }));
 
 const Header = styled(Paper)(({ theme }) => ({
-  background: theme.palette.primary.main,
-  color: 'white',
+  background: theme.palette.mode === 'dark'
+    ? 'linear-gradient(180deg, rgba(0,230,255,0.22) 0%, rgba(0,151,209,0.12) 100%), linear-gradient(180deg, #0B1220 0%, #09101C 50%, #05080F 100%)'
+    : theme.palette.primary.main,
+  color: theme.palette.mode === 'dark' ? theme.palette.text.primary : theme.palette.primary.contrastText,
   padding: theme.spacing(1.5),
   borderRadius: 0,
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
   flexShrink: 0,
+  borderBottom: theme.palette.mode === 'dark'
+    ? '1px solid rgba(255,255,255,0.14)'
+    : '1px solid #e5e7eb'
 }));
 
 const StatusIndicator = styled(Box)(({ theme }) => ({

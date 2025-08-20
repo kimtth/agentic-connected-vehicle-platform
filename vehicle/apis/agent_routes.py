@@ -152,6 +152,7 @@ async def query_remote_access(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -160,6 +161,7 @@ async def query_remote_access(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -180,6 +182,7 @@ async def query_safety_emergency(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -188,6 +191,7 @@ async def query_safety_emergency(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -208,6 +212,7 @@ async def query_charging_energy(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -216,6 +221,7 @@ async def query_charging_energy(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -236,6 +242,7 @@ async def query_information_services(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -244,6 +251,7 @@ async def query_information_services(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -264,6 +272,7 @@ async def query_feature_control(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -272,6 +281,7 @@ async def query_feature_control(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -292,6 +302,7 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -300,6 +311,7 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -320,6 +332,7 @@ async def query_alerts_notifications(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
+                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -328,6 +341,7 @@ async def query_alerts_notifications(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -351,6 +365,7 @@ async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
         }
         
         try:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(
                 "Run a full diagnostic analysis on my vehicle",
                 context
@@ -385,6 +400,7 @@ async def recommend_services_endpoint(request: ServiceRecommendationRequest):
         }
         
         try:
+            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(
                 "Recommend vehicle services based on my vehicle condition",
                 context

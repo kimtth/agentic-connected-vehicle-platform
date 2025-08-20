@@ -13,7 +13,10 @@ const MetricCard = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(1),
   display: 'flex',
   alignItems: 'center',
-  backgroundColor: theme.palette.action.hover,
+  background: theme.palette.mode === 'dark'
+    ? 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))'
+    : theme.palette.action.hover,
+  border: `1px solid ${theme.palette.divider}`,
   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
   borderRadius: theme.shape.borderRadius,
 }));
@@ -77,7 +80,7 @@ const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
                 </Box>
               </IconWrapper>
               <Box>
-                <Typography variant="caption" color="textSecondary">
+                <Typography variant="caption" color="text.secondary">
                   {metric.label}
                 </Typography>
                 <Typography variant="subtitle2">

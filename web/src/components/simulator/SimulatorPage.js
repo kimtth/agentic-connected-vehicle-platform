@@ -78,13 +78,13 @@ const SimulatorPage = () => {
           <Link color="inherit" href={`/vehicles/${vehicleId}`} onClick={(e) => { e.preventDefault(); navigate(`/vehicle-dashboard?id=${vehicleId}`); }}>
             Vehicle #{vehicleId}
           </Link>
-          <Typography color="textPrimary">Simulator</Typography>
+          <Typography color="text.primary">Simulator</Typography>
         </Breadcrumbs>
 
         <Typography variant="h5" component="h1" gutterBottom mt={2}>
           Car Device Simulator (Vehicle #{vehicleId})
         </Typography>
-        <Typography variant="subtitle1" color="textSecondary" paragraph>
+        <Typography variant="subtitle1" color="text.secondary" paragraph>
           This simulator allows you to test vehicle commands and monitor responses for this vehicle.
           {vehicleData?.make && vehicleData?.model && ` ${vehicleData.make} ${vehicleData.model}`}
         </Typography>

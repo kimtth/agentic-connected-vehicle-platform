@@ -2,6 +2,40 @@
   box-sizing: border-box;
 }
 
+:root {
+  color-scheme: light dark;
+}
+
+/* Light theme variables */
+:root[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --border-color: #e5e7eb;
+}
+
+/* Dark theme variables */
+:root[data-theme="dark"] {
+  --bg-primary: #05080F;
+  --bg-secondary: rgba(255,255,255,0.06);
+  --text-primary: #EAF6FF;
+  --text-secondary: #B7C8E6;
+  --border-color: rgba(255,255,255,0.14);
+}
+
+/* Optimize for 1920x1080 displays */
+@media (min-width: 1920px) {
+  .dashboard-content {
+    max-width: none;
+    padding: 24px 32px;
+  }
+  
+  .dashboard-grid {
+    gap: 24px;
+  }
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -16,22 +50,22 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Light theme styles */
+body[data-theme="light"] {
+  background-color: #ffffff;
+  color: #1a1a1a;
+}
+
+/* Dark theme styles */
+body[data-theme="dark"] {
+  background-color: #05080F;
+  color: #EAF6FF;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
-}
-
-/* Optimize for 1920x1080 displays */
-@media (min-width: 1920px) {
-  .dashboard-content {
-    max-width: none;
-    padding: 24px 32px;
-  }
-  
-  .dashboard-grid {
-    gap: 24px;
-  }
 }

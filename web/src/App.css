@@ -3,11 +3,23 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  transition: background-color 0.3s ease;
 }
 
-.dashboard-header {
-  background-color: #1976d2 !important;
-  color: white !important;
+/* Dark theme header */
+[data-theme="dark"] .dashboard-header {
+  background: linear-gradient(180deg, rgba(0,230,255,0.22) 0%, rgba(0,151,209,0.12) 100%), linear-gradient(180deg, #0B1220 0%, #09101C 50%, #05080F 100%) !important;
+  backdrop-filter: blur(12px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.14) !important;
+  color: #E6F7FF !important;
+}
+
+/* Light theme header */
+[data-theme="light"] .dashboard-header {
+  background: #1976d2 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
 }
 
 .dashboard-title {
@@ -20,6 +32,7 @@
   overflow: hidden;
   padding: 0;
   margin-top: 0;
+  transition: background-color 0.3s ease;
 }
 
 /* Optimize for large screens (1920x1080 and above) */
@@ -45,8 +58,16 @@
 
 .card-title {
   font-size: 14px;
-  color: #555;
   margin-bottom: 8px;
+  transition: color 0.3s ease;
+}
+
+[data-theme="dark"] .card-title {
+  color: #B7C8E6;
+}
+
+[data-theme="light"] .card-title {
+  color: #666666;
 }
 
 .command-log-table,
@@ -63,8 +84,16 @@
 
 .gauge-label {
   font-size: 14px;
-  color: #555;
   margin-top: 5px;
+  transition: color 0.3s ease;
+}
+
+[data-theme="dark"] .gauge-label {
+  color: #B7C8E6;
+}
+
+[data-theme="light"] .gauge-label {
+  color: #666666;
 }
 
 .service-item {
@@ -91,31 +120,66 @@
   }
 }
 
+/* Control panel styles for both themes */
 .dashboard-control-panel {
-  background-color: #222;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 20px;
   margin-bottom: 20px;
-  color: white;
+  transition: all 0.3s ease;
 }
 
-.dashboard-slider .MuiSlider-thumb {
+[data-theme="dark"] .dashboard-control-panel {
+  background-color: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #EAF6FF;
+}
+
+[data-theme="light"] .dashboard-control-panel {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  color: #1a1a1a;
+}
+
+/* Slider styles for both themes */
+[data-theme="dark"] .dashboard-slider .MuiSlider-thumb {
+  background-color: #00E6FF;
+}
+
+[data-theme="dark"] .dashboard-slider .MuiSlider-track {
+  background-color: #00E6FF;
+}
+
+[data-theme="light"] .dashboard-slider .MuiSlider-thumb {
   background-color: #1976d2;
 }
 
-.dashboard-slider .MuiSlider-track {
+[data-theme="light"] .dashboard-slider .MuiSlider-track {
   background-color: #1976d2;
 }
 
+/* Button styles for both themes */
 .dashboard-button {
-  background-color: #333;
-  color: white;
   margin: 6px;
   min-width: 140px;
+  transition: all 0.3s ease;
 }
 
-.dashboard-button:hover {
-  background-color: #444;
+[data-theme="dark"] .dashboard-button {
+  background-color: #00E6FF;
+  color: #0b1220;
+}
+
+[data-theme="dark"] .dashboard-button:hover {
+  background-color: #00c2ff;
+}
+
+[data-theme="light"] .dashboard-button {
+  background-color: #1976d2;
+  color: #ffffff;
+}
+
+[data-theme="light"] .dashboard-button:hover {
+  background-color: #1565c0;
 }
 
 /* Large screen layout optimizations */

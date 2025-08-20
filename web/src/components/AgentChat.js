@@ -65,7 +65,7 @@ const generateSessionId = () =>
 const QuickActionsPanel = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(2),
   marginBottom: theme.spacing(2),
-  backgroundColor: theme.palette.background.default,
+  backgroundColor: theme.palette.background.paper, // white surface
 }));
 
 const QuickActionButton = styled(Button)(({ theme, category }) => {
@@ -90,14 +90,22 @@ const QuickActionButton = styled(Button)(({ theme, category }) => {
 
 // Markdown renderer with basic styling
 const MarkdownText = ({ children }) => (
-  <Box sx={{
+  <Box sx={(theme) => ({
     '& p': { m: 0 },
-    '& code': { bgcolor: 'rgba(0,0,0,0.06)', px: 0.5, py: 0.25, borderRadius: 0.5, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', fontSize: '0.85em' },
-    '& pre': { bgcolor: 'rgba(0,0,0,0.06)', p: 1.5, borderRadius: 1, overflow: 'auto' },
+    '& code': {
+      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      px: 0.5, py: 0.25, borderRadius: 0.5,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      fontSize: '0.85em'
+    },
+    '& pre': {
+      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      p: 1.5, borderRadius: 1, overflow: 'auto'
+    },
     '& a': { color: 'primary.main' },
     '& ul, & ol': { pl: 2, my: 1 },
     '& h1, & h2, & h3': { mt: 0, mb: 1 }
-  }}>
+  })}>
     <ReactMarkdown remarkPlugins={[remarkGfm]}>
       {children || ''}
     </ReactMarkdown>
@@ -497,7 +505,7 @@ const AgentChat = ({ vehicleId }) => {
               mb: 2,
               flexGrow: 1,
               overflowY: 'auto',
-              backgroundColor: '#f5f5f5',
+              backgroundColor: 'background.paper', // white surface
               minHeight: { xs: 400, lg: 600, xl: 700 }
             }}
           >
@@ -512,13 +520,23 @@ const AgentChat = ({ vehicleId }) => {
                     }}>
                       <Paper
                         elevation={1}
-                        sx={{
+                        sx={(theme) => ({
                           maxWidth: '80%',
                           p: 2,
-                          backgroundColor: message.type === 'user' ? '#e3f2fd' : 
-                                          message.type === 'error' ? '#ffebee' : '#ffffff',
+                          background: theme.palette.mode === 'dark'
+                            ? (message.type === 'user'
+                                ? 'linear-gradient(180deg, rgba(0,230,255,0.12), rgba(0,151,209,0.08))'
+                                : message.type === 'error'
+                                  ? 'linear-gradient(180deg, rgba(255,92,124,0.12), rgba(255,92,124,0.08))'
+                                  : 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))')
+                            : (message.type === 'user'
+                                ? 'rgba(25,118,210,0.08)'
+                                : message.type === 'error'
+                                  ? 'rgba(211,47,47,0.08)'
+                                  : theme.palette.background.paper),
+                          border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.14)' : '1px solid #e5e7eb',
                           borderRadius: 2
-                        }}
+                        })}
                       >
                         {message.type !== 'user' && (
                           <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
