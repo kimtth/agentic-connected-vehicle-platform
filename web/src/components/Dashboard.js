@@ -42,6 +42,10 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
   ({ theme, open }) => ({
     flexGrow: 1,
     padding: theme.spacing(3),
+    // Add scroll
+    height: '100vh',
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
     transition: theme.transitions.create('margin', {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.leavingScreen,
@@ -95,7 +99,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
   };
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <AppBarStyled position="fixed" open={drawerOpen && !isMobile} className="dashboard-header">
         <Toolbar>
           <IconButton

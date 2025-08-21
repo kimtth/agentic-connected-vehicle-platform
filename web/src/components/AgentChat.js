@@ -387,16 +387,6 @@ const AgentChat = ({ vehicleId }) => {
       ]
     },
     {
-      category: 'emergency',
-      title: 'Emergency & Safety',
-      actions: [
-        { text: 'Emergency SOS', message: 'EMERGENCY SOS - I need immediate help' },
-        { text: 'Report collision', message: 'I need to report a collision' },
-        { text: 'Call emergency services', message: 'I need to call emergency services' },
-        { text: 'Report theft', message: 'I need to report my vehicle as stolen' }
-      ]
-    },
-    {
       category: 'charging',
       title: 'Charging & Energy',
       actions: [
@@ -425,17 +415,26 @@ const AgentChat = ({ vehicleId }) => {
         { text: 'Battery health', message: 'Check my vehicle battery health status' },
         { text: 'Maintenance status', message: 'When is my next scheduled maintenance?' }
       ]
+    },
+    {
+      category: 'emergency',
+      title: 'Emergency & Safety',
+      actions: [
+        { text: 'Emergency SOS', message: 'EMERGENCY SOS - I need immediate help' },
+        { text: 'Report collision', message: 'I need to report a collision' },
+        { text: 'Call emergency services', message: 'I need to call emergency services' },
+        { text: 'Report theft', message: 'I need to report my vehicle as stolen' }
+      ]
     }
   ];
 
   return (
     <Box sx={{ 
-      width: '100%', 
+      width: '100%', // was '100%' - make full viewport width
       height: 'calc(100vh - 120px)', 
       display: 'flex', 
       flexDirection: 'column',
-      maxWidth: '1800px',
-      mx: 'auto',
+      mx: 'auto', // was 'auto' - prevent centering constraints
       overflow: 'hidden', // prevent window scrollbar
       '&::-webkit-scrollbar': { display: 'none' }, // Hide scrollbar for Chrome, Safari and Opera
       msOverflowStyle: 'none', // Hide scrollbar for IE and Edge

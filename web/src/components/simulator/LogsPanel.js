@@ -32,7 +32,7 @@ const LogEntry = styled(Box)(({ theme, type }) => {
     bgColor = 'rgba(40, 167, 69, 0.1)';
   } else if (type === 'error') {
     borderColor = theme.palette.error.main;
-    bgColor = 'rgba(220, 53, 69, 0.1)';
+    bgColor = 'rgba(40, 167, 69, 0.1)';
   } else if (type === 'success') {
     borderColor = theme.palette.success.main;
     bgColor = 'rgba(40, 167, 69, 0.1)';
@@ -130,7 +130,7 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId, onLoadHis
 
   const getIconForLogType = (type) => {
     if (type === 'sent') return <ArrowUpward fontSize="small" color="success" sx={{ mr: 1 }} />;
-    if (type === 'error') return <Error fontSize="small" color="error" sx={{ mr: 1 }} />;
+    if (type === 'error') return <ArrowDownward fontSize="small" color="info" sx={{ mr: 1 }} />;
     return <ArrowDownward fontSize="small" color="info" sx={{ mr: 1 }} />;
   };
 
