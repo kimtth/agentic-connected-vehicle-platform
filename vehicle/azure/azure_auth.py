@@ -13,6 +13,7 @@ from fastapi import Request, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response, JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -26,36 +27,54 @@ class AzureADMiddleware(BaseHTTPMiddleware):
         self.issuer = f"https://login.microsoftonline.com/{self.tenant_id}/v2.0" if self.tenant_id else None
         self.jwks_uri = f"https://login.microsoftonline.com/{self.tenant_id}/discovery/v2.0/keys" if self.tenant_id else None
         self.jwk_client = PyJWKClient(self.jwks_uri) if self.jwks_uri else None
-        self.exclude_paths = [
-            "/",
+        self.exclude_exact = {
+            "/",               # keep root open exactly
             "/health",
             "/api/health",
-            "/docs",
-            "/redoc",
             "/openapi.json",
             "/favicon.ico",
-            "/api/dev/seed",
-            "/api/dev/seed/bulk",
-            "/api/dev/seed/status"
-        ]
+        }
+        self.exclude_prefixes = (
+            "/docs",
+            "/redoc",
+            "/api/dev/seed",     # includes /api/dev/seed, /bulk, /status, etc.
+            "/api/vehicles",     # allow vehicles endpoints unauthenticated
+        )
+        # Read optional env overrides (comma-separated lists)
+        env_ex_exact = os.getenv("AZURE_AUTH_EXCLUDE_EXACT", "")
+        env_ex_prefixes = os.getenv("AZURE_AUTH_EXCLUDE_PREFIXES", "")
+        if env_ex_exact:
+            self.exclude_exact.update([p.strip() for p in env_ex_exact.split(",") if p.strip()])
+        if env_ex_prefixes:
+            self.exclude_prefixes = tuple(list(self.exclude_prefixes) + [p.strip() for p in env_ex_prefixes.split(",") if p.strip()])
         if not (self.tenant_id and self.client_id):
             logger.warning("AzureADMiddleware: incomplete configuration; auth will be optional.")
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        if any(path.startswith(p) for p in self.exclude_paths):
+        # Normalize and check exclusions safely
+        path = request.url.path or "/"
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
+
+        # 1) Bypass CORS preflight early
+        if request.method == "OPTIONS":
+            return Response(status_code=204)
+
+        # 2) Bypass excluded paths/prefixes
+        if (path in self.exclude_exact) or any(path.startswith(p) for p in self.exclude_prefixes):
             return await call_next(request)
 
         # If not configured properly
         if not (self.tenant_id and self.client_id and self.issuer and self.jwks_uri):
             if self.auth_required:
-                raise HTTPException(status_code=500, detail="Azure AD auth not configured")
+                # Return JSONResponse to avoid exception bubbling in other middlewares
+                return JSONResponse(status_code=500, content={"detail": "Azure AD auth not configured"})
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             if self.auth_required:
-                raise HTTPException(status_code=401, detail="Authorization header required")
+                return JSONResponse(status_code=401, content={"detail": "Authorization header required"})
             return await call_next(request)
 
         # Parse Bearer token
@@ -65,13 +84,13 @@ class AzureADMiddleware(BaseHTTPMiddleware):
                 raise ValueError("Invalid auth scheme")
         except ValueError:
             if self.auth_required:
-                raise HTTPException(status_code=401, detail="Invalid authorization header")
+                return JSONResponse(status_code=401, content={"detail": "Invalid authorization header"})
             return await call_next(request)
 
         decoded = await self._validate_token(token)
         if not decoded:
             if self.auth_required:
-                raise HTTPException(status_code=401, detail="Invalid or expired token")
+                return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
             return await call_next(request)
 
         # Attach user to request
