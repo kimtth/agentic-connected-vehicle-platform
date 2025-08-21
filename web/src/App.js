@@ -19,13 +19,21 @@ import ThemeToggle from './components/ThemeToggle';
 const createAppTheme = (mode) => createTheme({
   palette: {
     mode: mode,
+    // Quick Action category colors
+    quickActions: {
+      features: '#5DADE2',  // Vehicle Features - Soft Blue
+      remote:   '#85C1E9',  // Remote Access - Sky Blue
+      emergency:'#F1948A',  // Emergency & Safety - Light Coral
+      charging: '#F5B041',  // Charging & Energy - Light Orange
+      info:     '#BB8FCE',  // Information Services - Soft Purple
+    },
     ...(mode === 'dark' ? {
-      primary: { main: '#00E6FF' },
+      primary: { main: '#1976d2' },
       secondary: { main: '#2979FF' },            // brighter electric blue
-      success: { main: '#1BE0A6' },
-      warning: { main: '#FFC857' },
-      error: { main: '#FF5C7C' },
-      info: { main: '#3FA9FF' },                 // cooler info blue
+      success: { main: '#2ba18d' },
+      warning: { main: '#BB8FCE' },
+      error: { main: '#ff1900ff' },
+      info: { main: '#0288d1' },                 // cooler info blue
       background: {
         default: '#05080F',
         paper: 'rgba(10,18,32,0.9)'             // deeper glass surface
@@ -36,10 +44,10 @@ const createAppTheme = (mode) => createTheme({
       }
     } : {
       primary: { main: '#1976d2' },
-      secondary: { main: '#dc004e' },
-      success: { main: '#2e7d32' },
-      warning: { main: '#ed6c02' },
-      error: { main: '#d32f2f' },
+      secondary: { main: '#7c85ae' },
+      success: { main: '#2ba18d' },
+      warning: { main: '#BB8FCE' },
+      error: { main: '#ff1900ff' },
       info: { main: '#0288d1' },
       background: {
         default: '#ffffff',

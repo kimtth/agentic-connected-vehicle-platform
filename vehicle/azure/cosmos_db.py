@@ -15,10 +15,10 @@ import atexit
 
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey, ConsistencyLevel
-from azure.core.exceptions import AzureError, ServiceRequestError, ServiceResponseError
+from azure.core.exceptions import AzureError
 from azure.identity.aio import DefaultAzureCredential
 from dotenv import load_dotenv
-from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
+from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
 # Replace standard logging with loguru
 from utils.logging_config import get_logger
@@ -249,12 +249,9 @@ class CosmosDBClient:
         """Connect using Azure AD authentication with proper configuration"""
         try:
             logger.info("Connecting to Cosmos DB with Azure AD authentication")
-            # retain credential for cleanup
-            self._credential = DefaultAzureCredential(
-                exclude_interactive_browser_credential=True,
-                exclude_visual_studio_code_credential=True,
-                exclude_shared_token_cache_credential=True
-            )
+            # Create DefaultAzureCredential
+            self._credential = DefaultAzureCredential()
+
             # Create client with minimal configuration
             self.client = CosmosClient(self.endpoint, credential=self._credential)
             # Test connection
@@ -1014,3 +1011,4 @@ class CosmosDBClient:
 
 # Create a singleton instance
 cosmos_client = CosmosDBClient()
+

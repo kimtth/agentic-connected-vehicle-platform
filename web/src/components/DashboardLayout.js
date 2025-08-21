@@ -50,7 +50,9 @@ const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
     }),
     marginLeft: 0,
     height: '100vh',
-    overflow: 'hidden',
+    // Make vertical scrollbar visible
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
     display: 'flex',
     flexDirection: 'column',
     ...(open && {
@@ -109,7 +111,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
   ];
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <AppBarStyled position="fixed" open={drawerOpen && !isMobile} className="dashboard-header">
         <Toolbar>
           <IconButton
@@ -215,15 +217,16 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
       <Main open={drawerOpen && !isMobile} className="dashboard-content">
         <DrawerHeader />
         <Box sx={{ 
-          height: 'calc(100vh - 64px)', 
-          overflow: 'auto', 
+          // Match content to viewport minus AppBar height (56px mobile, 64px desktop)
+          height: { xs: 'calc(100vh - 56px)', sm: 'calc(100vh - 64px)' }, 
           display: 'flex',
           flexDirection: 'column',
-          width: '100%'
+          // Ensure the width is 100vw, avoid using 100% to prevent layout issues.
+          width: '100vw'
         }}>
           <Box sx={{ 
             width: '100%',
-            mx: 'auto',            // center horizontally
+            mx: 'auto',
             p: { xs: 2, md: 3, lg: 4 },
             flexGrow: 1
           }}>

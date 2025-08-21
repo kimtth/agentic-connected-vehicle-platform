@@ -49,10 +49,10 @@ const EmergencyCommandButton = styled(Button)(({ theme }) => ({
 }));
 
 const EmergencyButton = styled(Button)(({ theme }) => ({
-  backgroundColor: theme.palette.error.main,
-  color: 'white',
+  backgroundColor: 'rgba(135, 180, 253, 1)',
+  color: theme.palette.getContrastText('rgb(178, 207, 255)'),
   '&:hover': {
-    backgroundColor: theme.palette.error.dark,
+    backgroundColor: 'rgba(178, 208, 255, 0.82)',
   },
   fontWeight: 'bold',
   minHeight: '48px',
@@ -222,6 +222,13 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
               onClick={() => onSendCommand('SOS')}
               disabled={!isConnected}
               fullWidth
+              sx={{
+                backgroundColor: 'rgb(53, 69, 130)',
+                color: '#fff',
+                '&:hover': {
+                  backgroundColor: 'rgba(53, 68, 130, 0.65)'
+                }
+              }}
             >
               EMERGENCY SOS
             </EmergencyCommandButton>
