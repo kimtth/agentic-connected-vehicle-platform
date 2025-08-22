@@ -1,7 +1,7 @@
 import datetime
 from typing import Any, Dict, Optional
 import uuid
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -19,6 +19,8 @@ class VehicleFeatureControlAgent:
 
     def __init__(self):
         """Initialize the Vehicle Feature Control Agent."""
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -31,11 +33,21 @@ class VehicleFeatureControlAgent:
 class VehicleFeatureControlPlugin(BasePlugin):
     """Plugin for vehicle feature control operations."""
 
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+
     @kernel_function(description="Control vehicle lights (headlights, interior, etc.)")
     async def _handle_lights_control(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        # Resolve vehicle id from explicit arg, context, or kwargs
+        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
+            (context or {}).get("vehicle_id") if context else None
+        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control lights for.",
@@ -56,7 +68,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
             if "off" in query.lower() or "turn off" in query.lower():
                 action = "off"
 
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Create command
             command = {
@@ -70,7 +82,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 "priority": "Normal",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             return self._format_response(
                 f"I've turned {action} the {light_type.replace('_', ' ')} for your vehicle.",
@@ -91,9 +103,14 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
     @kernel_function(description="Control vehicle climate settings")
     async def _handle_climate_control(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
+            (context or {}).get("vehicle_id") if context else None
+        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control climate for.",
@@ -123,7 +140,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 action = "cooling"
                 temperature = min(20, temperature)
 
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             command = {
                 "id": str(uuid.uuid4()),
@@ -140,7 +157,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 "priority": "Normal",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             return self._format_response(
                 f"I've set the climate control to {temperature}°C with {action} mode.",
@@ -162,9 +179,14 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
     @kernel_function(description="Control vehicle windows")
     async def _handle_windows_control(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
+            (context or {}).get("vehicle_id") if context else None
+        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control windows for.",
@@ -182,7 +204,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
             elif "passenger" in query.lower():
                 window_position = "passenger"
 
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             command = {
                 "id": str(uuid.uuid4()),
@@ -195,7 +217,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 "priority": "Normal",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             window_text = f"{window_position} windows" if window_position != "all" else "all windows"
             action_text = "rolled up" if action == "up" else "rolled down"

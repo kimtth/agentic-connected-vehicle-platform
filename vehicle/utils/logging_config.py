@@ -7,6 +7,9 @@ import logging
 from loguru import logger
 from typing import Any
 
+
+DEFAULT_LOG_LEVEL = "DEBUG"
+
 # Default format for standard output
 DEFAULT_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -65,13 +68,17 @@ class InterceptHandler(logging.Handler):
             level, record.getMessage()
         )
 
-def configure_logging(log_level: str = "INFO") -> None:
+def configure_logging(log_level: str | None = None) -> None:
     """
     Configure loguru logger with the specified settings.
-    
+
     Args:
-        log_level: The default log level to use
+        log_level: The default log level to use. If None, uses:
+                   LOG_LEVEL env var or DEBUG by default so logger.debug is kept.
     """
+    if log_level is None:
+        log_level = DEFAULT_LOG_LEVEL
+
     # First, remove the default configuration
     logger.remove()
     
@@ -95,7 +102,7 @@ def configure_logging(log_level: str = "INFO") -> None:
             retention="1 week",  # Keep logs for 1 week
             compression="zip",  # Compress rotated logs
             format=DEFAULT_FORMAT,
-            level=log_level,
+            level=log_level,  # Will be DEBUG by default unless overridden
             backtrace=True,
             diagnose=True,
             enqueue=True,

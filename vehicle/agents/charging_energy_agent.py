@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Any, Optional
 
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -14,6 +14,8 @@ logger = get_logger(__name__)
 
 class ChargingEnergyAgent:
     def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -24,6 +26,10 @@ class ChargingEnergyAgent:
 
 
 class ChargingEnergyPlugin:
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+
     @kernel_function(description="Find nearby charging stations")
     async def _handle_charging_stations(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
@@ -46,10 +52,10 @@ class ChargingEnergyPlugin:
                 )
 
             # Ensure Cosmos DB connection
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Look for charging stations in Cosmos DB
-            charging_stations_container = cosmos_client.charging_stations_container
+            charging_stations_container = self.cosmos_client.charging_stations_container
             if not charging_stations_container:
                 logger.warning("Charging stations container not available")
                 return self._format_response(
@@ -133,7 +139,7 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status from Cosmos DB
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             if not vehicle_status:
                 return self._format_response(
@@ -146,7 +152,7 @@ class ChargingEnergyPlugin:
             engine_status = vehicle_status.get("EngineStatus", "off")
 
             # Get vehicle details to check if it's electric
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -208,10 +214,10 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details to check if it's electric
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -293,10 +299,10 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details to check if it's electric
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -502,10 +508,10 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             # Get vehicle details
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -589,7 +595,7 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status for location
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
 
             if vehicle_status:
                 # Check for location in status
@@ -597,7 +603,7 @@ class ChargingEnergyPlugin:
                     return vehicle_status["location"]
 
             # Try to get from vehicle data if not in status
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
             )
@@ -626,7 +632,7 @@ class ChargingEnergyPlugin:
                 return None
 
             # Query charging stations
-            charging_stations_container = cosmos_client.charging_stations_container
+            charging_stations_container = self.cosmos_client.charging_stations_container
             if not charging_stations_container:
                 return None
 

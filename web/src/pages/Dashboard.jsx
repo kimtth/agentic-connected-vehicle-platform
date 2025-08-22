@@ -177,7 +177,7 @@ const Dashboard = ({ selectedVehicle }) => {
     }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
+        <Typography variant="h5" gutterBottom>
           Vehicle Dashboard
         </Typography>
         <Typography variant="subtitle1" color="text.secondary">
@@ -244,7 +244,13 @@ const Dashboard = ({ selectedVehicle }) => {
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid item xs={12} md={4}>
                 <Card>
-                  <CardActionArea onClick={() => navigate('/agent-chat')}>
+                  <CardActionArea
+                    component="div"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/agent-chat')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/agent-chat'); } }}
+                  >
                     <CardContent sx={{ textAlign: 'center', p: 3 }}>
                       <SupportAgent sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
@@ -268,7 +274,13 @@ const Dashboard = ({ selectedVehicle }) => {
 
               <Grid item xs={12} md={4}>
                 <Card>
-                  <CardActionArea onClick={() => navigate('/simulator')}>
+                  <CardActionArea
+                    component="div"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/simulator')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/simulator'); } }}
+                  >
                     <CardContent sx={{ textAlign: 'center', p: 3 }}>
                       <CarIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
@@ -292,7 +304,13 @@ const Dashboard = ({ selectedVehicle }) => {
 
               <Grid item xs={12} md={4}>
                 <Card>
-                  <CardActionArea onClick={() => navigate('/services')}>
+                  <CardActionArea
+                    component="div"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/services')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/services'); } }}
+                  >
                     <CardContent sx={{ textAlign: 'center', p: 3 }}>
                       <ServiceIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
@@ -450,6 +468,7 @@ const Dashboard = ({ selectedVehicle }) => {
                             )}
                           </Box>
                         }
+                        secondaryTypographyProps={{ component: 'div' }}
                       />
                     </ListItem>
                     {index < notifications.length - 1 && <Divider />}

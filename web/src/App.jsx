@@ -2,18 +2,20 @@ import { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
 import AgentChat from './components/AgentChat';
 import SimulatorPanel from './components/simulator/SimulatorPanel';
+import RemoteDrive from './components/RemoteDrive';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import AuthButtons from './components/auth/AuthButtons';
 import ProtectedRoute from './auth/ProtectedRoute';
 import ThemeToggle from './components/ThemeToggle';
+import { useIsAuthenticated } from '@azure/msal-react';
 
 // Create theme factory function
 const createAppTheme = (mode) => createTheme({
@@ -196,6 +198,9 @@ const createAppTheme = (mode) => createTheme({
     },
     MuiChip: {
       styleOverrides: {
+        root: {
+          display: 'inline-flex', // Ensure Chip behaves as inline element
+        },
         outlined: { 
           borderColor: mode === 'dark' ? 'rgba(255,255,255,0.24)' : '#e5e7eb'
         }
@@ -207,10 +212,11 @@ const createAppTheme = (mode) => createTheme({
 function App() {
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // was true
   const [themeMode, setThemeMode] = useState(() => {
     return localStorage.getItem('themeMode') || 'dark';
   });
+  const isAuthenticated = useIsAuthenticated();
 
   const theme = createAppTheme(themeMode);
 
@@ -248,8 +254,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadVehicles();
-  }, [loadVehicles]);
+    if (isAuthenticated) {
+      loadVehicles();
+    } else {
+      // ensure not stuck in loading state before auth
+      setLoading(false);
+    }
+  }, [isAuthenticated, loadVehicles]);
 
   if (loading && vehicles.length === 0) {
     return (
@@ -282,9 +293,11 @@ function App() {
                   <Dashboard selectedVehicle={selectedVehicle} />
                 ) : (
                   <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
-                    <Typography variant="h5" color="textSecondary">
-                      No vehicles available. Please add a vehicle to start.
-                    </Typography>
+                    <Box>
+                      <Typography variant="h5" color="textSecondary">
+                        No vehicles available. Please add a vehicle to start.
+                      </Typography>
+                    </Box>
                   </Container>
                 )}
               </ProtectedRoute>
@@ -303,6 +316,13 @@ function App() {
                 </Container>
               </ProtectedRoute>
             } />
+            <Route path="/remote-drive" element={
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <RemoteDrive vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                </Container>
+              </ProtectedRoute>
+            } />
             {/* Public example route (About) left unprotected */}
             {/* Services Route */}
             <Route path="/services" element={
@@ -316,14 +336,17 @@ function App() {
                     {selectedVehicle ? (
                       <ServiceInfo vehicleId={selectedVehicle.VehicleId} />
                     ) : (
-                      <Typography variant="subtitle1" color="text.secondary">
-                        Please select a vehicle to view services.
-                      </Typography>
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle1" color="text.secondary">
+                          Please select a vehicle to view services.
+                        </Typography>
+                      </Box>
                     )}
                   </Paper>
                 </Container>
               </ProtectedRoute>
             } />
+            
             {/* Notifications Route */}
             <Route path="/notifications" element={
               <Container maxWidth="lg">

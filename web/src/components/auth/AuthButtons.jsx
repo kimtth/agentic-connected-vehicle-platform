@@ -2,7 +2,7 @@ import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/
 import { Button, Stack, Typography } from '@mui/material';
 import { loginRequest, isClientIdConfigured } from '../../auth/msalConfig';
 
-const AuthButtons = () => {
+const AuthButtons = ({ asSpan = false }) => {
   const { instance } = useMsal();
   let account = null;
   try {
@@ -19,6 +19,21 @@ const AuthButtons = () => {
     instance.loginRedirect(loginRequest);
   };
 
+  // Provide non-button rendering to prevent nested <button> warnings
+  const interactiveA11y = asSpan
+    ? {
+        component: 'span',
+        role: 'button',
+        tabIndex: 0,
+        onKeyDown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.currentTarget.click();
+            }
+        }
+      }
+    : {};
+
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       <AuthenticatedTemplate>
@@ -30,6 +45,7 @@ const AuthButtons = () => {
         <Button
           size="small"
           variant="outlined"
+          {...interactiveA11y}
           onClick={() => instance.logoutRedirect()}
         >
           Sign Out
@@ -39,6 +55,7 @@ const AuthButtons = () => {
         <Button
           size="small"
           variant="contained"
+          {...interactiveA11y}
           onClick={handleSignIn}
           disabled={!isClientIdConfigured()}
         >

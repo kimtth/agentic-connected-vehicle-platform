@@ -2,8 +2,29 @@
  * API functions for sending commands to vehicles
  */
 
-import { API_BASE_URL } from './config';
-import { INTERVALS } from '../config/intervals';
+import { api } from './apiClient';
+
+/**
+ * Retry mechanism for failed requests
+ * @param {Function} fn - Function to retry
+ * @param {number} retries - Number of retries
+ * @param {number} delay - Delay between retries
+ */
+const retryRequest = async (fn, retries = 3, delay = 1000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === retries - 1) throw error;
+      if (error.name === 'AbortError') throw error; // Don't retry aborted requests
+      if (error.code === 'USER_NOT_AUTHENTICATED') throw error; // Don't retry auth errors
+      
+      console.log(`Command API retry attempt ${i + 1}/${retries} after ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay *= 1.5; // Exponential backoff
+    }
+  }
+};
 
 /**
  * Send a command to a vehicle
@@ -14,8 +35,6 @@ import { INTERVALS } from '../config/intervals';
  */
 export const sendVehicleCommand = async (vehicleId, command, isCustom = false) => {
   try {
-    // Update to match backend API structure
-    const url = `${API_BASE_URL}/api/command`;
     const payload = {
       vehicleId,
       commandType: command,
@@ -23,25 +42,15 @@ export const sendVehicleCommand = async (vehicleId, command, isCustom = false) =
       timestamp: new Date().toISOString(),
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal
+    return await retryRequest(async () => {
+      const response = await api.post('/api/command', payload);
+      return response.data;
     });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-    }
-
-    return await response.json();
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to send vehicle commands');
+      throw new Error('Please log in to send vehicle commands');
+    }
     console.error('Error sending vehicle command:', error);
     throw error;
   }
@@ -55,21 +64,15 @@ export const sendVehicleCommand = async (vehicleId, command, isCustom = false) =
  */
 export const getCommandHistory = async (vehicleId, limit = 20) => {
   try {
-    // Update to match backend API structure
-    const url = `${API_BASE_URL}/api/commands?vehicleId=${encodeURIComponent(vehicleId)}&limit=${limit}`;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
-    
-    const response = await fetch(url, { signal: controller.signal });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
+    return await retryRequest(async () => {
+      const response = await api.get(`/api/commands?vehicleId=${encodeURIComponent(vehicleId)}&limit=${limit}`);
+      return response.data;
+    });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to access command history');
+      throw new Error('Please log in to access command history');
+    }
     console.error('Error fetching command history:', error);
     throw error;
   }
@@ -82,20 +85,15 @@ export const getCommandHistory = async (vehicleId, limit = 20) => {
  */
 export const getAllCommands = async (limit = 50) => {
   try {
-    const url = `${API_BASE_URL}/api/commands?limit=${limit}`;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), INTERVALS.REQUEST_TIMEOUT);
-    
-    const response = await fetch(url, { signal: controller.signal });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return await response.json();
+    return await retryRequest(async () => {
+      const response = await api.get(`/api/commands?limit=${limit}`);
+      return response.data;
+    });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to access commands');
+      throw new Error('Please log in to access commands');
+    }
     console.error('Error fetching all commands:', error);
     throw error;
   }
@@ -108,3 +106,4 @@ const commandsApi = {
 };
 
 export default commandsApi;
+

@@ -3,7 +3,7 @@ Information Services Agent for the Connected Car Platform.
 """
 from typing import Dict, Any, Optional
 import aiohttp
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from utils.logging_config import get_logger
@@ -20,6 +20,8 @@ class InformationServicesAgent:
 
     def __init__(self):
         """Initialize the Information Services Agent."""
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -75,6 +77,9 @@ class InformationServicesPlugin:
     """Plugin for information services operations."""
 
     def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+        
         try:
             # Get base URLs for each MCP server
             base_host = os.environ.get("MCP_SERVER_HOST", "localhost")
@@ -228,7 +233,7 @@ class InformationServicesPlugin:
 
         try:
             # Get vehicle status for location
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
 
             if vehicle_status:
                 # Check for location in status
@@ -236,7 +241,7 @@ class InformationServicesPlugin:
                     return vehicle_status["location"]
 
             # Try to get from vehicle data if not in status
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
             )

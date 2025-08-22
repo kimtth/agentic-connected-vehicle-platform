@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from typing import Dict, Any, Optional
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from utils.agent_tools import validate_command  # correct source
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -20,6 +20,8 @@ class RemoteAccessAgent:
 
     def __init__(self):
         """Initialize the Remote Access Agent."""
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -31,6 +33,10 @@ class RemoteAccessAgent:
 
 class RemoteAccessPlugin(BasePlugin):
     """Plugin for remote access operations."""
+
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
 
     @kernel_function(description="Handle a door lock/unlock request.")
     async def _handle_door_lock(
@@ -55,10 +61,10 @@ class RemoteAccessPlugin(BasePlugin):
 
         try:
             # Ensure Cosmos DB connection
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -94,7 +100,7 @@ class RemoteAccessPlugin(BasePlugin):
                 "priority": "Normal",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             return self._format_response(
                 f"I've {action}ed your vehicle doors.",
@@ -129,10 +135,10 @@ class RemoteAccessPlugin(BasePlugin):
             )
 
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -154,7 +160,7 @@ class RemoteAccessPlugin(BasePlugin):
                 "priority": "High",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             return self._format_response(
                 f"I've {action}ed your vehicle engine remotely.",
@@ -184,7 +190,7 @@ class RemoteAccessPlugin(BasePlugin):
             )
 
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             command_id = f"horn_lights_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -199,7 +205,7 @@ class RemoteAccessPlugin(BasePlugin):
                 "priority": "Normal",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             return self._format_response(
                 "I've activated the horn and lights to help you locate your vehicle.",

@@ -17,6 +17,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import SecurityIcon from '@mui/icons-material/Security';
 import InfoIcon from '@mui/icons-material/Info';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
 import { Link } from 'react-router-dom';
 
 const drawerWidth = 280; // Increased drawer width for large screens
@@ -75,7 +76,7 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   justifyContent: 'flex-end',
 }));
 
-const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange }) => {
+const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange, extraHeaderRight }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = useTheme();
   // On mobile, we want the drawer to be temporarily displayed over content instead of pushing content
@@ -98,6 +99,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
     { path: '/', icon: <DashboardIcon />, text: 'Dashboard' },
     { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
     { path: '/simulator', icon: <DirectionsCarIcon />, text: 'Car Simulator' },
+    { path: '/remote-drive', icon: <SportsEsportsIcon />, text: 'Remote Drive' },
     { path: '/services', icon: <BuildIcon />, text: 'Services' },
     { path: '/notifications', icon: <NotificationsIcon />, text: 'Notifications' },
   ];
@@ -143,6 +145,12 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
                 ))}
               </Select>
             </FormControl>
+          )}
+          <Box sx={{ flexGrow: 1 }} /> {/* push right side content */}
+          {extraHeaderRight && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {extraHeaderRight}
+            </Box>
           )}
         </Toolbar>
       </AppBarStyled>

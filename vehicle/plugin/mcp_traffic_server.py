@@ -34,4 +34,4 @@ async def start_traffic_server(host: str = "0.0.0.0", port: int = 8002):
         loop.create_task(mcp_traffic_server.run_async(transport="sse", host=host, port=port))
     else:
         await mcp_traffic_server.run_async(transport="sse", host=host, port=port)
-
+    logger.info(f"Traffic MCP server is running on {host}:{port}")
