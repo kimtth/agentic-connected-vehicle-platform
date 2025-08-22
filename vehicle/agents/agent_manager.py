@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.functions.kernel_arguments import KernelArguments
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 
 from agents.alerts_notifications_agent import AlertsNotificationsAgent
 from agents.charging_energy_agent import ChargingEnergyAgent
@@ -31,6 +31,9 @@ class AgentManager:
         logger.info("Initializing Agent Manager")
 
         try:
+            # Get the singleton cosmos client instance
+            self.cosmos_client = get_cosmos_client()
+            
             # create a single service factory
             service_factory = create_chat_service()
 
@@ -146,8 +149,8 @@ class AgentManager:
             
         try:
             logger.debug(f"Fetching vehicle data for ID: {vehicle_id}")
-            await cosmos_client.ensure_connected()
-            vehicles = await cosmos_client.list_vehicles()
+            await self.cosmos_client.ensure_connected()
+            vehicles = await self.cosmos_client.list_vehicles()
             
             # Handle both vehicleId and VehicleId field names for backward compatibility
             vehicle_data = next((v for v in vehicles if 
@@ -183,7 +186,7 @@ class AgentManager:
                 enriched_context["vehicle_id"] = vehicle_id
                 
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
             if vehicle_status:
                 enriched_context["vehicle_status"] = vehicle_status
                 

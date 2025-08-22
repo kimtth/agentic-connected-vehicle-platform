@@ -6,7 +6,7 @@ This agent oversees vehicle diagnostics, battery status, and system health repor
 
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -23,6 +23,8 @@ class DiagnosticsBatteryAgent:
 
     def __init__(self):
         """Initialize the Diagnostics & Battery Agent."""
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -33,6 +35,10 @@ class DiagnosticsBatteryAgent:
 
 
 class DiagnosticsBatteryPlugin:
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+
     @kernel_function(description="Run diagnostics on vehicle systems")
     async def _handle_diagnostics(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
@@ -46,10 +52,10 @@ class DiagnosticsBatteryPlugin:
 
         try:
             # Get vehicle data from Cosmos DB
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Get vehicle status from Cosmos DB
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent vehicle status data is available for diagnostics.",
@@ -57,7 +63,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get vehicle details to check specs
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -108,7 +114,7 @@ class DiagnosticsBatteryPlugin:
                     issues.append("Low oil level detected")
 
             # Get service history to check maintenance status
-            services = await cosmos_client.list_services(vid)
+            services = await self.cosmos_client.list_services(vid)
             if services:
                 # Find most recent service
                 sorted_services = sorted(
@@ -170,17 +176,17 @@ class DiagnosticsBatteryPlugin:
 
         try:
             # Get vehicle data from Cosmos DB
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent battery status data is available.", success=False
                 )
 
             # Get vehicle details
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
             if not vehicle:
                 return self._format_response(
@@ -221,7 +227,7 @@ class DiagnosticsBatteryPlugin:
                 charge_rate = 0
 
                 # Looking at status history can help determine if charging is happening
-                status_history = await cosmos_client.list_vehicle_status(
+                status_history = await self.cosmos_client.list_vehicle_status(
                     vid, limit=5
                 )
                 if len(status_history) > 1:
@@ -349,10 +355,10 @@ class DiagnosticsBatteryPlugin:
 
         try:
             # Get vehicle data from Cosmos DB
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Get vehicle status
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
             if not vehicle_status:
                 return self._format_response(
                     "No recent vehicle status data is available for system health check.",
@@ -360,7 +366,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get vehicle details
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -371,7 +377,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get command history to check for any failed commands
-            commands = await cosmos_client.list_commands(vid)
+            commands = await self.cosmos_client.list_commands(vid)
             recent_commands = sorted(
                 commands, key=lambda c: c.get("timestamp", ""), reverse=True
             )[:10]
@@ -468,10 +474,10 @@ class DiagnosticsBatteryPlugin:
 
         try:
             # Get vehicle data from Cosmos DB
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Get vehicle details
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -482,7 +488,7 @@ class DiagnosticsBatteryPlugin:
                 )
 
             # Get service history
-            services = await cosmos_client.list_services(vid)
+            services = await self.cosmos_client.list_services(vid)
 
             # Check vehicle properties
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)

@@ -294,13 +294,76 @@ curl http://localhost:8000/api/notifications
 
 ## API Authentication (Azure AD / JWT)
 
-All protected API routes use Microsoft Entra ID (Azure AD) access tokens (JWTs). The React frontend acquires a token via MSAL and the Axios client auto‑adds `Authorization: Bearer <token>`. The FastAPI middleware (`AzureADMiddleware`) then:
+The backend validates Microsoft Entra ID (Azure AD) access tokens.
 
-1. Skips public paths (health/docs/dev seed).
-2. Requires a token if `AZURE_AUTH_REQUIRED=true`.
-3. Validates signature using Azure’s JWKS (public keys), plus issuer, audience, and expiry.
-4. On success attaches decoded claims to `request.state.user` (e.g. `oid`, `sub`, `preferred_username`).
-5. On failure: 401 (missing/invalid) or 500 (bad config) when auth required; otherwise proceeds anonymously.
+### Single App Registration Configuration
+
+You can use a single app registration for both the SPA frontend and API backend. Here's how to configure it:
+
+#### Step 1: Create or Configure App Registration
+1. Go to Azure Portal > Azure Entra ID > App registrations
+2. Create new registration or select existing (e.g., <your-app-client-id>)
+3. Name: `agentic-cvp-app` (or your preferred name)
+4. Supported account types: Single tenant (or multi-tenant if needed)
+
+#### Step 2: Configure Authentication Platforms
+1. Navigate to **Authentication** in your app registration
+2. Add platform > **Single-page application**:
+   - Redirect URI: `http://localhost:3000` (for development)
+   - For production, add: `https://your-domain.com`
+3. Under **Implicit grant and hybrid flows**:
+   - Check: ✓ Access tokens, ✓ ID tokens
+
+#### Step 3: Expose an API
+1. Navigate to **Expose an API**
+2. Set Application ID URI: `api://<your-app-client-id>`
+   - Click "Set" and accept the default or customize
+3. Add a scope:
+   - Scope name: `access_as_user`
+   - Who can consent: `Admins and users`
+   - Admin consent display name: `Access Connected Vehicle Platform API`
+   - Admin consent description: `Allows the app to access the Connected Vehicle Platform API on behalf of the signed-in user`
+   - User consent display name: `Access your vehicle data`
+   - User consent description: `Allow the application to access your vehicle data on your behalf`
+   - State: `Enabled`
+
+#### Step 4: Grant API Permissions to Itself (Critical)
+1. Navigate to **API permissions**
+2. Click **Add a permission**
+3. Choose **My APIs** tab
+4. Select your app (<your-app-client-id>)
+5. Select **Delegated permissions**
+6. Check: ✓ `access_as_user`
+7. Click **Add permissions**
+8. Click **Grant admin consent** (requires admin privileges)
+   - Status should show green checkmark ✓
+
+#### Step 5: Configure Environment Variables
+
+Backend Configuration (vehicle/.env):
+```env
+AZURE_TENANT_ID=<your-tenant-id>
+AZURE_CLIENT_ID=api://<your-app-client-id>   # Application ID URI (audience)
+AZURE_AUTH_REQUIRED=true
+```
+
+Frontend Configuration (web/.env):
+```env
+REACT_APP_AZURE_CLIENT_ID=<your-app-client-id>   # Same app GUID (not api://)
+REACT_APP_AZURE_TENANT_ID=<your-tenant-id>
+REACT_APP_AZURE_SCOPE=api://<your-app-client-id>/access_as_user
+```
+
+#### Step 6: Verify Configuration
+1. Clear browser cache and cookies
+2. Restart both backend and frontend servers
+3. Sign in to the application
+4. Check token in browser console:
+
+Validation steps:
+1. SPA acquires token with the scope above.
+2. Token aud (inspect via https://jwt.ms) should be api://<your-app-client-id>.
+3. Backend accepts and attaches claims to request.state.user.
 
 ## Getting Started
 

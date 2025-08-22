@@ -16,7 +16,7 @@ import atexit
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey, ConsistencyLevel
 from azure.core.exceptions import AzureError
-from azure.identity.aio import DefaultAzureCredential
+from azure.identity.aio import DefaultAzureCredential, AzureDeveloperCliCredential
 from dotenv import load_dotenv
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
@@ -28,6 +28,8 @@ logger = get_logger(__name__)
 
 # Global registry for tracking client instances
 _client_registry = weakref.WeakSet()
+_singleton_instance = None
+_singleton_lock = asyncio.Lock() if hasattr(asyncio, 'Lock') else None
 
 async def _cleanup_all_clients():
     """Cleanup all registered clients on shutdown"""
@@ -67,8 +69,30 @@ atexit.register(_safe_atexit_cleanup)
 class CosmosDBClient:
     """Azure Cosmos DB client implementation for Connected Car Platform"""
     
+    _instances = {}
+    _creation_lock = None
+    
+    def __new__(cls):
+        """Implement singleton pattern to prevent multiple instances"""
+        global _singleton_instance
+        
+        if _singleton_instance is None:
+            logger.info("Creating new Cosmos DB client instance")
+            _singleton_instance = super(CosmosDBClient, cls).__new__(cls)
+            _singleton_instance._initialized = False
+        else:
+            logger.debug("Returning existing Cosmos DB client instance")
+            
+        return _singleton_instance
+    
     def __init__(self):
-        """Initialize the client with environment variables"""        
+        """Initialize the client with environment variables (only once)"""
+        # Prevent multiple initialization of the same instance
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+            
+        logger.info("Initializing Cosmos DB client configuration")
+        
         # Set Azure logging to WARNING level to reduce noise
         azure_logger = logging.getLogger("azure")
         azure_logger.setLevel(logging.WARNING)
@@ -104,7 +128,7 @@ class CosmosDBClient:
         self.notifications_container_name = os.getenv("COSMOS_DB_CONTAINER_NOTIFICATIONS", "notifications")
         self.status_container_name = os.getenv("COSMOS_DB_CONTAINER_STATUS", "VehicleStatus")
         
-        # Connection configuration with Azure best practices - Simplified for compatibility
+        # Connection configuration
         self.connection_config = {
             'consistency_level': ConsistencyLevel.Session,
             'max_retry_attempts': int(os.getenv("COSMOS_DB_MAX_RETRY_ATTEMPTS", "5")),
@@ -144,7 +168,10 @@ class CosmosDBClient:
         # Validate configuration
         self._validate_configuration()
         
-        logger.info("Cosmos DB client initialized with Azure best practices")
+        # Mark as initialized
+        self._initialized = True
+        
+        logger.info("Cosmos DB client configuration completed")
         
     def _parse_preferred_locations(self):
         """Parse preferred locations from environment variable"""
@@ -249,9 +276,12 @@ class CosmosDBClient:
         """Connect using Azure AD authentication with proper configuration"""
         try:
             logger.info("Connecting to Cosmos DB with Azure AD authentication")
-            # Create DefaultAzureCredential
-            self._credential = DefaultAzureCredential()
-
+            # Create AzureCredential
+            # TODO: Temporary solution to avoid Azure Auth Error in Local
+            if os.getenv("ENV_TYPE") == "development":
+                self._credential = AzureDeveloperCliCredential(tenant_id=os.getenv("AZURE_TENANT_ID"))
+            else:
+                self._credential = DefaultAzureCredential()
             # Create client with minimal configuration
             self.client = CosmosClient(self.endpoint, credential=self._credential)
             # Test connection
@@ -479,7 +509,6 @@ class CosmosDBClient:
 
     async def close(self):
         """Close Cosmos DB client connection properly with enhanced cleanup"""
-        logger.info("Closing Cosmos DB connection...")
         
         try:
             # Use the connection lock to prevent concurrent operations
@@ -492,7 +521,7 @@ class CosmosDBClient:
             except Exception:
                 pass  # Registry cleanup is not critical
                 
-            logger.info("Cosmos DB connection closed successfully")
+            # logger.info("Cosmos DB connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing Cosmos DB connection: {str(e)}")
 
@@ -1010,5 +1039,10 @@ class CosmosDBClient:
             return False
 
 # Create a singleton instance
-cosmos_client = CosmosDBClient()
+def get_cosmos_client():
+    """Factory function to get the singleton Cosmos DB client instance"""
+    global _singleton_instance
+    if _singleton_instance is None:
+        _singleton_instance = CosmosDBClient()
+    return _singleton_instance
 

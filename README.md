@@ -23,7 +23,7 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 az login
 cd vehicle
 poetry install
-cp .env.sample .env
+cp .env.sample .env # fill with your values
 python main.py
 ```
 
@@ -40,6 +40,14 @@ For full API reference, architecture, and examples, see the project documentatio
 
 ### Vehicle Simulation & Control
 ![Car Simulator](./doc/car_simulator.png)
+
+### Remote Drive Control 
+
+![Remote Drive Control](./doc/remote_drive.png)
+
+> UI only: The `gateway.py` module needs to be implemented to connect with the server of [this machine](https://github.com/Freenove/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi). 
+
+- The original code is implemented in the Python GUI client. To expose the controls to the frontend, a `gateway.py` is required to convert and transport the payload for use in the UI. Refer to the original client application in `doc/remote-client` for details on controlling the machine.
 
 ## Create Test Data (Dev Seed)
 
@@ -85,6 +93,24 @@ VS Code REST Client
   - POST {{host}}/api/dev/seed/bulk
 
 Note: This endpoint is for development only. Do not expose it in production.
+
+## 🔐 Azure AD Authentication (Access Tokens)
+Set your backend env (vehicle/.env):
+```env
+AZURE_TENANT_ID=<tenant-guid>
+AZURE_CLIENT_ID=api://<your-app-client-id>   # Application ID URI (aud)
+AZURE_AUTH_REQUIRED=true
+```
+Frontend requests the scope (note: scope = audience + "/access_as_user"):
+```env
+REACT_APP_AZURE_CLIENT_ID=<raw spa client guid>   # NOT the api:// Application ID URI
+REACT_APP_AZURE_TENANT_ID=<tenant-guid>
+REACT_APP_AZURE_SCOPE=api://<your-app-client-id>/access_as_user
+```
+If you mistakenly set REACT_APP_AZURE_CLIENT_ID to the Application ID URI (api://...), the UI will now display a specific guidance message. Use the SPA app registration's Client (Application) ID GUID.
+
+aud in the access token must equal the Application ID URI (without the /access_as_user).  
+If you change the Application ID URI in “Expose an API”, update AZURE_CLIENT_ID accordingly.
 
 ## 📜 License
 MIT © kimtth

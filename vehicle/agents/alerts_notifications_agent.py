@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from typing import Dict, Any, Optional
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -17,6 +17,8 @@ class AlertsNotificationsAgent:
     """
 
     def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -27,6 +29,10 @@ class AlertsNotificationsAgent:
 
 
 class AlertsNotificationsPlugin:
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+
     @kernel_function(description="Check the status of all vehicle alerts")
     async def _handle_alert_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
@@ -38,8 +44,8 @@ class AlertsNotificationsPlugin:
                 success=False,
             )
         try:
-            await cosmos_client.ensure_connected()
-            alerts = await cosmos_client.list_notifications(vid)
+            await self.cosmos_client.ensure_connected()
+            alerts = await self.cosmos_client.list_notifications(vid)
             alerts = [
                 a
                 for a in alerts
@@ -99,7 +105,7 @@ class AlertsNotificationsPlugin:
                 continue
         speed_limit = speed_limit or context.get("speed_limit") or 120.0
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
@@ -113,7 +119,7 @@ class AlertsNotificationsPlugin:
                 "actionRequired": False,
                 "parameters": {"speed_limit": speed_limit},
             }
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
             return self._format_response(
                 f"I've set a speed alert for {speed_limit} km/h. You'll receive a notification if the vehicle exceeds this speed.",
                 data={
@@ -144,7 +150,7 @@ class AlertsNotificationsPlugin:
         start = context.get("curfew_start") or "22:00"
         end = context.get("curfew_end") or "06:00"
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
@@ -158,7 +164,7 @@ class AlertsNotificationsPlugin:
                 "actionRequired": False,
                 "parameters": {"start_time": start, "end_time": end},
             }
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
             return self._format_response(
                 f"I've set a curfew alert from {start} to {end}. You'll receive a notification if the vehicle is used during these hours.",
                 data={
@@ -198,7 +204,7 @@ class AlertsNotificationsPlugin:
                 continue
         threshold = threshold or context.get("battery_threshold") or 20.0
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
                 "notificationId": str(uuid.uuid4()),
@@ -212,7 +218,7 @@ class AlertsNotificationsPlugin:
                 "actionRequired": False,
                 "parameters": {"threshold": threshold},
             }
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
             return self._format_response(
                 f"I've set a battery alert for {threshold}%. You'll receive a notification if the battery level falls below this threshold.",
                 data={
@@ -240,8 +246,8 @@ class AlertsNotificationsPlugin:
                 success=False,
             )
         try:
-            await cosmos_client.ensure_connected()
-            notifications = await cosmos_client.list_notifications(vid)
+            await self.cosmos_client.ensure_connected()
+            notifications = await self.cosmos_client.list_notifications(vid)
             types = {
                 n.get("type", "")
                 for n in notifications

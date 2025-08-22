@@ -34,4 +34,4 @@ async def start_poi_server(host: str = "0.0.0.0", port: int = 8003):
         loop.create_task(mcp_poi_server.run_async(transport="sse", host=host, port=port))
     else:
         await mcp_poi_server.run_async(transport="sse", host=host, port=port)
-
+    logger.info(f"POI MCP server is running on {host}:{port}")

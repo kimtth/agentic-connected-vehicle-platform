@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from typing import Dict, Any, Optional
-from azure.cosmos_db import cosmos_client
+from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -17,6 +17,8 @@ class SafetyEmergencyAgent:
     """
 
     def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
@@ -27,6 +29,10 @@ class SafetyEmergencyAgent:
 
 
 class SafetyEmergencyPlugin:
+    def __init__(self):
+        # Get the singleton cosmos client instance
+        self.cosmos_client = get_cosmos_client()
+
     @kernel_function(description="Handle emergency calls")
     async def _handle_emergency_call(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
@@ -41,10 +47,10 @@ class SafetyEmergencyPlugin:
 
         try:
             # Ensure Cosmos DB connection
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -53,7 +59,7 @@ class SafetyEmergencyPlugin:
                 )
 
             # Get vehicle location for emergency response
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -85,7 +91,7 @@ class SafetyEmergencyPlugin:
                 "priority": "Critical",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             # Create a notification for the emergency call
             notification_id = str(uuid.uuid4())
@@ -103,7 +109,7 @@ class SafetyEmergencyPlugin:
                 "actionUrl": f"/emergency/{notification_id}",
             }
 
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
 
             return self._format_response(
                 "Emergency call has been initiated. Help is on the way. "
@@ -140,10 +146,10 @@ class SafetyEmergencyPlugin:
 
         try:
             # Ensure Cosmos DB connection
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -152,7 +158,7 @@ class SafetyEmergencyPlugin:
                 )
 
             # Get vehicle location for emergency response
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -184,7 +190,7 @@ class SafetyEmergencyPlugin:
                 "priority": "Critical",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             # Create a notification for the collision alert
             notification_id = str(uuid.uuid4())
@@ -202,7 +208,7 @@ class SafetyEmergencyPlugin:
                 "actionUrl": f"/emergency/{notification_id}",
             }
 
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
 
             return self._format_response(
                 "I've detected a collision and notified emergency services. "
@@ -239,10 +245,10 @@ class SafetyEmergencyPlugin:
 
         try:
             # Ensure Cosmos DB connection
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
 
             if not vehicle:
@@ -251,7 +257,7 @@ class SafetyEmergencyPlugin:
                 )
 
             # Get vehicle location for tracking
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
 
             location = None
             if vehicle_status and "location" in vehicle_status:
@@ -283,7 +289,7 @@ class SafetyEmergencyPlugin:
                 "priority": "High",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             # Create a notification for the theft alert
             notification_id = str(uuid.uuid4())
@@ -301,7 +307,7 @@ class SafetyEmergencyPlugin:
                 "actionUrl": f"/security/{notification_id}",
             }
 
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
 
             return self._format_response(
                 "I've recorded your vehicle theft report and notified the authorities. "
@@ -337,10 +343,10 @@ class SafetyEmergencyPlugin:
             )
 
         try:
-            await cosmos_client.ensure_connected()
+            await self.cosmos_client.ensure_connected()
 
             # Check if vehicle exists
-            vehicles = await cosmos_client.list_vehicles()
+            vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
                 (v for v in vehicles if v.get("VehicleId") == vid), None
             )
@@ -351,7 +357,7 @@ class SafetyEmergencyPlugin:
                 )
 
             # Get vehicle location
-            vehicle_status = await cosmos_client.get_vehicle_status(vid)
+            vehicle_status = await self.cosmos_client.get_vehicle_status(vid)
             location = None
             if vehicle_status and "location" in vehicle_status:
                 location = vehicle_status["location"]
@@ -379,7 +385,7 @@ class SafetyEmergencyPlugin:
                 "priority": "Critical",
             }
 
-            await cosmos_client.create_command(command)
+            await self.cosmos_client.create_command(command)
 
             # Create SOS notification
             notification = {
@@ -396,7 +402,7 @@ class SafetyEmergencyPlugin:
                 "actionUrl": f"/emergency/sos/{command_id}",
             }
 
-            await cosmos_client.create_notification(notification)
+            await self.cosmos_client.create_notification(notification)
 
             return self._format_response(
                 "SOS request has been activated. Emergency services have been contacted and "

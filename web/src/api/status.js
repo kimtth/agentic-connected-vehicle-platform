@@ -3,6 +3,29 @@ import { API_BASE_URL } from './config';
 import { INTERVALS } from '../config/intervals';
 
 /**
+ * Retry mechanism for failed requests
+ * @param {Function} fn - Function to retry
+ * @param {number} retries - Number of retries
+ * @param {number} delay - Delay between retries
+ */
+const retryRequest = async (fn, retries = 3, delay = 1000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === retries - 1) throw error;
+      if (error.name === 'AbortError') throw error; // Don't retry aborted requests
+      if (error.code === 'USER_NOT_AUTHENTICATED') throw error; // Don't retry auth errors
+      
+      console.log(`Status API retry attempt ${i + 1}/${retries} after ${delay}ms`);
+      const wait = delay;
+      await new Promise(resolve => setTimeout(resolve, wait));
+      delay *= 1.5; // Exponential backoff
+    }
+  }
+}
+
+/**
  * Fetch the current vehicle status
  * @param {string} vehicleId 
  * @param {number} retries Number of retries if request fails (default: 2)
@@ -10,24 +33,23 @@ import { INTERVALS } from '../config/intervals';
  */
 export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
   try {
-    // Use the correct API endpoint that matches backend - use plural "vehicles" for status
-    const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
-    if (response.data) {
-      return response.data;
-    } else {
-      throw new Error("No status data returned");
-    }
+    return await retryRequest(async () => {
+      const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
+      if (response.data) {
+        return response.data;
+      } else {
+        throw new Error("No status data returned");
+      }
+    }, retries);
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to fetch vehicle status');
+      throw new Error('Please log in to access vehicle status');
+    }
+    
     // Handle 404 errors specifically
     if (error.response && error.response.status === 404) {
-      console.error(`Vehicle status endpoint not found for vehicle ID: ${vehicleId}. Make sure the backend API is running and the endpoint is implemented.`);
-      
-      // If we have retries left, try again after a short delay
-      if (retries > 0) {
-        console.log(`Retrying vehicle status fetch for ${vehicleId}. Retries left: ${retries - 1}`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-        return fetchVehicleStatus(vehicleId, retries - 1);
-      }
+      console.error(`Vehicle status not found for vehicle ID: ${vehicleId}. Vehicle may not exist or have status data.`);
     }
     
     // Handle 405 Method Not Allowed specifically
@@ -47,28 +69,53 @@ export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
  * @param {function} onError Callback for errors
  * @returns {function} Cleanup function to stop streaming
  */
-export const streamVehicleStatus = (vehicleId, onStatusUpdate, onError) => {
-  const eventSource = new EventSource(`${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`);
-  
-  eventSource.onmessage = (event) => {
-    try {
-      const statusData = JSON.parse(event.data);
-      onStatusUpdate(statusData);
-    } catch (error) {
-      console.error('Error parsing status update:', error);
-      onError(error);
-    }
-  };
-  
-  eventSource.onerror = (error) => {
-    console.error('Error in status stream:', error);
-    onError(error);
-  };
-  
-  // Return cleanup function
-  return () => {
-    eventSource.close();
-  };
+export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) => {
+  try {
+    // Use the new public streaming endpoint that doesn't require authentication
+    const streamUrl = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
+    
+    const eventSource = new EventSource(streamUrl);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const statusData = JSON.parse(event.data);
+        
+        // Check for errors in the stream
+        if (statusData.error) {
+          const streamError = new Error(statusData.error);
+          streamError.code = 'STREAM_ERROR';
+          onError(streamError);
+          return;
+        }
+        
+        onStatusUpdate(statusData);
+      } catch (error) {
+        console.error('Error parsing status update:', error);
+        onError(error);
+      }
+    };
+    
+    eventSource.onerror = (error) => {
+      console.error('Error in status stream:', error);
+      
+      // Check if this might be a connection error
+      if (eventSource.readyState === EventSource.CLOSED) {
+        const streamError = new Error('Status stream connection closed');
+        streamError.code = 'STREAM_CLOSED';
+        onError(streamError);
+      } else {
+        onError(error);
+      }
+    };
+    
+    // Return cleanup function
+    return () => {
+      eventSource.close();
+    };
+  } catch (error) {
+    console.error('Error setting up status stream:', error);
+    throw error;
+  }
 };
 
 /**
@@ -79,10 +126,15 @@ export const streamVehicleStatus = (vehicleId, onStatusUpdate, onError) => {
  */
 export const updateVehicleStatus = async (vehicleId, statusData) => {
   try {
-    // Backend uses singular "vehicle" for status updates
-    const response = await api.put(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusData);
-    return response.data;
+    return await retryRequest(async () => {
+      const response = await api.put(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusData);
+      return response.data;
+    });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to update vehicle status');
+      throw new Error('Please log in to update vehicle status');
+    }
     console.error(`Error updating vehicle status for ${vehicleId}:`, error);
     throw error;
   }
@@ -96,10 +148,15 @@ export const updateVehicleStatus = async (vehicleId, statusData) => {
  */
 export const patchVehicleStatus = async (vehicleId, statusUpdates) => {
   try {
-    // Backend uses singular "vehicle" for status patches
-    const response = await api.patch(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusUpdates);
-    return response.data;
+    return await retryRequest(async () => {
+      const response = await api.patch(`/api/vehicle/${encodeURIComponent(vehicleId)}/status`, statusUpdates);
+      return response.data;
+    });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to update vehicle status');
+      throw new Error('Please log in to update vehicle status');
+    }
     console.error(`Error patching vehicle status for ${vehicleId}:`, error);
     throw error;
   }

@@ -49,7 +49,10 @@ const StatusIndicator = styled(Box)(({ theme }) => ({
   fontWeight: 'bold',
 }));
 
-const StatusDot = styled(Box)(({ theme, isConnected }) => ({
+const StatusDot = styled(
+  Box,
+  { shouldForwardProp: (prop) => prop !== 'isConnected' }  // prevent React warning
+)(({ theme, isConnected }) => ({
   width: '12px',
   height: '12px',
   borderRadius: '50%',

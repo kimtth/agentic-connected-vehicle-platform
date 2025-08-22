@@ -1,7 +1,6 @@
 // API functions for vehicle data
 
-import { API_BASE_URL } from './config';
-import { INTERVALS } from '../config/intervals';
+import { api } from './apiClient';
 
 /**
  * Retry mechanism for failed requests
@@ -16,6 +15,7 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
     } catch (error) {
       if (i === retries - 1) throw error;
       if (error.name === 'AbortError') throw error; // Don't retry aborted requests
+      if (error.code === 'USER_NOT_AUTHENTICATED') throw error; // Don't retry auth errors
       
       console.log(`Retry attempt ${i + 1}/${retries} after ${delay}ms`);
       const currentDelay = delay;
@@ -26,54 +26,28 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
 };
 
 /**
- * Create a fetch request with timeout and abort signal
- * @param {string} url - Request URL
- * @param {Object} options - Fetch options
- * @param {number} timeout - Timeout in milliseconds
- */
-const fetchWithTimeout = async (url, options = {}, timeout = INTERVALS.REQUEST_TIMEOUT) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-};
-
-/**
  * Fetches all vehicles from the backend
  * @returns {Promise<Array>} - Array of vehicle objects
  */
 export const fetchVehicles = async () => {
   try {
-    console.log(`Attempting to fetch vehicles from: ${API_BASE_URL}/api/vehicles`);
+    console.log(`Attempting to fetch vehicles from authenticated API`);
     
     return await retryRequest(async () => {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/vehicles`);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Failed to fetch vehicles: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
-      }
-      
-      return await response.json();
+      const response = await api.get('/api/vehicles');
+      return response.data;
     }, 2, 2000); // 2 retries with 2 second initial delay
     
   } catch (error) {
-    if (error.name === 'AbortError') {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to fetch vehicles');
+      throw new Error('Please log in to access vehicle data');
+    } else if (error.code === 'ECONNABORTED') {
       console.error('Request timeout: Could not connect to the backend server. Please ensure the server is running.');
       throw new Error('Connection timeout - backend server may not be running');
-    } else if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
+    } else if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
       console.error('Connection error: Could not reach the backend server. Please verify that:');
-      console.error('1. The backend server is running at ' + API_BASE_URL);
+      console.error('1. The backend server is running');
       console.error('2. There are no network connectivity issues');
       console.error('3. The API URL in .env is configured correctly');
       throw new Error('Backend server is not reachable - please check server status');
@@ -92,13 +66,8 @@ export const fetchVehicles = async () => {
 export const fetchVehicleById = async (vehicleId) => {
   try {
     return await retryRequest(async () => {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/vehicles/${encodeURIComponent(vehicleId)}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch vehicle: ${response.status} ${response.statusText}`);
-      }
-      
-      const vehicle = await response.json();
+      const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}`);
+      const vehicle = response.data;
       
       // Ensure consistent field naming
       if (vehicle.VehicleId && !vehicle.vehicleId) {
@@ -108,6 +77,10 @@ export const fetchVehicleById = async (vehicleId) => {
       return vehicle;
     });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to fetch vehicle details');
+      throw new Error('Please log in to access vehicle details');
+    }
     console.error(`Error fetching vehicle ${vehicleId}:`, error);
     throw error;
   }
@@ -121,18 +94,17 @@ export const fetchVehicleById = async (vehicleId) => {
 export const fetchVehicleStatus = async (vehicleId) => {
   try {
     return await retryRequest(async () => {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Vehicle ${vehicleId} not found`);
-        }
-        throw new Error(`Failed to fetch vehicle status: ${response.status} ${response.statusText}`);
-      }
-      
-      return await response.json();
+      const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
+      return response.data;
     });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to fetch vehicle status');
+      throw new Error('Please log in to access vehicle status');
+    } else if (error.response?.status === 404) {
+      console.error(`Vehicle status not found for vehicle ID: ${vehicleId}. Vehicle may not exist or have status data.`);
+      throw new Error(`Vehicle ${vehicleId} not found`);
+    }
     console.error(`Error fetching vehicle status for ${vehicleId}:`, error);
     throw error;
   }
@@ -152,21 +124,14 @@ export const addVehicle = async (vehicleData) => {
     };
     
     return await retryRequest(async () => {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/vehicle`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to add vehicle: ${response.status} ${response.statusText}`);
-      }
-      
-      return await response.json();
+      const response = await api.post('/api/vehicle', payload);
+      return response.data;
     });
   } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to add vehicles');
+      throw new Error('Please log in to add vehicles');
+    }
     console.error('Error adding vehicle:', error);
     throw error;
   }
