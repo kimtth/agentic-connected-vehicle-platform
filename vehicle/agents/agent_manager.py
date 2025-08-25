@@ -468,5 +468,19 @@ class AgentManager:
             logger.error(f"Error during cleanup: {e}")
 
 
-# singleton
-agent_manager = AgentManager()
+# FastAPI scoped dependency factory
+async def get_agent_manager() -> AsyncGenerator[AgentManager, None]:
+    """
+    Provides a scoped (per-request) AgentManager instance.
+    Usage (FastAPI):
+        @app.get("/endpoint")
+        async def endpoint(agent_manager: AgentManager = Depends(get_agent_manager)):
+            return await agent_manager.process_request(...)
+
+    A new AgentManager is created per request and cleaned up automatically.
+    """
+    manager = AgentManager()
+    try:
+        yield manager
+    finally:
+        await manager.cleanup()

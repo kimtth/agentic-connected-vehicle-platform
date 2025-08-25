@@ -3,12 +3,13 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
 import { Routes, Route } from 'react-router-dom';
-import DashboardLayout from './components/DashboardLayout';
+import DashboardLayout from './components/MainLayout';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
 import AgentChat from './components/AgentChat';
 import SimulatorPanel from './components/simulator/SimulatorPanel';
 import RemoteDrive from './components/RemoteDrive';
+import VoiceControl from './components/VoiceControl';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import Dashboard from './pages/Dashboard';
@@ -306,6 +307,13 @@ function App() {
               <ProtectedRoute>
                 <Container maxWidth="lg">
                   <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                </Container>
+              </ProtectedRoute>
+            } />
+            <Route path="/voice-control" element={
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <VoiceControl vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
                 </Container>
               </ProtectedRoute>
             } />

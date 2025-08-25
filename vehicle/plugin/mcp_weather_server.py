@@ -48,7 +48,7 @@ async def start_weather_server(host: str = "0.0.0.0", port: int = 8001):
         loop = None
 
     if loop and loop.is_running():
-        logger.warning("AsyncIO loop already running – launching Weather MCP server in background")
+        logger.warning("AsyncIO loop already running - launching Weather MCP server in background")
         loop.create_task(mcp_weather_server.run_async(transport="sse", host=host, port=port))
     else:
         await mcp_weather_server.run_async(transport="sse", host=host, port=port)

@@ -2,18 +2,14 @@
 Endpoints for interacting with the agentic components of the connected vehicle platform.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import uuid
 import logging
 import json
-
-# Add this local import function to defer import:
-def get_agent_manager():
-    from agents.agent_manager import agent_manager
-    return agent_manager
+from agents.agent_manager import get_agent_manager, AgentManager
 
 from utils.agent_tools import (
     search_vehicle_database,
@@ -61,7 +57,10 @@ tool_handlers = {
 
 # Agent system entry point with streaming support
 @router.post("/ask")
-async def ask_agent(request: AgentQueryRequest):
+async def ask_agent(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """General agent system entry point to ask any question, with optional streaming"""
     try:
         # Ensure we have a session ID
@@ -93,7 +92,6 @@ async def ask_agent(request: AgentQueryRequest):
         if request.stream:
             async def stream_generator():
                 try:
-                    agent_manager = get_agent_manager()
                     async for chunk in agent_manager.process_request_stream(request.query, context):
                         yield f"data: {json.dumps(chunk)}\n\n"
                 except Exception as e:
@@ -112,7 +110,6 @@ async def ask_agent(request: AgentQueryRequest):
         else:
             # Regular non-streaming response
             try:
-                agent_manager = get_agent_manager()
                 response = await agent_manager.process_request(request.query, context)
                 response["session_id"] = session_id
                 
@@ -141,7 +138,10 @@ async def ask_agent(request: AgentQueryRequest):
 
 # Direct access to specialized agents
 @router.post("/remote-access")
-async def query_remote_access(request: AgentQueryRequest):
+async def query_remote_access(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Remote Access Agent directly"""
     try:
         # Set context for the specific agent type
@@ -152,7 +152,6 @@ async def query_remote_access(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -161,7 +160,6 @@ async def query_remote_access(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -171,7 +169,10 @@ async def query_remote_access(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/safety-emergency")
-async def query_safety_emergency(request: AgentQueryRequest):
+async def query_safety_emergency(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Safety & Emergency Agent directly"""
     try:
         # Set context for the specific agent type
@@ -182,7 +183,6 @@ async def query_safety_emergency(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -191,7 +191,6 @@ async def query_safety_emergency(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -201,7 +200,10 @@ async def query_safety_emergency(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/charging-energy")
-async def query_charging_energy(request: AgentQueryRequest):
+async def query_charging_energy(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Charging & Energy Agent directly"""
     try:
         # Set context for the specific agent type
@@ -212,7 +214,6 @@ async def query_charging_energy(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -221,7 +222,6 @@ async def query_charging_energy(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -231,7 +231,10 @@ async def query_charging_energy(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/information-services")
-async def query_information_services(request: AgentQueryRequest):
+async def query_information_services(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Information Services Agent directly"""
     try:
         # Set context for the specific agent type
@@ -242,7 +245,6 @@ async def query_information_services(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -251,7 +253,6 @@ async def query_information_services(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -261,7 +262,10 @@ async def query_information_services(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/feature-control")
-async def query_feature_control(request: AgentQueryRequest):
+async def query_feature_control(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Vehicle Feature Control Agent directly"""
     try:
         # Set context for the specific agent type
@@ -272,7 +276,6 @@ async def query_feature_control(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -281,7 +284,6 @@ async def query_feature_control(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -291,7 +293,10 @@ async def query_feature_control(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/diagnostics-battery")
-async def query_diagnostics_battery(request: AgentQueryRequest):
+async def query_diagnostics_battery(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Diagnostics & Battery Agent directly"""
     try:
         # Set context for the specific agent type
@@ -302,7 +307,6 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -311,7 +315,6 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -321,7 +324,10 @@ async def query_diagnostics_battery(request: AgentQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/alerts-notifications")
-async def query_alerts_notifications(request: AgentQueryRequest):
+async def query_alerts_notifications(
+    request: AgentQueryRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Query the Alerts & Notifications Agent directly"""
     try:
         # Set context for the specific agent type
@@ -332,7 +338,6 @@ async def query_alerts_notifications(request: AgentQueryRequest):
         # Handle streaming if requested
         if request.stream:
             async def stream_generator():
-                agent_manager = get_agent_manager()
                 async for chunk in agent_manager.process_request_stream(request.query, context):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
@@ -341,7 +346,6 @@ async def query_alerts_notifications(request: AgentQueryRequest):
                 media_type="text/event-stream"
             )
         else:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(request.query, context)
             response["session_id"] = context["session_id"]
             return response
@@ -352,7 +356,10 @@ async def query_alerts_notifications(request: AgentQueryRequest):
 
 # Analytics endpoints that use agent capabilities
 @router.post("/analyze/vehicle-data")
-async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
+async def analyze_vehicle_data_endpoint(
+    request: AnalysisRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Analyze vehicle data using the Diagnostics & Battery Agent"""
     try:
         session_id = str(uuid.uuid4())
@@ -365,7 +372,6 @@ async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
         }
         
         try:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(
                 "Run a full diagnostic analysis on my vehicle",
                 context
@@ -389,7 +395,10 @@ async def analyze_vehicle_data_endpoint(request: AnalysisRequest):
         raise HTTPException(status_code=503, detail="Analysis service temporarily unavailable")
 
 @router.post("/recommend/services")
-async def recommend_services_endpoint(request: ServiceRecommendationRequest):
+async def recommend_services_endpoint(
+    request: ServiceRecommendationRequest,
+    agent_manager: AgentManager = Depends(get_agent_manager)
+):
     """Get service recommendations using the Feature Control Agent"""
     try:
         context = {
@@ -400,7 +409,6 @@ async def recommend_services_endpoint(request: ServiceRecommendationRequest):
         }
         
         try:
-            agent_manager = get_agent_manager()
             response = await agent_manager.process_request(
                 "Recommend vehicle services based on my vehicle condition",
                 context
