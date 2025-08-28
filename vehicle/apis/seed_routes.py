@@ -99,7 +99,7 @@ async def seed_dev_data_bulk(req: BulkSeedRequest = Body(...)):
     makes = ["Tesla", "Toyota", "Ford", "BMW", "Hyundai"]
     models = ["Cyber Truck", "Model 3", "RAV4", "F-150", "X3", "Elantra"]
     service_codes = ["OIL_CHANGE", "TIRE_ROTATION", "BRAKE_SERVICE"]
-    command_types = ["LOCK_DOORS", "UNLOCK_DOORS", "START_ENGINE", "STOP_ENGINE"]
+    command_types = ["lock_doors", "unlock_doors", "start_engine", "stop_engine"]
     notification_types = ["service_reminder", "low_battery_alert", "speed_alert"]
 
     try:
@@ -158,7 +158,10 @@ async def seed_dev_data_bulk(req: BulkSeedRequest = Body(...)):
                     command_id=str(uuid.uuid4()),
                     vehicle_id=vehicle_id,
                     command_type=random.choice(command_types),
-                    parameters={},
+                    parameters={
+                        'param1': 'value1',
+                        'param2': 'value2'
+                    },
                     status=random.choice(["Sent", "Processing", "Completed"]),
                     timestamp=_now_iso(),
                 )

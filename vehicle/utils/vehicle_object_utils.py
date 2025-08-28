@@ -1,5 +1,20 @@
 from typing import Any, Dict, Iterable, Optional
 
+# Mapping of possible source attribute names to unified camelCase output keys
+_CAMEL_FIELD_MAP = {
+    "vehicle_id": "vehicleId",
+    "vehicleId": "vehicleId",
+    "BatteryLevel": "batteryLevel",
+    "Features": "features",
+    "LastLocation": "lastLocation",
+    "Brand": "brand",
+    "VehicleModel": "vehicleModel",
+    "Year": "year",
+    "CurrentTelemetry": "currentTelemetry",
+    "StartDate": "startDate",
+    "ServiceCode": "serviceCode",
+}
+
 def ensure_dict(obj: Any) -> Dict[str, Any]:
     if obj is None:
         return {}
@@ -10,23 +25,20 @@ def ensure_dict(obj: Any) -> Dict[str, Any]:
             return obj.model_dump(by_alias=True)
         except Exception:
             pass
-    # Fallback: only expose known fields we reference
-    result = {}
-    for k in (
-        "vehicle_id", "vehicleId", "BatteryLevel", "Features", "LastLocation",
-        "Brand", "VehicleModel", "Year", "CurrentTelemetry"
-    ):
-        if hasattr(obj, k):
-            result[k] = getattr(obj, k)
+    # Fallback: expose only known fields, normalized to camelCase
+    result: Dict[str, Any] = {}
+    for original, camel in _CAMEL_FIELD_MAP.items():
+        if hasattr(obj, original) and camel not in result:
+            result[camel] = getattr(obj, original)
     return result
 
 def find_vehicle(vehicles: Iterable[Any], vid: str) -> Optional[Any]:
     if not vid:
         return None
     for v in vehicles:
-        if getattr(v, "vehicle_id", None) == vid:
+        if getattr(v, "vehicleId", None) == vid:
             return v
-        if isinstance(v, dict) and v.get("vehicle_id") == vid:
+        if isinstance(v, dict) and v.get("vehicleId") == vid:
             return v
         if hasattr(v, "model_dump"):
             try:

@@ -8,6 +8,7 @@ from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from agents.base.base_agent import BasePlugin
 from utils.agent_context import extract_vehicle_id
+from models.command import Command  
 
 logger = get_logger(__name__)
 
@@ -44,10 +45,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
         context: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        # Resolve vehicle id from explicit arg, context, or kwargs
-        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
-            (context or {}).get("vehicle_id") if context else None
-        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control lights for.",
@@ -71,26 +69,25 @@ class VehicleFeatureControlPlugin(BasePlugin):
             await self.cosmos_client.ensure_connected()
 
             # Create command
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": f"lights_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicle_id": vid,
-                "command_type": f"lights_{action}",
-                "parameters": {"light_type": light_type},
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "normal",
-            }
-
-            await self.cosmos_client.create_command(command)
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=f"lights_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                vehicle_id=vid,
+                command_type=f"lights_{action}",
+                parameters={"lightType": light_type},
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="normal",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 f"I've turned {action} the {light_type.replace('_', ' ')} for your vehicle.",
                 data={
                     "action": f"lights_{action}",
-                    "vehicle_id": vid,
-                    "light_type": light_type,
-                    "command_id": command["command_id"],
+                    "vehicleId": vid,
+                    "lightType": light_type,
+                    "commandId": command_obj.command_id,
                 },
             )
 
@@ -108,9 +105,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
         context: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
-            (context or {}).get("vehicle_id") if context else None
-        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control climate for.",
@@ -142,31 +137,30 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
             await self.cosmos_client.ensure_connected()
 
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": f"climate_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicle_id": vid,
-                "command_type": "climate_control",
-                "parameters": {
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=f"climate_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                vehicle_id=vid,
+                command_type="climate_control",
+                parameters={
                     "action": action,
                     "temperature": temperature,
                     "auto": True
                 },
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "normal",
-            }
-
-            await self.cosmos_client.create_command(command)
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="normal",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 f"I've set the climate control to {temperature}°C with {action} mode.",
                 data={
                     "action": "climate_control",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "temperature": temperature,
                     "mode": action,
-                    "command_id": command["command_id"],
+                    "commandId": command_obj.command_id,
                 },
             )
 
@@ -184,9 +178,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
         context: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id) or extract_vehicle_id(
-            (context or {}).get("vehicle_id") if context else None
-        ) or extract_vehicle_id(kwargs.get("vehicle_id"))
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control windows for.",
@@ -206,18 +198,17 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
             await self.cosmos_client.ensure_connected()
 
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": f"windows_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicle_id": vid,
-                "command_type": f"windows_{action}",
-                "parameters": {"windows": window_position},
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "normal",
-            }
-
-            await self.cosmos_client.create_command(command)
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=f"windows_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                vehicle_id=vid,
+                command_type=f"windows_{action}",
+                parameters={"windows": window_position},
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="normal",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             window_text = f"{window_position} windows" if window_position != "all" else "all windows"
             action_text = "rolled up" if action == "up" else "rolled down"
@@ -226,9 +217,9 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 f"I've {action_text} the {window_text} for your vehicle.",
                 data={
                     "action": f"windows_{action}",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "windows": window_position,
-                    "command_id": command["command_id"],
+                    "commandId": command_obj.command_id,
                 },
             )
 
@@ -242,8 +233,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
     async def process(
         self, query: str, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Process vehicle feature control requests."""
-        vehicle_id = context.get("vehicle_id") if context else None
+        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
         query_lower = query.lower()
 
         if "light" in query_lower:
@@ -262,9 +252,9 @@ class VehicleFeatureControlPlugin(BasePlugin):
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""
         return {
-            "lights_control": "Control headlights, interior lights, and hazard lights",
-            "climate_control": "Adjust temperature, heating, and air conditioning",
-            "windows_control": "Open and close vehicle windows",
+            "lightsControl": "Control headlights, interior lights, and hazard lights",
+            "climateControl": "Adjust temperature, heating, and air conditioning",
+            "windowsControl": "Open and close vehicle windows",
         }
 
     def _format_response(
@@ -274,4 +264,5 @@ class VehicleFeatureControlPlugin(BasePlugin):
         if data:
             resp["data"] = data
         return resp
+
 

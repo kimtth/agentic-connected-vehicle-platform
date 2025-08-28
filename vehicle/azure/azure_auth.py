@@ -52,11 +52,15 @@ class AzureADMiddleware(BaseHTTPMiddleware):
             "/favicon.ico",
         }
         self.exclude_prefixes = (
-            "/", # Dev: Disable auth for root and docs during development
             "/docs",
             "/redoc",
             "/api/dev/seed"     # includes /api/dev/seed, /bulk, /status, etc.
         )
+
+        if os.getenv('ENV_TYPE') == 'development':
+            # In development, disable auth for all paths.
+            self.exclude_prefixes = ("/",)
+
         self.signin_redirect_url = os.getenv("SIGNIN_REDIRECT_URL", "/")
         if not self.tenant_id:
             logger.warning("AzureADMiddleware: incomplete configuration; auth will be optional.")

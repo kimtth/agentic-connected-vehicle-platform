@@ -30,7 +30,7 @@ Backend (Python / FastAPI) lives in `vehicle/` and is the system of record + age
 
 ## 2. Data & Serialization Conventions
 - Always use model classes (`VehicleStatus`, `Command`, etc.) for API responses; they serialize camelCase automatically (`CamelModel`). Do NOT manually convert field names.
-- Cosmos containers use partition key `/vehicle_id`; queries frequently specify `partition_key=vehicle_id` for efficiency—preserve this when adding queries.
+- Cosmos containers use partition key `/vehicleId`; queries frequently specify `partition_key=vehicleId` for efficiency—preserve this when adding queries.
 - Status updates always create a new document (`update_vehicle_status` writes a fresh item with a generated `id` + timestamp). Do not mutate historical status docs.
 - Commands/notifications sometimes have both `Id` and logical IDs (`command_id`); retain existing casing to avoid breaking stored items—prefer adding fields rather than renaming.
 

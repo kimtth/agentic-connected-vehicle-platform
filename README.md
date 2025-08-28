@@ -24,7 +24,6 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 - External (API, frontend, Cosmos stored docs): camelCase via Pydantic CamelModel.
 - Backend Python attributes: snake_case.
 - Do not manually recase dict keys—always return model instances.
-- Historical Cosmos items with older casing should be left intact; new writes use camelCase.
 
 ## 🚀 Quick Start
 ```bash

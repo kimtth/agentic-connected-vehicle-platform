@@ -3,7 +3,7 @@ from __future__ import annotations
 Endpoints for interacting with the agentic components of the connected vehicle platform.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import TYPE_CHECKING, Union
 from models.agent_request import (

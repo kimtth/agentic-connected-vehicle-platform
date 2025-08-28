@@ -4,6 +4,7 @@ Centralized logging configuration using loguru.
 import os
 import sys
 import logging
+import warnings
 from loguru import logger
 from typing import Any
 
@@ -116,6 +117,11 @@ def configure_logging(log_level: str | None = None) -> None:
     for module, level in MODULE_LOG_LEVELS.items():
         mod_logger = logging.getLogger(module)
         mod_logger.setLevel(getattr(logging, level))
+
+    # Optionally suppress noisy DeprecationWarnings from websockets / uvicorn (default: enabled)
+    if os.getenv("SUPPRESS_WEBSOCKETS_DEPRECATION", "true").lower() == "true":
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websockets(\.|$)")
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"uvicorn\.protocols\.websockets\.websockets_impl")
 
 # A function to get a logger for a specific module
 def get_logger(name: str) -> Any:

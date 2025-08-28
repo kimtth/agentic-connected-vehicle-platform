@@ -58,6 +58,7 @@ The platform implements a sophisticated multi-agent system that provides two pri
 ### Key Components
 
 - **Agent Manager** - Central orchestrator using Semantic Kernel for intent interpretation and agent coordination
+ - **Agent Manager** - Central orchestrator using Semantic Kernel for intent interpretation, agent routing, and optional Server-Sent Events (SSE) streaming responses
 - **Specialized Agents** - Domain-specific agents for vehicle operations (7 specialized agents)
 - **Vehicle Management** - Comprehensive vehicle profiles, status monitoring, and service records
 - **Command Execution** - Asynchronous vehicle control operations with real-time status tracking
@@ -210,92 +211,152 @@ sequenceDiagram
 ```
 
 ## API Specifications
-### Agent System APIs
-- `POST /api/agent/ask`  
-  Universal agent interface: natural-language queries → appropriate specialized agents → structured JSON response.
-- `POST /api/agent/remote-access`  
-  Lock/unlock doors, start/stop engine, lights/horn control.
-- `POST /api/agent/safety-emergency`  
-  Emergency calls, collision alerts, theft protection, SOS requests.
-- `POST /api/agent/charging-energy`  
-  Find/start/stop charging, energy analytics, range estimation.
-- `POST /api/agent/information-services`  
-  Weather, traffic, POI lookup, route planning.
-- `POST /api/agent/feature-control`  
-  Climate control, lighting, windows, seat settings.
-- `POST /api/agent/diagnostics-battery`  
-  System diagnostics, battery health, predictive maintenance.
-- `POST /api/agent/alerts-notifications`  
-  Speed alerts, curfew monitoring, battery & maintenance notifications.
 
-### Core Platform APIs
-- `GET    /api/vehicles`                                  List all vehicles  
-- `POST   /api/vehicle`                                   Add a new vehicle profile  
-- `GET    /api/vehicles/{vehicle_id}`                     Get a single vehicle by ID  
-- `GET    /api/vehicles/{vehicle_id}/status`              Get current status of a vehicle  
-- `GET    /api/vehicle/{vehicle_id}/status/stream`        Stream real-time status updates  
-- `PUT    /api/vehicle/{vehicle_id}/status`               Update full vehicle status  
-- `PATCH  /api/vehicle/{vehicle_id}/status`               Partially update vehicle status  
-- `POST   /api/vehicles/{vehicle_id}/services`            Add a service record to a vehicle  
-- `GET    /api/vehicles/{vehicle_id}/services`            List all services for a vehicle  
-- `PUT    /api/vehicles/{vehicle_id}/services/{service_id}`  Update a service record  
-- `DELETE /api/vehicles/{vehicle_id}/services/{service_id}`  Delete a service record  
-- `GET    /api/vehicles/{vehicle_id}/command-history`     Retrieve command history for a vehicle  
-- `POST   /api/command`                                   Submit a control command  
-- `GET    /api/commands`                                  Retrieve all commands (optional `vehicleId` filter)  
-- `GET    /api/notifications`                             Retrieve all notifications (optional `vehicleId` filter)  
-- `POST   /api/notifications`                             Create a notification  
-- `PUT    /api/notifications/{notificationId}/read`       Mark a notification as read  
-- `DELETE /api/notifications/{notificationId}`            Delete a notification  
+### Agent System APIs (`/api/agent/*`)
+- `POST /api/agent/ask` – Universal natural language interface (set `stream:true` for SSE streaming)
+- `POST /api/agent/remote-access` – Remote access intents (lock/unlock, engine start/stop, locate)
+- `POST /api/agent/safety-emergency` – Emergency, collision, theft, SOS intents
+- `POST /api/agent/charging-energy` – Charging operations & energy insights
+- `POST /api/agent/information-services` – Weather / traffic / POI / navigation (MCP-backed)
+- `POST /api/agent/feature-control` – Climate, windows, lights, seat comfort
+- `POST /api/agent/diagnostics-battery` – Diagnostics & battery health analysis
+- `POST /api/agent/alerts-notifications` – Alert rule + notification interactions
+
+### Agent Analytics / Recommendations
+- `POST /api/agent/analyze/vehicle-data` – Run vehicle diagnostics analysis (internally routes to diagnostics agent)
+- `POST /api/agent/recommend/services` – Service recommendation generation
+
+### Direct Vehicle Control / Feature / Emergency Routers
+Explicit REST-style endpoints (bypass NL intent) for structured apps:
+- `POST /api/vehicles/{vehicle_id}/remote-access/doors` – `{ "action": "lock|unlock" }`
+- `POST /api/vehicles/{vehicle_id}/remote-access/engine` – `{ "action": "start|stop" }`
+- `POST /api/vehicles/{vehicle_id}/remote-access/locate` – Activate horn & lights
+- `POST /api/vehicles/{vehicle_id}/emergency/call` – Initiate emergency call (`emergency_type` optional)
+- `POST /api/vehicles/{vehicle_id}/emergency/collision` – Report collision (`severity`, optional location)
+- `POST /api/vehicles/{vehicle_id}/emergency/theft` – Report theft
+- `POST /api/vehicles/{vehicle_id}/emergency/sos` – Immediate SOS
+- `POST /api/vehicles/{vehicle_id}/features/lights` – Control lights (`light_type`, `action`)
+- `POST /api/vehicles/{vehicle_id}/features/climate` – Climate / temperature control
+- `POST /api/vehicles/{vehicle_id}/features/windows` – Window control (`action`, `windows`)
+- `GET  /api/vehicles/{vehicle_id}/features/status` – Aggregated feature status via agent
+
+### Core Platform & Data APIs
+- `GET    /api/vehicles` – List vehicle profiles
+- `POST   /api/vehicle` – Create vehicle profile (requires `vehicleId` field; `id` optional/legacy)
+- `GET    /api/vehicles/{vehicle_id}` – Retrieve vehicle profile
+- `GET    /api/vehicles/{vehicle_id}/status` – Latest status snapshot
+- `GET    /api/vehicle/{vehicle_id}/status/stream` – Status SSE stream (note singular `vehicle` in path)
+- `PUT    /api/vehicle/{vehicle_id}/status` – Full status replace (must include matching `vehicleId`)
+- `PATCH  /api/vehicle/{vehicle_id}/status` – Partial status update
+- `POST   /api/vehicles/{vehicle_id}/services` – Add service record
+- `GET    /api/vehicles/{vehicle_id}/services` – List service records
+- `PUT    /api/vehicles/{vehicle_id}/services/{serviceId}` – Update service
+- `DELETE /api/vehicles/{vehicle_id}/services/{serviceId}` – Delete service
+- `GET    /api/vehicles/{vehicle_id}/command-history` – Summary history of commands
+- `POST   /api/command` – Submit command (async processing & notification)
+- `GET    /api/commands` – List commands (optional `vehicleId` query)
+- `GET    /api/notifications` – List notifications (optional `vehicleId`)
+- `POST   /api/notifications` – Create notification
+- `PUT    /api/notifications/{NotificationId}/read` – Mark read (case-sensitive `NotificationId`)
+- `DELETE /api/notifications/{NotificationId}` – Delete notification
+
+### Speech & Voice / Avatar
+- `GET /api/speech/token` – Azure Speech auth token (cached ~9 min)
+- `GET /api/speech/ice_token` – ICE relay token for avatar streaming
+- `POST /api/speech/ask_ai` – Lightweight direct LLM response (short TTS-safe answer)
+
+### Development Seeding (non-prod)
+- `POST /api/dev/seed` – Seed single vehicle (optional `?vehicleId=`)
+- `POST /api/dev/seed/bulk` – Bulk seed with counts (camelCase body)
+- `GET  /api/dev/seed/status` – Last bulk seed summary
+
+### Health & Info
+- `GET /api/info` – Service status + version + Cosmos availability
+- `GET /api/health` – Detailed health (Cosmos + MCP sidecars weather/traffic/poi/navigation)
 
 ```bash
-# List all vehicles
+# List vehicles
 curl http://localhost:8000/api/vehicles
 
-# Add a new vehicle
+# Create a vehicle (vehicleId required)
 curl -X POST http://localhost:8000/api/vehicle \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "vehicle-123",
+    "vehicleId": "vehicle-123",
     "make": "Tesla",
     "model": "Model 3",
-    "year": 2021,
-    "vin": "5YJ3E1EA7LF000001"
+    "year": 2024,
+    "status": "Active"
   }'
 
-# Get current status
-curl http://localhost:8000/api/vehicle/vehicle-123/status
+# Fetch status snapshot
+curl http://localhost:8000/api/vehicles/vehicle-123/status
 
-# Stream status updates (SSE)
+# Stream live status (SSE)
 curl -N http://localhost:8000/api/vehicle/vehicle-123/status/stream
 
-# Update vehicle status
+# Replace status (include vehicleId)
 curl -X PUT http://localhost:8000/api/vehicle/vehicle-123/status \
   -H "Content-Type: application/json" \
   -d '{
-    "status": "offline",
-    "battery": 80
+    "vehicleId": "vehicle-123",
+    "battery": 83,
+    "temperature": 35,
+    "speed": 0
   }'
 
-# Submit a control command
+# Partial status patch
+curl -X PATCH http://localhost:8000/api/vehicle/vehicle-123/status \
+  -H "Content-Type: application/json" \
+  -d '{ "battery": 79 }'
+
+# Submit a command
 curl -X POST http://localhost:8000/api/command \
   -H "Content-Type: application/json" \
   -d '{
     "vehicleId": "vehicle-123",
-    "type": "LOCK_DOORS",
+    "commandType": "LOCK_DOORS",
     "parameters": { "doors": "all" }
   }'
 
-# Get command history
-curl http://localhost:8000/api/commands
+# Direct remote door lock
+curl -X POST http://localhost:8000/api/vehicles/vehicle-123/remote-access/doors \
+  -H "Content-Type: application/json" \
+  -d '{"action": "lock"}'
 
-# Get notifications
-curl http://localhost:8000/api/notifications
+# Analyze vehicle data (agent)
+curl -X POST http://localhost:8000/api/agent/analyze/vehicle-data \
+  -H "Content-Type: application/json" \
+  -d '{"vehicleId": "vehicle-123", "timePeriod": "30d", "metrics": ["battery","speed"]}'
+
+# Service recommendations
+curl -X POST http://localhost:8000/api/agent/recommend/services \
+  -H "Content-Type: application/json" \
+  -d '{"vehicleId": "vehicle-123", "mileage": 42000, "lastServiceDate": "2024-05-01"}'
+
+# Seed dev data (single)
+curl -X POST http://localhost:8000/api/dev/seed?vehicleId=vehicle-123
 ```
 
-### Analytics & Insights
-- `POST /api/analyze/vehicle-data`     Vehicle telemetry analysis  
-- `POST /api/recommend/services`       Service & maintenance recommendations
+### Field & Casing Notes
+All Pydantic models inherit from `CamelModel`:
+- Accept snake_case or camelCase input
+- Always emit camelCase JSON
+
+Key fields:
+- VehicleProfile: `vehicleId` (primary), optional `id` may still appear (legacy) – include `vehicleId` in requests
+- Command: `commandId` (assigned by backend when submitting), `commandType`, `vehicleId`, `status`
+- VehicleStatus: always includes `vehicleId` + server `timestamp`
+- Notification: `id`, `vehicleId`, `type`, `severity`, `read`
+
+Never manually map keys—return model instances to preserve uniform serialization.
+
+### Streaming Conventions
+- Agent streaming (set `stream:true`): SSE frames `data: {json}\n\n` with fields `response`, `complete`, `sessionId`
+- Status streaming: SSE frames of raw status documents (includes `timestamp`)
+
+### Versioning
+`/api/info` reports the current backend version (presently `2.0.0`).
 
 ## API Authentication (Azure AD / JWT)
 

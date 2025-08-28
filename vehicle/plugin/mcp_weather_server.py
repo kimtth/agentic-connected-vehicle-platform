@@ -5,50 +5,49 @@ This module provides weather data through the Model Context Protocol (MCP).
 """
 from typing import Dict, Any, List
 from fastmcp import FastMCP
-import asyncio
-from utils.logging_config import get_logger  
-from plugin.mcp_mock_data import generate_weather, generate_forecast  
+from utils.logging_config import get_logger
+from plugin.mcp_mock_data import generate_weather, generate_forecast
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 
 logger = get_logger(__name__)
 mcp_weather_server = FastMCP("weather_service")
 
-@mcp_weather_server.tool()
-async def get_weather(latitude: float, longitude: float) -> Dict[str, Any]:
+@mcp_weather_server.custom_route("/health", methods=["GET"])
+async def health_check(_: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
+
+@mcp_weather_server.tool
+def get_weather(latitude: float, longitude: float) -> Dict[str, Any]:
     """
     Get weather information for a given location.
     """
     try:
         return generate_weather(latitude, longitude)
     except Exception as e:
-        logger.error(f"Error retrieving weather information: {str(e)}")
+        logger.error(f"Error retrieving weather information: {e}")
         raise
 
-@mcp_weather_server.tool()
-async def get_forecast(latitude: float, longitude: float, days: int = 3) -> List[Dict[str, Any]]:
+@mcp_weather_server.tool
+def get_forecast(latitude: float, longitude: float, days: int = 3) -> List[Dict[str, Any]]:
     """
     Get weather forecast for a given location.
     """
     try:
         return generate_forecast(latitude, longitude, days)
     except Exception as e:
-        logger.error(f"Error retrieving weather forecast: {str(e)}")
+        logger.error(f"Error retrieving weather forecast: {e}")
         raise
 
-async def start_weather_server(host: str = "0.0.0.0", port: int = 8001):
+def start_weather_server(host: str | None = None, port: int = 8001):
     """
     Initialize and start the weather MCP server.
     """
+    if host is None:
+        host = "127.0.0.1"
     logger.info(f"Starting Weather MCP server on {host}:{port}")
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+    mcp_weather_server.run(transport="http", host=host, port=port, path="/mcp")
+    logger.info(f"Weather MCP server exited on {host}:{port}")
 
-    if loop and loop.is_running():
-        logger.warning("AsyncIO loop already running – launching Weather MCP server in background")
-        loop.create_task(mcp_weather_server.run_async(transport="sse", host=host, port=port))
-    else:
-        await mcp_weather_server.run_async(transport="sse", host=host, port=port)
-    logger.info("Weather MCP server started successfully")
 

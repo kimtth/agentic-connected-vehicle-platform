@@ -8,6 +8,8 @@ from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
 from utils.vehicle_object_utils import find_vehicle, extract_location
+from models.command import Command  # NEW
+from models.notification import Notification  # NEW
 
 logger = get_logger(__name__)
 
@@ -39,7 +41,7 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle an emergency call request."""
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle needs emergency assistance.",
@@ -61,54 +63,49 @@ class SafetyEmergencyPlugin:
             location = extract_location(vehicle_status, vehicle)
 
             # Create emergency call command in Cosmos DB
-            command_id = (
-                f"emergency_call_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": command_id,
-                "vehicle_id": vid,
-                "command_type": "emergency_call",
-                "parameters": {
+            command_id = f"emergency_call_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=command_id,
+                vehicle_id=vid,
+                command_type="emergency_call",
+                parameters={
                     "location": location,
                     "timestamp": datetime.datetime.now().isoformat(),
-                    "call_type": "manual",
+                    "callType": "manual",
                 },
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "critical",
-            }
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="critical",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
-            await self.cosmos_client.create_command(command)
-
-            # Create a notification for the emergency call
             notification_id = str(uuid.uuid4())
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": notification_id,
-                "vehicle_id": vid,
-                "type": "emergency_call",
-                "message": "Emergency call initiated. Help is on the way.",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "critical",
-                "source": "system",
-                "action_required": True,
-                "action_url": f"/emergency/{notification_id}",
-            }
-
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=notification_id,
+                vehicle_id=vid,
+                type="emergency_call",
+                message="Emergency call initiated. Help is on the way.",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="critical",
+                source="system",
+                action_required=True,
+                action_url=f"/emergency/{notification_id}",
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 "Emergency call has been initiated. Help is on the way. "
                 "Stay on the line and follow any instructions from emergency services.",
                 data={
                     "action": "emergency_call",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "status": "initiated",
-                    "notification": notification,
+                    "notification": notification_obj.model_dump(by_alias=True),
                     "location": location,
-                    "command_id": command_id,
+                    "commandId": command_id,
                 },
             )
 
@@ -125,7 +122,7 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle a collision alert."""
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle was involved in the collision.",
@@ -148,54 +145,49 @@ class SafetyEmergencyPlugin:
             location = extract_location(vehicle_status, vehicle)
 
             # Create collision alert command in Cosmos DB
-            command_id = (
-                f"collision_alert_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": command_id,
-                "vehicle_id": vid,
-                "command_type": "collision_alert",
-                "parameters": {
+            command_id = f"collision_alert_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=command_id,
+                vehicle_id=vid,
+                command_type="collision_alert",
+                parameters={
                     "location": location,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "severity": "high",
                 },
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "critical",
-            }
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="critical",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
-            await self.cosmos_client.create_command(command)
-
-            # Create a notification for the collision alert
             notification_id = str(uuid.uuid4())
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": notification_id,
-                "vehicle_id": vid,
-                "type": "collision_alert",
-                "message": "Collision detected. Emergency services have been notified.",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "critical",
-                "source": "vehicle",
-                "action_required": True,
-                "action_url": f"/emergency/{notification_id}",
-            }
-
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=notification_id,
+                vehicle_id=vid,
+                type="collision_alert",
+                message="Collision detected. Emergency services have been notified.",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="critical",
+                source="vehicle",
+                action_required=True,
+                action_url=f"/emergency/{notification_id}",
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 "I've detected a collision and notified emergency services. "
                 "Are you okay? Do you need any immediate assistance?",
                 data={
                     "action": "collision_alert",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "status": "processed",
-                    "notification": notification,
+                    "notification": notification_obj.model_dump(by_alias=True),
                     "location": location,
-                    "command_id": command_id,
+                    "commandId": command_id,
                 },
             )
 
@@ -212,7 +204,7 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle a theft notification."""
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you believe has been stolen.",
@@ -235,54 +227,49 @@ class SafetyEmergencyPlugin:
             location = extract_location(vehicle_status, vehicle)
 
             # Create theft notification command in Cosmos DB
-            command_id = (
-                f"theft_notification_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": command_id,
-                "vehicle_id": vid,
-                "command_type": "theft_notification",
-                "parameters": {
+            command_id = f"theft_notification_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=command_id,
+                vehicle_id=vid,
+                command_type="theft_notification",
+                parameters={
                     "location": location,
                     "timestamp": datetime.datetime.now().isoformat(),
-                    "reported_by": "owner",
+                    "reportedBy": "owner",
                 },
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "high",
-            }
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="high",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
-            await self.cosmos_client.create_command(command)
-
-            # Create a notification for the theft alert
             notification_id = str(uuid.uuid4())
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": notification_id,
-                "vehicle_id": vid,
-                "type": "theft_alert",
-                "message": "Potential vehicle theft detected. Authorities have been notified.",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "high",
-                "source": "system",
-                "action_required": True,
-                "action_url": f"/security/{notification_id}",
-            }
-
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=notification_id,
+                vehicle_id=vid,
+                type="theft_alert",
+                message="Potential vehicle theft detected. Authorities have been notified.",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="high",
+                source="system",
+                action_required=True,
+                action_url=f"/security/{notification_id}",
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 "I've recorded your vehicle theft report and notified the authorities. "
                 "The vehicle's location is being tracked, and you'll receive updates on the situation.",
                 data={
                     "action": "theft_notification",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "status": "processed",
-                    "notification": notification,
+                    "notification": notification_obj.model_dump(by_alias=True),
                     "location": location,
-                    "command_id": command_id,
+                    "commandId": command_id,
                 },
             )
 
@@ -299,7 +286,7 @@ class SafetyEmergencyPlugin:
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Handle an SOS request with immediate emergency response."""
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle needs SOS assistance.",
@@ -322,51 +309,47 @@ class SafetyEmergencyPlugin:
 
             # Create SOS command
             command_id = f"sos_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": command_id,
-                "vehicle_id": vid,
-                "command_type": "sos_request",
-                "parameters": {
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=command_id,
+                vehicle_id=vid,
+                command_type="sos_request",
+                parameters={
                     "location": location,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "priority": "critical",
                 },
-                "status": "sent",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "critical",
-            }
+                status="sent",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="critical",
+            )
+            await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
-            await self.cosmos_client.create_command(command)
-
-            # Create SOS notification
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": str(uuid.uuid4()),
-                "vehicle_id": vid,
-                "type": "sos_request",
-                "message": "SOS request activated. Emergency services have been contacted.",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "critical",
-                "source": "system",
-                "action_required": True,
-                "action_url": f"/emergency/sos/{command_id}",
-            }
-
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=str(uuid.uuid4()),
+                vehicle_id=vid,
+                type="sos_request",
+                message="SOS request activated. Emergency services have been contacted.",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="critical",
+                source="system",
+                action_required=True,
+                action_url=f"/emergency/sos/{command_id}",
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
             return self._format_response(
                 "SOS request has been activated. Emergency services have been contacted and "
                 "are being dispatched to your location. Please stay calm and wait for assistance.",
                 data={
                     "action": "sos_request",
-                    "vehicle_id": vid,
+                    "vehicleId": vid,
                     "status": "activated",
-                    "notification": notification,
+                    "notification": notification_obj.model_dump(by_alias=True),
                     "location": location,
-                    "command_id": command_id,
+                    "commandId": command_id,
                 },
             )
 
@@ -391,8 +374,7 @@ class SafetyEmergencyPlugin:
         Returns:
             Response with safety or emergency information or actions
         """
-        # Extract vehicle ID from context if available
-        vehicle_id = context.get("vehicle_id") if context else None
+        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
 
         # Simple keyword-based logic for demonstration
         query_lower = query.lower()
@@ -439,11 +421,11 @@ class SafetyEmergencyPlugin:
             )
 
     def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
+        """Get the capabilities of this agent (camelCase keys)."""
         return {
-            "emergency_call": "Initiate emergency calls to local emergency services",
-            "collision_alert": "Process collision alerts and notify emergency services",
-            "theft_notification": "Report vehicle theft and track vehicle location",
+            "emergencyCall": "Initiate emergency calls to local emergency services",
+            "collisionAlert": "Process collision alerts and notify emergency services",
+            "theftNotification": "Report vehicle theft and track vehicle location",
             "sos": "Send an SOS signal for immediate assistance",
         }
 

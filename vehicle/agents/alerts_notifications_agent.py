@@ -8,6 +8,7 @@ from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
 from utils.vehicle_object_utils import notification_to_dict
+from models.notification import Notification  # NEW
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,8 @@ class AlertsNotificationsPlugin:
     async def _handle_alert_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
+
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check alert status for.",
@@ -57,7 +59,7 @@ class AlertsNotificationsPlugin:
             if not alerts:
                 return self._format_response(
                     "There are no active alerts for your vehicle at this time.",
-                    data={"alerts": [], "vehicle_id": vid},
+                    data={"alerts": [], "vehicleId": vid},
                 )
             unack = [a for a in alerts if not a.get("read", a.get("Read", False))]
             text = "\n".join(
@@ -73,8 +75,8 @@ class AlertsNotificationsPlugin:
                 f"Alert status: {len(alerts)} alerts, {len(unack)} unacknowledged.\n\n{text}",
                 data={
                     "alerts": alerts,
-                    "unacknowledged_count": len(unack),
-                    "vehicle_id": vid,
+                    "unacknowledgedCount": len(unack),
+                    "vehicleId": vid,
                 },
             )
         except Exception as e:
@@ -88,7 +90,7 @@ class AlertsNotificationsPlugin:
     async def _handle_speed_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a speed alert for.",
@@ -109,27 +111,27 @@ class AlertsNotificationsPlugin:
         speed_limit = speed_limit or context.get("speed_limit") or 120.0
         try:
             await self.cosmos_client.ensure_connected()
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": str(uuid.uuid4()),
-                "vehicle_id": vid,
-                "type": "speed_alert",
-                "message": f"Speed alert set for {speed_limit} km/h",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "medium",
-                "source": "system",
-                "action_required": False,
-                "parameters": {"speed_limit": speed_limit},
-            }
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=str(uuid.uuid4()),
+                vehicle_id=vid,
+                type="speed_alert",
+                message=f"Speed alert set for {speed_limit} km/h",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="medium",
+                source="system",
+                action_required=False,
+                parameters={"speedLimit": speed_limit},
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
             return self._format_response(
                 f"I've set a speed alert for {speed_limit} km/h. You'll receive a notification if the vehicle exceeds this speed.",
                 data={
-                    "action": "set_speed_alert",
-                    "vehicle_id": vid,
-                    "speed_limit": speed_limit,
-                    "notification": notification,
+                    "action": "setSpeedAlert",
+                    "vehicleId": vid,
+                    "speedLimit": speed_limit,
+                    "notification": notification_obj.model_dump(by_alias=True),
                 },
             )
         except Exception as e:
@@ -143,7 +145,7 @@ class AlertsNotificationsPlugin:
     async def _handle_curfew_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a curfew alert for.",
@@ -154,28 +156,28 @@ class AlertsNotificationsPlugin:
         end = context.get("curfew_end") or "06:00"
         try:
             await self.cosmos_client.ensure_connected()
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": str(uuid.uuid4()),
-                "vehicle_id": vid,
-                "type": "curfew_alert",
-                "message": f"Curfew alert set from {start} to {end}",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "medium",
-                "source": "system",
-                "action_required": False,
-                "parameters": {"start_time": start, "end_time": end},
-            }
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=str(uuid.uuid4()),
+                vehicle_id=vid,
+                type="curfew_alert",
+                message=f"Curfew alert set from {start} to {end}",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="medium",
+                source="system",
+                action_required=False,
+                parameters={"startTime": start, "endTime": end},
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
             return self._format_response(
                 f"I've set a curfew alert from {start} to {end}. You'll receive a notification if the vehicle is used during these hours.",
                 data={
-                    "action": "set_curfew_alert",
-                    "vehicle_id": vid,
-                    "start_time": start,
-                    "end_time": end,
-                    "notification": notification,
+                    "action": "setCurfewAlert",
+                    "vehicleId": vid,
+                    "startTime": start,
+                    "endTime": end,
+                    "notification": notification_obj.model_dump(by_alias=True),
                 },
             )
         except Exception as e:
@@ -189,7 +191,7 @@ class AlertsNotificationsPlugin:
     async def _handle_battery_alert(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to set a battery alert for.",
@@ -208,27 +210,27 @@ class AlertsNotificationsPlugin:
         threshold = threshold or context.get("battery_threshold") or 20.0
         try:
             await self.cosmos_client.ensure_connected()
-            notification = {
-                "id": str(uuid.uuid4()),
-                "notification_id": str(uuid.uuid4()),
-                "vehicle_id": vid,
-                "type": "battery_alert",
-                "message": f"Battery alert set for {threshold}%",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "read": False,
-                "severity": "medium",
-                "source": "system",
-                "action_required": False,
-                "parameters": {"threshold": threshold},
-            }
-            await self.cosmos_client.create_notification(notification)
+            notification_obj = Notification(
+                id=str(uuid.uuid4()),
+                notification_id=str(uuid.uuid4()),
+                vehicle_id=vid,
+                type="battery_alert",
+                message=f"Battery alert set for {threshold}%",
+                timestamp=datetime.datetime.now().isoformat(),
+                read=False,
+                severity="medium",
+                source="system",
+                action_required=False,
+                parameters={"threshold": threshold},
+            )
+            await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
             return self._format_response(
                 f"I've set a battery alert for {threshold}%. You'll receive a notification if the battery level falls below this threshold.",
                 data={
-                    "action": "set_battery_alert",
-                    "vehicle_id": vid,
+                    "action": "setBatteryAlert",
+                    "vehicleId": vid,
                     "threshold": threshold,
-                    "notification": notification,
+                    "notification": notification_obj.model_dump(by_alias=True),
                 },
             )
         except Exception as e:
@@ -242,7 +244,7 @@ class AlertsNotificationsPlugin:
     async def _handle_notification_settings(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check notification settings for.",
@@ -258,24 +260,23 @@ class AlertsNotificationsPlugin:
                 if (n.get("type") or n.get("Type") or "").endswith("_alert")
             }
             settings = {
-                "speed_alerts": "speed_alert" in types,
-                "curfew_alerts": "curfew_alert" in types,
-                "battery_alerts": "battery_alert" in types,
-                "maintenance_alerts": "maintenance_alert" in types
-                or "service_alert" in types,
-                "geofence_alerts": "geofence_alert" in types,
-                "notification_channels": {"email": True, "push": True, "sms": False},
+                "speedAlerts": "speed_alert" in types,
+                "curfewAlerts": "curfew_alert" in types,
+                "batteryAlerts": "battery_alert" in types,
+                "maintenanceAlerts": ("maintenance_alert" in types) or ("service_alert" in types),
+                "geofenceAlerts": "geofence_alert" in types,
+                "notificationChannels": {"email": True, "push": True, "sms": False},
             }
+            # Fixed: use camelCase key 'notificationChannels' consistently
             enabled = [
-                k.replace("_", " ").title()
-                for k, v in settings.items()
-                if v and k != "notification_channels"
+                k for k, v in settings.items()
+                if v and k != "notificationChannels"
             ]
-            ch = [c for c, v in settings["notification_channels"].items() if v]
+            ch = [c for c, v in settings["notificationChannels"].items() if v]
             text = f"Enabled alerts: {', '.join(enabled) if enabled else 'None'}\nNotification channels: {', '.join(ch)}"
             return self._format_response(
                 f"Notification settings for your vehicle:\n\n{text}",
-                data={"settings": settings, "vehicle_id": vid},
+                data={"settings": settings, "vehicleId": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving notification settings: {e}")
@@ -297,9 +298,7 @@ class AlertsNotificationsPlugin:
         Returns:
             Response with alerts or notifications information or actions
         """
-        # Extract vehicle ID from context if available
-        vehicle_id = context.get("vehicle_id") if context else None
-
+        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
         # Simple keyword-based logic for demonstration
         query_lower = query.lower()
 
@@ -335,11 +334,11 @@ class AlertsNotificationsPlugin:
     def _get_capabilities(self) -> Dict[str, str]:
         """Get the capabilities of this agent."""
         return {
-            "alert_status": "Check the status of all vehicle alerts",
-            "speed_alert": "Set alerts for exceeding speed limits",
-            "curfew_alert": "Set alerts for vehicle use outside allowed hours",
-            "battery_alert": "Set alerts for low battery levels",
-            "notification_settings": "View and adjust notification settings",
+            "alertStatus": "Check the status of all vehicle alerts",
+            "speedAlert": "Set alerts for exceeding speed limits",
+            "curfewAlert": "Set alerts for vehicle use outside allowed hours",
+            "batteryAlert": "Set alerts for low battery levels",
+            "notificationSettings": "View and adjust notification settings",
         }
 
     def _format_response(

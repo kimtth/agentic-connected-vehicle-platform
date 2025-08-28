@@ -14,7 +14,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
 import socket
-import time
+import http.client  # added for health probing
+import multiprocessing
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -44,7 +45,11 @@ from dotenv import load_dotenv
 from importlib import import_module
 from azure.azure_auth import AzureADMiddleware
 from fastapi import Request
-from azure.cosmos_db import get_cosmos_client 
+from azure.cosmos_db import get_cosmos_client
+from plugin.mcp_weather_server import start_weather_server
+from plugin.mcp_traffic_server import start_traffic_server
+from plugin.mcp_poi_server import start_poi_server
+from plugin.mcp_navigation_server import start_navigation_server
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -70,7 +75,7 @@ configure_logging(log_level)
 
 # Track MCP processes for graceful shutdown
 MCP_PROCESSES = []
-_SERVER_INSTANCE_STARTED = False  # Add flag to prevent multiple startups
+_SERVER_INSTANCE_STARTED = False
 
 
 def _stop_mcp_processes(timeout: float = 5.0):
@@ -102,7 +107,7 @@ def _cleanup_at_exit():
         _stop_mcp_processes()
     except Exception:
         pass
-    
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -140,7 +145,6 @@ async def lifespan(app):
             logger.debug("Full import traceback for router '%s'", name, exc_info=True)
 
     yield
-
     logger.info("Shutting down the application...")
     try:
         if hasattr(client, "close"):
@@ -156,7 +160,8 @@ async def lifespan(app):
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
     finally:
-        _stop_mcp_processes()
+        if os.getenv("ENABLE_MCP", "true").lower() == "true":
+            _stop_mcp_processes()
 
 
 app = FastAPI(title="Connected Car Platform", lifespan=lifespan)
@@ -247,7 +252,10 @@ def health_check():
     )
 
 
-@app.get("/api/vehicles/{vehicle_id}/command-history", response_model=list[CommandHistoryItem])
+@app.get(
+    "/api/vehicles/{vehicle_id}/command-history",
+    response_model=list[CommandHistoryItem],
+)
 async def get_vehicle_command_history(vehicle_id: str):
     """Get command history for a specific vehicle"""
     client = get_cosmos_client()
@@ -277,7 +285,9 @@ async def submit_command(command: Command, background_tasks: BackgroundTasks):
     client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
-        logger.warning("Cosmos DB not available, command will be processed without persistence")
+        logger.warning(
+            "Cosmos DB not available, command will be processed without persistence"
+        )
     command_id = str(uuid.uuid4())
     command.command_id = command_id
     command.status = "pending"
@@ -338,7 +348,10 @@ async def stream_vehicle_status(vehicle_id: str):
         client = get_cosmos_client()
         cosmos_connected = await client.ensure_connected()
         if not cosmos_connected:
-            error_status = {"error": "Database service unavailable", "vehicle_id": vehicle_id}
+            error_status = {
+                "error": "Database service unavailable",
+                "vehicle_id": vehicle_id,
+            }
             yield f"data: {json.dumps(error_status)}\n\n"
             return
         try:
@@ -347,7 +360,10 @@ async def stream_vehicle_status(vehicle_id: str):
                 yield f"data: {json.dumps(status)}\n\n"
         except Exception as e:
             logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
-            error_status = {"error": "Status streaming unavailable", "vehicle_id": vehicle_id}
+            error_status = {
+                "error": "Status streaming unavailable",
+                "vehicle_id": vehicle_id,
+            }
             yield f"data: {json.dumps(error_status)}\n\n"
         finally:
             # Ensure the async generator is properly closed to release underlying resources
@@ -465,7 +481,10 @@ async def update_service(vehicle_id: str, serviceId: str, service: Service):
 
 
 # Delete a service
-@app.delete("/api/vehicles/{vehicle_id}/services/{serviceId}", response_model=GenericDetailResponse)
+@app.delete(
+    "/api/vehicles/{vehicle_id}/services/{serviceId}",
+    response_model=GenericDetailResponse,
+)
 async def delete_service(vehicle_id: str, serviceId: str):
     client = get_cosmos_client()
     await client.ensure_connected()
@@ -488,7 +507,9 @@ async def update_vehicle_status(vehicle_id: str, status: VehicleStatus):
 
     # Ensure vehicleId in path matches the one in the status object
     if status.vehicle_id != vehicle_id:
-        raise HTTPException(status_code=400, detail="Vehicle ID in path does not match status object")
+        raise HTTPException(
+            status_code=400, detail="Vehicle ID in path does not match status object"
+        )
 
     # Convert status to dict for storage
     status_data = status.model_dump(by_alias=True)
@@ -581,7 +602,9 @@ async def process_command_async(command):
             updated_data={"status": "processing"},
         )
     except Exception as cosmos_error:
-        logger.warning(f"Failed to update command status in Cosmos DB: {str(cosmos_error)}")
+        logger.warning(
+            f"Failed to update command status in Cosmos DB: {str(cosmos_error)}"
+        )
     try:
         await client.update_command(
             command_id=command_id,
@@ -591,7 +614,9 @@ async def process_command_async(command):
             },
         )
     except Exception as cosmos_error:
-        logger.warning(f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}")
+        logger.warning(
+            f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}"
+        )
     try:
         notif = NotificationModel(
             id=str(uuid.uuid4()),
@@ -609,8 +634,11 @@ async def process_command_async(command):
         await client.create_notification(notif.model_dump())
 
     except Exception as cosmos_error:
-        logger.warning(f"Failed to create notification in Cosmos DB: {str(cosmos_error)}")
+        logger.warning(
+            f"Failed to create notification in Cosmos DB: {str(cosmos_error)}"
+        )
     logger.info(f"Successfully processed command {command_id} for vehicle {vehicle_id}")
+
 
 # Create a notification (for createNotification)
 @app.post("/api/notifications", response_model=CreateNotificationResponse)
@@ -623,14 +651,21 @@ async def create_notification(notification: dict):
 
 
 # Mark a notification as read (for markNotificationRead)
-@app.put("/api/notifications/{NotificationId}/read", response_model=MarkNotificationReadResponse)
+@app.put(
+    "/api/notifications/{NotificationId}/read",
+    response_model=MarkNotificationReadResponse,
+)
 async def mark_notification_read(NotificationId: str):
     client = get_cosmos_client()
     await client.ensure_connected()
     updated = await client.mark_notification_read(NotificationId)
     if not updated:
-        raise HTTPException(status_code=404, detail=f"Notification {NotificationId} not found")
-    return MarkNotificationReadResponse(id=NotificationId, status="marked_as_read", data=updated)
+        raise HTTPException(
+            status_code=404, detail=f"Notification {NotificationId} not found"
+        )
+    return MarkNotificationReadResponse(
+        id=NotificationId, status="marked_as_read", data=updated
+    )
 
 
 # Delete a notification (for deleteNotification)
@@ -639,105 +674,10 @@ async def delete_notification(NotificationId: str):
     client = get_cosmos_client()
     await client.ensure_connected()
     await client.delete_notification(NotificationId)
-    return GenericDetailResponse(detail=f"Notification {NotificationId} deleted successfully")
+    return GenericDetailResponse(
+        detail=f"Notification {NotificationId} deleted successfully"
+    )
 
-
-# Top-level entry points for multiprocessing
-def run_weather_process():
-    """Entry for MCP weather server."""
-    import sys
-    from pathlib import Path
-
-    # Add the project root to Python path for the subprocess
-    project_root = Path(__file__).parent
-    sys.path.insert(0, str(project_root))
-
-    try:
-        from plugin.mcp_weather_server import start_weather_server
-        import asyncio
-        logger = logging.getLogger(__name__)
-        logger.info("Weather MCP subprocess starting (pre-bind)")
-        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
-        asyncio.run(start_weather_server(host=base_host, port=8001))
-        logger.info("Weather MCP subprocess exited normally")
-    except Exception as e:
-        import traceback
-        logger = logging.getLogger(__name__)
-        logger.error(f"Weather server failed to start: {e}\n{traceback.format_exc()}")
-
-def run_traffic_process():
-    """Entry for MCP traffic server."""
-    import sys
-    from pathlib import Path
-
-    # Add the project root to Python path for the subprocess
-    project_root = Path(__file__).parent
-    sys.path.insert(0, str(project_root))
-
-    try:
-        from plugin.mcp_traffic_server import start_traffic_server
-        import asyncio
-        logger = logging.getLogger(__name__)
-        logger.info("Traffic MCP subprocess starting (pre-bind)")
-        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
-        asyncio.run(start_traffic_server(host=base_host, port=8002))
-        logger.info("Traffic MCP subprocess exited normally")
-    except Exception as e:
-        import traceback
-        logger = logging.getLogger(__name__)
-        logger.error(f"Traffic server failed to start: {e}\n{traceback.format_exc()}")
-
-def run_poi_process():
-    """Entry for MCP POI server."""
-    import sys
-    from pathlib import Path
-
-    # Add the project root to Python path for the subprocess
-    project_root = Path(__file__).parent
-    sys.path.insert(0, str(project_root))
-
-    try:
-        from plugin.mcp_poi_server import start_poi_server
-        import asyncio
-        logger = logging.getLogger(__name__)
-        logger.info("POI MCP subprocess starting (pre-bind)")
-        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
-        asyncio.run(start_poi_server(host=base_host, port=8003))
-        logger.info("POI MCP subprocess exited normally")
-    except Exception as e:
-        import traceback
-        logger = logging.getLogger(__name__)
-        logger.error(f"POI server failed to start: {e}\n{traceback.format_exc()}")
-
-def run_navigation_process():
-    """Entry for MCP navigation server."""
-    import sys
-    from pathlib import Path
-
-    # Add the project root to Python path for the subprocess
-    project_root = Path(__file__).parent
-    sys.path.insert(0, str(project_root))
-
-    try:
-        from plugin.mcp_navigation_server import start_navigation_server
-        import asyncio
-        logger = logging.getLogger(__name__)
-        logger.info("Navigation MCP subprocess starting (pre-bind)")
-        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
-        asyncio.run(start_navigation_server(host=base_host, port=8004))
-        logger.info("Navigation MCP subprocess exited normally")
-    except Exception as e:
-        import traceback
-        logger = logging.getLogger(__name__)
-        logger.error(f"Navigation server failed to start: {e}\n{traceback.format_exc()}")
-
-# MCP server configurations
-MCP_SERVER_CONFIG = [
-    ("weather", 8001, run_weather_process),
-    ("traffic", 8002, run_traffic_process),
-    ("poi", 8003, run_poi_process),
-    ("navigation", 8004, run_navigation_process),
-]
 
 def _is_port_open(host: str, port: int, timeout: float = 0.25) -> bool:
     """Check if a TCP port is accepting connections."""
@@ -749,16 +689,87 @@ def _is_port_open(host: str, port: int, timeout: float = 0.25) -> bool:
 
 
 def _collect_mcp_status() -> dict:
-    """Build current MCP service status map (running/starting/stopped)."""
-    host = os.environ.get("MCP_SERVER_HOST", "localhost")
-    status = {}
-    for name, port, _ in MCP_SERVER_CONFIG:
-        proc = next((p for p in MCP_PROCESSES if p.name == name), None)
-        if proc and proc.is_alive():
-            status[name] = "running" if _is_port_open(host, port) else "starting"
-        else:
-            status[name] = "stopped"
-    return status
+    """
+    Probe MCP sidecar health endpoints.
+    Returns dict with keys: weather, traffic, poi, navigation.
+    Status values: 'running', 'down', or 'disabled'.
+    """
+    if os.getenv("ENABLE_MCP", "true").lower() != "true":
+        return {k: "disabled" for k in ("weather", "traffic", "poi", "navigation")}
+
+    host = "127.0.0.1"
+    services = {
+        "weather": 8001,
+        "traffic": 8002,
+        "poi": 8003,
+        "navigation": 8004,
+    }
+    results: dict[str, str] = {}
+    for name, port in services.items():
+        status = "down"
+        if _is_port_open(host, port):
+            try:
+                conn = http.client.HTTPConnection(host, port, timeout=0.4)
+                conn.request("GET", "/health")
+                resp = conn.getresponse()
+                body = resp.read(256)  # small read
+                conn.close()
+                if resp.status == 200:
+                    # Accept plain OK or small JSON with status ok/OK
+                    try:
+                        txt = body.decode("utf-8", errors="ignore").strip()
+                        if not txt:
+                            pass
+                        elif txt.lower() == "ok":
+                            status = "running"
+                        else:
+                            # Try JSON
+                            try:
+                                parsed = json.loads(txt)
+                                s = str(parsed.get("status", "")).lower()
+                                if s == "ok":
+                                    status = "running"
+                            except Exception:
+                                # Non-JSON but contains OK token
+                                if "ok" in txt.lower():
+                                    status = "running"
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        results[name] = status
+    return results
+
+
+def _check_port_availability(host: str, port: int) -> None:
+    """Check if the specified port is available for binding.
+
+    Args:
+        host: Host address to bind to
+        port: Port number to check
+
+    Raises:
+        SystemExit: If port is already in use
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+    except OSError:
+        logger.error(
+            f"Port {port} is already in use. Another server instance may be running."
+        )
+        sys.exit(1)
+
+
+def _start_mcp_process(func, name: str):
+    """Start an MCP sidecar server in its own process and track it."""
+    try:
+        p = multiprocessing.Process(target=func, name=name, daemon=True)
+        p.start()
+        MCP_PROCESSES.append(p)
+        logger.info(f"Started {name} (PID {p.pid})")
+    except Exception as e:
+        logger.warning(f"Failed to start {name}: {e}")
 
 
 if __name__ == "__main__":
@@ -774,56 +785,16 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 8000))
 
     # Check if port is already in use
-    import socket
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-    except OSError:
-        logger.error(
-            f"Port {port} is already in use. Another server instance may be running."
-        )
-        sys.exit(1)
+    _check_port_availability(host, port)
 
     logger.info(f"Starting Connected Car Platform server at http://{host}:{port}")
     ENABLE_MCP = os.getenv("ENABLE_MCP", "true").lower() == "true"
-
-    # Launch MCP servers
     if ENABLE_MCP:
-        try:
-            from multiprocessing import Process, set_start_method
-
-            set_start_method("spawn", force=True)
-            for name, port_num, target in MCP_SERVER_CONFIG:
-                try:
-                    logger.info(f"Starting MCP ({name}) server on port {port_num}")
-                    p = Process(target=target, name=name, daemon=True)
-                    p.start()
-                    MCP_PROCESSES.append(p)
-                    logger.debug(f"{name.title()} MCP server PID: {p.pid}")
-                except Exception as e:
-                    logger.error(f"Failed to start {name} MCP server: {e}")
-
-            # Wait for readiness (ports open) with timeout
-            DEFAULT_MCP_HOST = os.environ.get("MCP_SERVER_HOST", "localhost")
-            timeout = float(os.environ.get("MCP_STARTUP_TIMEOUT", "15")) 
-            start = time.time()
-            pending = {name: port for name, port, _ in MCP_SERVER_CONFIG}
-            # small initial delay to let event loops spin up
-            time.sleep(0.5)
-            while pending and (time.time() - start) < timeout:
-                for name, port in list(pending.items()):
-                    if _is_port_open(DEFAULT_MCP_HOST, port):
-                        logger.info(f"MCP ({name}) ready on {DEFAULT_MCP_HOST}:{port}")
-                        pending.pop(name)
-                if pending:
-                    time.sleep(0.4)
-            for name in pending:
-                logger.warning(f"MCP ({name}) not responsive on port {pending[name]} after {timeout}s (host={DEFAULT_MCP_HOST})")
-        except Exception as e:
-            logger.error(f"Failed to start MCP servers: {e}")
-    else:
-        logger.info("MCP servers disabled")
+        logger.info("MCP integration enabled")
+        _start_mcp_process(start_weather_server, "mcp_weather")
+        _start_mcp_process(start_navigation_server, "mcp_navigation")
+        _start_mcp_process(start_traffic_server, "mcp_traffic")
+        _start_mcp_process(start_poi_server, "mcp_poi")
 
     # Start the FastAPI app with explicit configuration
     logger.info("Initializing FastAPI application...")

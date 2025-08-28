@@ -1,15 +1,20 @@
 from typing import Dict, Any
 from fastmcp import FastMCP
-import asyncio
-from utils.logging_config import get_logger  
-from plugin.mcp_mock_data import generate_directions  
+from utils.logging_config import get_logger
+from plugin.mcp_mock_data import generate_directions
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 
 logger = get_logger(__name__)
 mcp_navigation_server = FastMCP("navigation_service")
 
-@mcp_navigation_server.tool()
-async def get_directions(destination: str, latitude: float, longitude: float) -> Dict[str, Any]:
+@mcp_navigation_server.custom_route("/health", methods=["GET"])
+async def health_check(_: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
+
+@mcp_navigation_server.tool
+def get_directions(destination: str, latitude: float, longitude: float) -> Dict[str, Any]:
     """
     Get navigation directions for a given destination and start location.
     """
@@ -19,17 +24,12 @@ async def get_directions(destination: str, latitude: float, longitude: float) ->
         logger.error(f"Error retrieving directions: {e}")
         raise
 
-async def start_navigation_server(host: str = "0.0.0.0", port: int = 8004):
+def start_navigation_server(host: str | None = None, port: int = 8004):
     """
     Start the navigation MCP server.
     """
+    if host is None:
+        host = "127.0.0.1"
     logger.info(f"Starting Navigation MCP server on {host}:{port}")
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        loop.create_task(mcp_navigation_server.run_async(transport="sse", host=host, port=port))
-    else:
-        await mcp_navigation_server.run_async(transport="sse", host=host, port=port)
-    logger.info(f"Navigation MCP server is running on {host}:{port}")
+    mcp_navigation_server.run(transport="http", host=host, port=port, path="/mcp")
+    logger.info(f"Navigation MCP server exited on {host}:{port}")

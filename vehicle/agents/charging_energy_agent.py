@@ -9,6 +9,8 @@ from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
 from utils.vehicle_object_utils import find_vehicle, ensure_dict
+import random
+from models.command import Command  # NEW: model for command persistence
 
 logger = get_logger(__name__)
 
@@ -35,7 +37,7 @@ class ChargingEnergyPlugin:
     async def _handle_charging_stations(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you're using to search for charging stations.",
@@ -88,18 +90,18 @@ class ChargingEnergyPlugin:
                     nearby_stations.append(
                         {
                             "name": item.get("name", "Unknown Station"),
-                            "power_level": item.get("power_level", "Unknown"),
-                            "distance_km": round(distance, 1),
-                            "available": item.get("available_ports", 0) > 0,
+                            "powerLevel": item.get("powerLevel", "Unknown"),
+                            "distanceKm": round(distance, 1),
+                            "available": item.get("availablePorts", 0) > 0,
                             "provider": item.get("provider", "Unknown Network"),
-                            "cost_per_kwh": item.get("cost_per_kwh", 0.0),
-                            "connector_types": item.get("connector_types", []),
-                            "is_operational": item.get("is_operational", True),
+                            "costPerKwh": item.get("costPerKwh", 0.0),
+                            "connectorTypes": item.get("connectorTypes", []),
+                            "isOperational": item.get("isOperational", True),
                         }
                     )
 
-            # Sort by distance
-            nearby_stations.sort(key=lambda s: s["distance_km"])
+            # Sort by distance (fix key: was distance_km)
+            nearby_stations.sort(key=lambda s: s["distanceKm"])
 
             if not nearby_stations:
                 return self._format_response(
@@ -110,15 +112,15 @@ class ChargingEnergyPlugin:
             # Format the response
             stations_text = "\n".join(
                 [
-                    f"• {station['name']} - {station['distance_km']} km away, "
-                    f"{station['power_level']}, {'Available' if station['available'] else 'Occupied'}"
+                    f"• {station['name']} - {station['distanceKm']} km away, "
+                    f"{station['powerLevel']}, {'Available' if station['available'] else 'Occupied'}"
                     for station in nearby_stations
                 ]
             )
 
             return self._format_response(
                 f"I found {len(nearby_stations)} charging stations near you:\n\n{stations_text}",
-                data={"stations": nearby_stations, "vehicle_id": vid},
+                data={"stations": nearby_stations, "vehicleId": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving charging stations: {str(e)}")
@@ -131,7 +133,7 @@ class ChargingEnergyPlugin:
     async def _handle_charging_status(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check the charging status for.",
@@ -149,8 +151,8 @@ class ChargingEnergyPlugin:
                 )
 
             # Extract battery and engine status
-            battery_level = vehicle_status.get("Battery", 0)
-            engine_status = vehicle_status.get("EngineStatus", "off")
+            battery_level = vehicle_status.get("battery", 0)
+            engine_status = "on" if int(vehicle_status.get("engineTemp", "")) > 0 else "off"
 
             # Get vehicle details to check if it's electric
             vehicles = await self.cosmos_client.list_vehicles()
@@ -159,41 +161,29 @@ class ChargingEnergyPlugin:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
-            vehicle = ensure_dict(vehicle_obj)
-
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
-
-            if not is_electric:
-                return self._format_response(
-                    "This vehicle doesn't appear to be an electric vehicle. Charging status is not applicable.",
-                    success=False,
-                )
 
             # Determine if the vehicle is charging based on available data
-            # In a real implementation, there would be a dedicated charging status field
-            is_charging = engine_status == "off" and battery_level > vehicle.get(
-                "BatteryLevel", battery_level
-            )
+            is_charging = engine_status == "off" and battery_level > 0 and battery_level < 100
 
             charging_status = {
-                "is_charging": is_charging,
-                "battery_level": battery_level,
-                "time_remaining": 60 if is_charging else None,  # Estimated
-                "charging_power": 7.2 if is_charging else None,  # Default value
+                "isCharging": is_charging,
+                "batteryLevel": battery_level,
+                "timeRemaining": 60 if is_charging else None,  # Estimated
+                "chargingPower": 7.2 if is_charging else None,  # Default value
             }
 
-            if charging_status["is_charging"]:
+            if charging_status["isCharging"]:
                 response_text = (
-                    f"Your vehicle is currently charging. The battery level is {charging_status['battery_level']}%. "
-                    f"Estimated time to full charge: {charging_status['time_remaining']} minutes. "
-                    f"Current charging power: {charging_status['charging_power']} kW."
+                    f"Your vehicle is currently charging. The battery level is {charging_status['batteryLevel']}%. "
+                    f"Estimated time to full charge: {charging_status['timeRemaining']} minutes. "
+                    f"Current charging power: {charging_status['chargingPower']} kW."
                 )
             else:
-                response_text = f"Your vehicle is not currently charging. The battery level is {charging_status['battery_level']}%."
+                response_text = f"Your vehicle is not currently charging. The battery level is {charging_status['batteryLevel']}%."
 
             return self._format_response(
                 response_text,
-                data={"charging_status": charging_status, "vehicle_id": vid},
+                data={"chargingStatus": charging_status, "vehicleId": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving charging status: {str(e)}")
@@ -206,7 +196,7 @@ class ChargingEnergyPlugin:
     async def _handle_start_charging(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to start charging.",
@@ -224,36 +214,22 @@ class ChargingEnergyPlugin:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
-            vehicle = ensure_dict(vehicle_obj)
 
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
-
-            if not is_electric:
-                return self._format_response(
-                    "This vehicle doesn't appear to be an electric vehicle. Charging is not applicable.",
-                    success=False,
-                )
-
-            battery_level = (
-                vehicle_status.get("Battery", 0)
-                if vehicle_status
-                else vehicle.get("BatteryLevel", 0)
-            )
+            battery_level = vehicle_status.get("battery", 0)
 
             # Create charging command in Cosmos DB
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": f"charge-{str(uuid.uuid4())[:8]}",
-                "vehicle_id": vid,
-                "command_type": "start_charging",
-                "parameters": {},
-                "status": "pending",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "normal",
-            }
-
-            # Store in Cosmos DB
-            result = await self.cosmos_client.create_command(command)
+            await self.cosmos_client.ensure_connected()
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=f"charge-{str(uuid.uuid4())[:8]}",
+                vehicle_id=vid,
+                command_type="start_charging",
+                parameters={},
+                status="pending",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="normal",
+            )
+            result = await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             if result:
                 return self._format_response(
@@ -262,9 +238,9 @@ class ChargingEnergyPlugin:
                     f"about {(100 - battery_level) * 2} minutes at a standard charging rate.",
                     data={
                         "action": "start_charging",
-                        "vehicle_id": vid,
+                        "vehicleId": vid,
                         "status": "success",
-                        "command_id": command["command_id"],
+                        "commandId": command_obj.command_id,
                     },
                 )
             else:
@@ -273,7 +249,7 @@ class ChargingEnergyPlugin:
                     success=False,
                     data={
                         "action": "start_charging",
-                        "vehicle_id": vid,
+                        "vehicleId": vid,
                         "status": "failed",
                         "error": "Command processing failed",
                     },
@@ -289,7 +265,7 @@ class ChargingEnergyPlugin:
     async def _handle_stop_charging(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to stop charging.",
@@ -307,36 +283,22 @@ class ChargingEnergyPlugin:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
-            vehicle = ensure_dict(vehicle_obj)
 
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
-
-            if not is_electric:
-                return self._format_response(
-                    "This vehicle doesn't appear to be an electric vehicle. Charging control is not applicable.",
-                    success=False,
-                )
-
-            battery_level = (
-                vehicle_status.get("Battery", 0)
-                if vehicle_status
-                else vehicle.get("BatteryLevel", 0)
-            )
+            battery_level = vehicle_status.get("battery", 0)
 
             # Create stop charging command in Cosmos DB
-            command = {
-                "id": str(uuid.uuid4()),
-                "command_id": f"stop-charge-{str(uuid.uuid4())[:8]}",
-                "vehicle_id": vid,
-                "command_type": "stop_charging",
-                "parameters": {},
-                "status": "pending",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "normal",
-            }
-
-            # Store in Cosmos DB
-            result = await self.cosmos_client.create_command(command)
+            await self.cosmos_client.ensure_connected()
+            command_obj = Command(
+                id=str(uuid.uuid4()),
+                command_id=f"stop-charge-{str(uuid.uuid4())[:8]}",
+                vehicle_id=vid,
+                command_type="stop_charging",
+                parameters={},
+                status="pending",
+                timestamp=datetime.datetime.now().isoformat(),
+                priority="normal",
+            )
+            result = await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             if result:
                 return self._format_response(
@@ -344,9 +306,9 @@ class ChargingEnergyPlugin:
                     f"{battery_level}%.",
                     data={
                         "action": "stop_charging",
-                        "vehicle_id": vid,
+                        "vehicleId": vid,
                         "status": "success",
-                        "command_id": command["command_id"],
+                        "commandId": command_obj.command_id,
                     },
                 )
             else:
@@ -355,7 +317,7 @@ class ChargingEnergyPlugin:
                     success=False,
                     data={
                         "action": "stop_charging",
-                        "vehicle_id": vid,
+                        "vehicleId": vid,
                         "status": "failed",
                         "error": "Command processing failed",
                     },
@@ -371,7 +333,7 @@ class ChargingEnergyPlugin:
     async def _handle_energy_usage(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check energy usage for.",
@@ -388,15 +350,6 @@ class ChargingEnergyPlugin:
             if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
-                )
-            vehicle = ensure_dict(vehicle_obj)
-
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
-
-            if not is_electric:
-                return self._format_response(
-                    "This vehicle doesn't appear to be an electric vehicle. Energy usage metrics are not applicable.",
-                    success=False,
                 )
 
             # Get status history
@@ -416,16 +369,16 @@ class ChargingEnergyPlugin:
             # Calculate metrics based on available data
             # This is a simplified calculation for demonstration
             battery_levels = [
-                s.get("batteryLevel", 0) for s in statuses if "batteryLevel" in s
+                s.get("battery", 0) for s in statuses if "battery" in s
             ]
 
             if not battery_levels:
                 # No battery level data, provide default/estimated values
                 energy_usage = {
-                    "total_kWh": 18.5,  # Default estimate
-                    "avg_efficiency": 16.7,
-                    "regenerative_braking": 2.3,
-                    "cost_estimate": 4.62,
+                    "totalKwh": 18.5,  # Default estimate
+                    "avgEfficiency": 16.7,
+                    "regenerativeBraking": 2.3,
+                    "costEstimate": 4.62,
                 }
             else:
                 # Calculate rough energy usage from battery levels
@@ -459,29 +412,27 @@ class ChargingEnergyPlugin:
                     regen_kwh = total_kwh * 0.12
 
                     energy_usage = {
-                        "total_kWh": round(total_kwh, 1),
-                        "avg_efficiency": round(avg_efficiency, 1),
-                        "regenerative_braking": round(regen_kwh, 1),
-                        "cost_estimate": round(
-                            total_kwh * 0.25, 2
-                        ),  # Assuming $0.25/kWh
+                        "totalKwh": round(total_kwh, 1),
+                        "avgEfficiency": round(avg_efficiency, 1),
+                        "regenerativeBraking": round(regen_kwh, 1),
+                        "costEstimate": round(total_kwh * 0.25, 2),  # Assuming $0.25/kWh
                     }
                 else:
                     # Not enough data for calculation, use defaults
                     energy_usage = {
-                        "total_kWh": 18.5,
-                        "avg_efficiency": 16.7,
-                        "regenerative_braking": 2.3,
-                        "cost_estimate": 4.62,
+                        "totalKwh": 18.5,
+                        "avgEfficiency": 16.7,
+                        "regenerativeBraking": 2.3,
+                        "costEstimate": 4.62,
                     }
 
             return self._format_response(
                 f"Here's your energy usage summary:\n\n"
-                f"• Total energy used: {energy_usage['total_kWh']} kWh\n"
-                f"• Average efficiency: {energy_usage['avg_efficiency']} kWh/100 km\n"
-                f"• Energy recovered from regenerative braking: {energy_usage['regenerative_braking']} kWh\n"
-                f"• Estimated cost: ${energy_usage['cost_estimate']}",
-                data={"energy_usage": energy_usage, "vehicle_id": vid},
+                f"• Total energy used: {energy_usage['totalKwh']} kWh\n"
+                f"• Average efficiency: {energy_usage['avgEfficiency']} kWh/100 km\n"
+                f"• Energy recovered from regenerative braking: {energy_usage['regenerativeBraking']} kWh\n"
+                f"• Estimated cost: ${energy_usage['costEstimate']}",
+                data={"energyUsage": energy_usage, "vehicleId": vid},
             )
         except Exception as e:
             logger.error(f"Error retrieving energy usage: {str(e)}")
@@ -494,7 +445,7 @@ class ChargingEnergyPlugin:
     async def _handle_range_estimation(
         self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(vehicle_id)
+        vid = extract_vehicle_id(context, vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to estimate range for.",
@@ -514,26 +465,14 @@ class ChargingEnergyPlugin:
                 )
             vehicle = ensure_dict(vehicle_obj)
 
-            is_electric = vehicle.get("Features", {}).get("IsElectric", False)
-
-            if not is_electric:
-                return self._format_response(
-                    "This vehicle doesn't appear to be an electric vehicle. Range estimation is not applicable.",
-                    success=False,
-                )
-
-            battery_level = (
-                vehicle_status.get("Battery", 0)
-                if vehicle_status
-                else vehicle.get("BatteryLevel", 0)
-            )
+            battery_level = vehicle_status.get("battery", 0)
 
             # Calculate range based on battery level and vehicle model
             # In a real system, this would use the specific vehicle's efficiency data
 
             # Get vehicle brand and model
-            brand = vehicle.get("Brand", "")
-            model = vehicle.get("VehicleModel", "")
+            brand = vehicle.get("make", "")
+            model = vehicle.get("model", "")
 
             # Different range estimations based on vehicle type
             base_range = 450  # Default max range in km
@@ -559,20 +498,17 @@ class ChargingEnergyPlugin:
             nearest_station_km = await self._get_nearest_charging_station_distance(vid)
 
             range_data = {
-                "battery_level": battery_level,
-                "estimated_range_km": estimated_range_km,
-                "estimated_range_eco_km": estimated_range_eco_km,
-                "nearest_station_km": (
-                    nearest_station_km if nearest_station_km else "Unknown"
-                ),
+                "batteryLevel": battery_level,
+                "estimatedRangeKm": estimated_range_km,
+                "estimatedRangeEcoKm": estimated_range_eco_km,
+                "nearestStationKm": (nearest_station_km if nearest_station_km else "Unknown"),
             }
-
             return self._format_response(
-                f"Based on your current battery level of {range_data['battery_level']}%, "
-                f"your estimated range is {range_data['estimated_range_km']} km. "
-                f"In eco mode, you could potentially reach {range_data['estimated_range_eco_km']} km. "
-                f"The nearest charging station is {range_data['nearest_station_km']} km away.",
-                data={"range_data": range_data, "vehicle_id": vid},
+                f"Based on your current battery level of {range_data['batteryLevel']}%, "
+                f"your estimated range is {range_data['estimatedRangeKm']} km. "
+                f"In eco mode, you could potentially reach {range_data['estimatedRangeEcoKm']} km. "
+                f"The nearest charging station is {range_data['nearestStationKm']} km away.",
+                data={"rangeData": range_data, "vehicleId": vid},
             )
         except Exception as e:
             logger.error(f"Error estimating range: {str(e)}")
@@ -588,24 +524,18 @@ class ChargingEnergyPlugin:
 
         try:
             # Get vehicle status for location
-            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle = await self.cosmos_client.get_vehicle(vehicle_id)
 
-            if vehicle_status:
+            if vehicle:
                 # Check for location in status
-                if "location" in vehicle_status:
-                    return vehicle_status["location"]
+                if "lastLocation" in vehicle:
+                    return vehicle["lastLocation"]
 
-            # Try to get from vehicle data if not in status
-            vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("vehicle_id") == vehicle_id), None
-            )
-
-            if vehicle and "LastLocation" in vehicle:
+            if vehicle and "lastLocation" in vehicle:
                 # Convert to lowercase keys for consistency
                 return {
-                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
-                    "longitude": vehicle["LastLocation"].get("Longitude", 0),
+                    "latitude": vehicle["lastLocation"].get("latitude", 0),
+                    "longitude": vehicle["lastLocation"].get("longitude", 0),
                 }
 
             return {}
@@ -623,16 +553,19 @@ class ChargingEnergyPlugin:
 
             if not location:
                 return None
+            
+            # Dev: Generate random location (for testing)
+            async def _random_station_items():
+                for i in range(6):
+                    lat = location.get("latitude", 0) + random.uniform(-0.05, 0.05)
+                    lon = location.get("longitude", 0) + random.uniform(-0.05, 0.05)
+                    yield {
+                        "id": f"dev-{i}",
+                        "name": f"Dev Station {i+1}",
+                        "location": {"latitude": lat, "longitude": lon},
+                    }
 
-            # Query charging stations
-            charging_stations_container = self.cosmos_client.charging_stations_container
-            if not charging_stations_container:
-                return None
-
-            query = "SELECT * FROM c"
-            items = charging_stations_container.query_items(
-                query=query, enable_cross_partition_query=True
-            )
+            items = _random_station_items()
 
             # Find nearest station
             nearest_distance = None
@@ -669,8 +602,7 @@ class ChargingEnergyPlugin:
         Returns:
             Response with charging or energy information or actions
         """
-        # Extract vehicle ID from context if available
-        vehicle_id = context.get("vehicle_id") if context else None
+        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
 
         # Simple keyword-based logic for demonstration
         query_lower = query.lower()
@@ -712,13 +644,13 @@ class ChargingEnergyPlugin:
             )
 
     def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
+        """Get the capabilities of this agent (camelCase keys)."""
         return {
-            "charging_stations": "Find and navigate to nearby charging stations",
-            "charging_status": "Check the current charging status and battery level",
-            "charging_control": "Start or stop vehicle charging",
-            "energy_usage": "Track and analyze energy consumption",
-            "range_estimation": "Estimate remaining driving range",
+            "chargingStations": "Find and navigate to nearby charging stations",
+            "chargingStatus": "Check the current charging status and battery level",
+            "chargingControl": "Start or stop vehicle charging",
+            "energyUsage": "Track and analyze energy consumption",
+            "rangeEstimation": "Estimate remaining driving range",
         }
 
     def _format_response(

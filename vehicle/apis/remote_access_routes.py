@@ -32,13 +32,11 @@ async def _get_agent_manager():
 @router.post("/doors", response_model=ActionResponse)
 async def control_doors(
     vehicle_id: str,
-    request: DoorControlRequest
     request: DoorControlRequest,
     agent_manager = Depends(_get_agent_manager)
 ):
     """Lock or unlock vehicle doors remotely"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"{request.action} doors",
@@ -67,13 +65,11 @@ async def control_doors(
 @router.post("/engine", response_model=ActionResponse)
 async def control_engine(
     vehicle_id: str,
-    request: EngineControlRequest
     request: EngineControlRequest,
     agent_manager = Depends(_get_agent_manager)
 ):
     """Start or stop vehicle engine remotely"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"{request.action} engine",
@@ -101,13 +97,11 @@ async def control_engine(
 
 @router.post("/locate", response_model=ActionResponse)
 async def locate_vehicle(
-    vehicle_id: str
     vehicle_id: str,
     agent_manager = Depends(_get_agent_manager)
 ):
     """Activate horn and lights to locate vehicle"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": "locate vehicle",

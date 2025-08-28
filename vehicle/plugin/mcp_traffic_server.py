@@ -1,15 +1,22 @@
 from typing import Dict, Any
 from fastmcp import FastMCP
-import asyncio
-from utils.logging_config import get_logger  
-from plugin.mcp_mock_data import generate_traffic  
+from utils.logging_config import get_logger
+from plugin.mcp_mock_data import generate_traffic
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 
 logger = get_logger(__name__)
 mcp_traffic_server = FastMCP("traffic_service")
 
-@mcp_traffic_server.tool()
-async def get_traffic(route: str, latitude: float, longitude: float) -> Dict[str, Any]:
+
+@mcp_traffic_server.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
+
+
+@mcp_traffic_server.tool
+def get_traffic(route: str, latitude: float, longitude: float) -> Dict[str, Any]:
     """
     Get traffic information for a given route or location.
     """
@@ -19,17 +26,10 @@ async def get_traffic(route: str, latitude: float, longitude: float) -> Dict[str
         logger.error(f"Error retrieving traffic info: {e}")
         raise
 
-async def start_traffic_server(host: str = "0.0.0.0", port: int = 8002):
-    """
-    Start the traffic MCP server.
-    """
+
+def start_traffic_server(host: str | None = None, port: int = 8002):
+    if host is None:
+        host = "127.0.0.1"
     logger.info(f"Starting Traffic MCP server on {host}:{port}")
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        loop.create_task(mcp_traffic_server.run_async(transport="sse", host=host, port=port))
-    else:
-        await mcp_traffic_server.run_async(transport="sse", host=host, port=port)
-    logger.info(f"Traffic MCP server is running on {host}:{port}")
+    mcp_traffic_server.run(transport="http", host=host, port=port, path="/mcp")
+    logger.info(f"Traffic MCP server exited on {host}:{port}")

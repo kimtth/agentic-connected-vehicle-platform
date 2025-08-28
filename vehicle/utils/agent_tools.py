@@ -266,11 +266,11 @@ async def validate_command(command_id: str, command_type: str, parameters: Optio
         Validation results
     """
     valid_commands = {
-        "START_ENGINE": ["ignitionLevel"],
-        "STOP_ENGINE": [],
-        "LOCK_DOORS": ["doors"],
-        "UNLOCK_DOORS": ["doors"],
-        "ACTIVATE_CLIMATE": ["temperature", "fanSpeed"]
+        "start_engine": ["ignition_level"],
+        "stop_engine": [],
+        "lock_doors": ["doors"],
+        "unlock_doors": ["doors"],
+        "activate_climate": ["temperature", "fan_speed"]
     }
     
     if command_type not in valid_commands:
