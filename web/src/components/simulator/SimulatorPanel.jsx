@@ -71,10 +71,12 @@ const SimulatorPanel = ({ vehicleId }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [logs, setLogs] = useState([]);
   const [vehicleStatus, setVehicleStatus] = useState({
-    engineTemp: '56°C',
-    speed: '0 km/h',
-    batteryLevel: '82%',
-    odometer: '12,456 km'
+    engineTemp: null,
+    temperature: null,
+    speed: null,
+    battery: null,
+    oilRemaining: null,
+    odometer: null,
   });
   const [subscription, setSubscription] = useState(null);
   const [statusCheckInterval, setStatusCheckInterval] = useState(null);
@@ -101,21 +103,20 @@ const SimulatorPanel = ({ vehicleId }) => {
         const status = await fetchVehicleStatus(vehicleId);
         
         if (isMounted) {
-          const formattedStatus = {
-            engineTemp: `${status.Temperature}°C`,
-            speed: `${status.Speed} km/h`,
-            batteryLevel: `${status.Battery}%`,
-            odometer: status.Odometer ? `${status.Odometer} km` : 'N/A'
-          };
-          
-          setVehicleStatus(formattedStatus);
+          // Store raw numeric payload directly
+          setVehicleStatus({
+            engineTemp: status.engineTemp,
+            temperature: status.temperature,
+            speed: status.speed,
+            battery: status.battery,
+            oilRemaining: status.oilRemaining,
+            odometer: status.odometer,
+          });
           addLog('Status check completed successfully', 'success');
         }
       }
     } catch (error) {
-      if (isMounted) {
-        addLog(`Status check failed: ${error.message}`, 'error');
-      }
+      if (isMounted) addLog(`Status check failed: ${error.message}`, 'error');
     }
   }, [vehicleId, isConnected, addLog, isMounted]);
 
@@ -178,15 +179,14 @@ const SimulatorPanel = ({ vehicleId }) => {
         const initialStatus = await fetchVehicleStatus(vehicleId);
         
         if (isMounted) {
-          // Format the data for display
-          const formattedStatus = {
-            engineTemp: `${initialStatus.Temperature}°C`,
-            speed: `${initialStatus.Speed} km/h`,
-            batteryLevel: `${initialStatus.Battery}%`,
-            odometer: initialStatus.Odometer ? `${initialStatus.Odometer} km` : 'N/A'
-          };
-          
-          setVehicleStatus(formattedStatus);
+          setVehicleStatus({
+            engineTemp: initialStatus.engineTemp,
+            temperature: initialStatus.temperature,
+            speed: initialStatus.speed,
+            battery: initialStatus.battery,
+            oilRemaining: initialStatus.oilRemaining,
+            odometer: initialStatus.odometer,
+          });
           addLog('Vehicle status received successfully', 'success');
         }
       }
@@ -197,51 +197,40 @@ const SimulatorPanel = ({ vehicleId }) => {
           vehicleId,
           (newStatus) => {
             if (isMounted) {
-              // Update the status when changes are received
-              const updatedStatus = {
-                engineTemp: `${newStatus.Temperature}°C`,
-                speed: `${newStatus.Speed} km/h`,
-                batteryLevel: `${newStatus.Battery}%`,
-                odometer: newStatus.Odometer ? `${newStatus.Odometer} km` : 'N/A'
-              };
-              
-              setVehicleStatus(updatedStatus);
+              setVehicleStatus({
+                engineTemp: newStatus.engineTemp,
+                temperature: newStatus.temperature,
+                speed: newStatus.speed,
+                battery: newStatus.battery,
+                oilRemaining: newStatus.oilRemaining,
+                odometer: newStatus.odometer,
+              });
               addLog('Real-time status update received', 'info');
             }
           },
           (error) => {
-            if (isMounted) {
-              addLog(`Subscription error: ${error.message}`, 'error');
-            }
+            if (isMounted) addLog(`Subscription error: ${error.message}`, 'error');
           }
         );
-        
         if (isMounted) {
           setSubscription(newSubscription);
           addLog('Real-time connection established', 'success');
         }
       } catch (subscriptionError) {
-        if (isMounted) {
-          addLog(`Failed to establish real-time connection: ${subscriptionError.message}`, 'warning');
-        }
+        if (isMounted) addLog(`Failed to establish real-time connection: ${subscriptionError.message}`, 'warning');
       }
-
-      // Start status check interval using centralized configuration
       const interval = setInterval(performStatusCheck, INTERVALS.SIMULATOR_STATUS_CHECK);
       setStatusCheckInterval(interval);
       if (isMounted) {
         addLog(`Status check interval started (${INTERVALS.SIMULATOR_STATUS_CHECK / 1000} seconds)`, 'info');
       }
-      
     } catch (error) {
       if (isMounted) {
         addLog(`Failed to connect: ${error.message}`, 'error');
         setIsConnected(false);
       }
     } finally {
-      if (isMounted) {
-        setIsInitializing(false);
-      }
+      if (isMounted) setIsInitializing(false);
     }
   }, [vehicleId, addLog, performStatusCheck, cleanup, isInitializing, isMounted]);
 

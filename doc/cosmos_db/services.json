@@ -1,0 +1,22 @@
+{
+    "id": "f5a4b2eb-7a35-46f0-8b3b-efe2702ec187",
+    "vehicleId": "16d5ca70-9457-4e68-8783-c181dd68c4e2",
+    "serviceCode": "BRAKE_SERVICE",
+    "description": "Auto-generated test service",
+    "startDate": "2025-08-28T10:34:20.497176Z",
+    "endDate": "2025-08-28T10:34:20.497176Z",
+    "nextServiceDate": "2025-08-28T10:34:20.497176Z",
+    "mileage": 127567,
+    "nextServiceMileage": 59411,
+    "cost": 383.21,
+    "location": "Service Center 1",
+    "technician": "Tech A",
+    "invoiceNumber": "INV-96544",
+    "serviceStatus": "Completed",
+    "serviceType": "Repair",
+    "_rid": "S-5ZAPAtoooBAAAAAAAAAA==",
+    "_self": "dbs/S-5ZAA==/colls/S-5ZAPAtooo=/docs/S-5ZAPAtoooBAAAAAAAAAA==/",
+    "_etag": "\"d40067e4-0000-4d00-0000-68b030ad0000\"",
+    "_attachments": "attachments/",
+    "_ts": 1756377261
+}

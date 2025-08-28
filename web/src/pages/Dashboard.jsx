@@ -42,14 +42,14 @@ const Dashboard = ({ selectedVehicle }) => {
   const theme = useTheme();
   const navigate = useNavigate();
   const [vehicleStatus, setVehicleStatus] = useState({
-    engineTemp: '0°C',
-    speed: '0 km/h',
-    batteryLevel: '0%',
-    odometer: '0 km',
-    Speed: 0,
-    Battery: 0,
-    Temperature: 0,
-    OilRemaining: 0
+    speed: 0,
+    battery: 0,
+    temperature: 0,
+    engineTemp: 0,
+    oilRemaining: 0,
+    odometer: 0,
+    // engine: 'off', // added
+    timestamp: null
   });
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,27 +60,24 @@ const Dashboard = ({ selectedVehicle }) => {
       setLoading(false);
       return;
     }
-    const vehicleId = selectedVehicle.VehicleId || selectedVehicle.vehicleId;
-
+    const vehicleId = selectedVehicle.vehicleId;
     try {
       setLoading(true);
       setError(null);
-
       // Fetch status
       const status = await fetchVehicleStatus(vehicleId).catch(() => null);
       if (status) {
         setVehicleStatus({
-          engineTemp: `${status.Temperature || 0}°C`,
-          speed: `${status.Speed || 0} km/h`,
-          batteryLevel: `${status.Battery || 0}%`,
-          odometer: status.Odometer ? `${status.Odometer} km` : '0 km',
-          Speed: status.Speed || 0,
-          Battery: status.Battery || 0,
-          Temperature: status.Temperature || 0,
-          OilRemaining: status.OilRemaining || 0
+          speed: status.speed ?? 0,
+          battery: status.battery ?? 0,
+          temperature: status.temperature ?? 0,
+          engineTemp: status.engineTemp ?? status.temperature ?? 0,
+          oilRemaining: status.oilRemaining ?? 0,
+          odometer: status.odometer ?? 0,
+          // engine: status.engine ?? status.engineStatus ?? ((status.speed ?? 0) > 0 ? 'on' : 'off'), // added
+          timestamp: status.timestamp || new Date().toISOString()
         });
       }
-
       // Fetch notifications
       const notificationData = await fetchNotifications(vehicleId).catch(() => []);
       setNotifications(Array.isArray(notificationData) ? notificationData.slice(0, 5) : []);
@@ -107,16 +104,14 @@ const Dashboard = ({ selectedVehicle }) => {
   const quickStats = [
     {
       label: 'Current Speed',
-      value: vehicleStatus.speed,
-      rawValue: vehicleStatus.Speed,
+      rawValue: vehicleStatus.speed,
       icon: <SpeedIcon />,
       color: 'primary',
       unit: 'km/h'
     },
     {
       label: 'Battery Level',
-      value: vehicleStatus.batteryLevel,
-      rawValue: vehicleStatus.Battery,
+      rawValue: vehicleStatus.battery,
       icon: <BatteryIcon />,
       color: 'success',
       unit: '%',
@@ -124,16 +119,14 @@ const Dashboard = ({ selectedVehicle }) => {
     },
     {
       label: 'Engine Temp',
-      value: vehicleStatus.engineTemp,
-      rawValue: vehicleStatus.Temperature,
+      rawValue: vehicleStatus.engineTemp,
       icon: <TempIcon />,
       color: 'warning',
       unit: '°C'
     },
     {
       label: 'Oil Level',
-      value: `${vehicleStatus.OilRemaining}%`,
-      rawValue: vehicleStatus.OilRemaining,
+      rawValue: vehicleStatus.oilRemaining,
       icon: <LocalGasStation />,
       color: 'info',
       unit: '%',
@@ -181,7 +174,7 @@ const Dashboard = ({ selectedVehicle }) => {
           Vehicle Dashboard
         </Typography>
         <Typography variant="subtitle1" color="text.secondary">
-          {selectedVehicle.Make} {selectedVehicle.Model} ({selectedVehicle.VehicleId || selectedVehicle.vehicleId})
+          {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.vehicleId})
         </Typography>
         <Box sx={{ mt: 2 }}>
           <Button
@@ -225,7 +218,7 @@ const Dashboard = ({ selectedVehicle }) => {
                       />
                     )}
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      Last updated: {new Date().toLocaleTimeString()}
+                      Last updated: {vehicleStatus.timestamp ? new Date(vehicleStatus.timestamp).toLocaleTimeString() : '-'}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -344,7 +337,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     fullWidth
                     variant="outlined"
                     startIcon={<EnergySavingsLeaf />}
-                    onClick={() => navigate(`/agent-chat?query=enable eco mode&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                    onClick={() => navigate(`/agent-chat?query=enable eco mode&vehicleId=${selectedVehicle.vehicleId}`)}
                   >
                     Eco Mode
                   </Button>
@@ -354,7 +347,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     fullWidth
                     variant="outlined"
                     startIcon={<AcUnit />}
-                    onClick={() => navigate(`/agent-chat?query=adjust climate control&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                    onClick={() => navigate(`/agent-chat?query=adjust climate control&vehicleId=${selectedVehicle.vehicleId}`)}
                   >
                     Climate Control
                   </Button>
@@ -364,7 +357,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     fullWidth
                     variant="outlined"
                     startIcon={<SpeedIcon />}
-                    onClick={() => navigate(`/agent-chat?query=run vehicle diagnostics&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                    onClick={() => navigate(`/agent-chat?query=run vehicle diagnostics&vehicleId=${selectedVehicle.vehicleId}`)}
                   >
                     Diagnostics
                   </Button>
@@ -392,7 +385,7 @@ const Dashboard = ({ selectedVehicle }) => {
                       fullWidth
                       variant="outlined"
                       color="warning"
-                      onClick={() => navigate(`/agent-chat?query=initiate emergency call&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                      onClick={() => navigate(`/agent-chat?query=initiate emergency call&vehicleId=${selectedVehicle.vehicleId}`)}
                       sx={{ color: 'warning.main', borderColor: 'warning.main' }}
                     >
                       Emergency Call
@@ -403,7 +396,7 @@ const Dashboard = ({ selectedVehicle }) => {
                       fullWidth
                       variant="outlined"
                       color="error"
-                      onClick={() => navigate(`/agent-chat?query=activate SOS&vehicleId=${selectedVehicle.VehicleId || selectedVehicle.vehicleId}`)}
+                      onClick={() => navigate(`/agent-chat?query=activate SOS&vehicleId=${selectedVehicle.vehicleId}`)}
                       sx={{ color: 'error.main', borderColor: 'error.main' }}
                     >
                       SOS Assistance

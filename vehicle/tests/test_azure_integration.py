@@ -32,7 +32,7 @@ async def test_vehicle():
     """Create a test vehicle for use in tests"""
     # Create test vehicle
     vehicle_data = {
-        "VehicleId": "test-vehicle-1",
+        "vehicle_id": "test-vehicle-1",
         "Make": "Tesla",
         "Model": "Model 3",
         "Year": 2023,
@@ -71,10 +71,10 @@ async def test_vehicle_endpoints(test_vehicle):
     
     # Check if test vehicle is in the list
     vehicles = response.json()
-    assert any(v["VehicleId"] == test_vehicle["VehicleId"] for v in vehicles)
+    assert any(v["vehicle_id"] == test_vehicle["vehicle_id"] for v in vehicles)
     
     # Get vehicle status
-    response = client.get(f"/vehicle/{test_vehicle['VehicleId']}/status")
+    response = client.get(f"/vehicle/{test_vehicle['vehicle_id']}/status")
     assert response.status_code == 200
     assert "Battery" in response.json()
 
@@ -83,7 +83,7 @@ async def test_command_flow():
     """Test the command flow"""
     # Create a test command
     command = {
-        "vehicleId": "test-vehicle-1",
+        "vehicle_id": "test-vehicle-1",
         "commandType": "START_ENGINE",
         "payload": {}
     }
@@ -121,11 +121,11 @@ async def test_service_flow(test_vehicle):
     }
     
     # Add service to vehicle
-    response = client.post(f"/vehicle/{test_vehicle['VehicleId']}/service", json=service)
+    response = client.post(f"/vehicle/{test_vehicle['vehicle_id']}/service", json=service)
     assert response.status_code == 200
     
     # List services for vehicle
-    response = client.get(f"/vehicle/{test_vehicle['VehicleId']}/services")
+    response = client.get(f"/vehicle/{test_vehicle['vehicle_id']}/services")
     assert response.status_code == 200
     
     # Check if our service is in the list

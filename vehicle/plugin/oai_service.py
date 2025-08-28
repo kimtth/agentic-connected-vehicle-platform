@@ -1,9 +1,7 @@
 import os
 from typing import Any
-from semantic_kernel.connectors.ai.open_ai import (
-    AzureChatCompletion,
-    OpenAIChatCompletion,
-)
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 
 
 def create_chat_service() -> Any:
@@ -27,4 +25,3 @@ def create_chat_service() -> Any:
         ai_model_id=os.getenv("OPENAI_CHAT_MODEL_NAME"),
         service_id="openai",
     )
-

@@ -258,34 +258,6 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       </ScrollableContent>
       
       <CustomCommandSection>
-        <Typography variant="subtitle2" gutterBottom>
-          <Box component="i" className="fas fa-code" sx={{ mr: 1 }} />
-          Custom Command
-        </Typography>
-        <TextField
-          fullWidth
-          multiline
-          rows={2}
-          placeholder="Enter custom command..."
-          value={customCommand}
-          onChange={(e) => setCustomCommand(e.target.value)}
-          margin="dense"
-          variant="outlined"
-          size="small"
-        />
-        <Button
-          fullWidth
-          variant="contained"
-          color="primary"
-          onClick={handleCustomCommand}
-          disabled={!isConnected || isSending}
-          sx={{ mt: 0.5 }}
-          size="small"
-          startIcon={<Box component="i" className="fas fa-paper-plane" />}
-        >
-          Send Custom Command
-        </Button>
-
         {vehicleId && (
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
             Target: Vehicle {vehicleId}

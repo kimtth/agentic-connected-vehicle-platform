@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional 
 import uuid
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
@@ -73,13 +73,13 @@ class VehicleFeatureControlPlugin(BasePlugin):
             # Create command
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": f"lights_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vid,
-                "commandType": f"LIGHTS_{action.upper()}",
+                "command_id": f"lights_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "vehicle_id": vid,
+                "command_type": f"lights_{action}",
                 "parameters": {"light_type": light_type},
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             await self.cosmos_client.create_command(command)
@@ -90,7 +90,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "action": f"lights_{action}",
                     "vehicle_id": vid,
                     "light_type": light_type,
-                    "command_id": command["commandId"],
+                    "command_id": command["command_id"],
                 },
             )
 
@@ -144,17 +144,17 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": f"climate_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vid,
-                "commandType": "CLIMATE_CONTROL",
+                "command_id": f"climate_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "vehicle_id": vid,
+                "command_type": "climate_control",
                 "parameters": {
                     "action": action,
                     "temperature": temperature,
                     "auto": True
                 },
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             await self.cosmos_client.create_command(command)
@@ -166,7 +166,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "vehicle_id": vid,
                     "temperature": temperature,
                     "mode": action,
-                    "command_id": command["commandId"],
+                    "command_id": command["command_id"],
                 },
             )
 
@@ -208,13 +208,13 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": f"windows_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "vehicleId": vid,
-                "commandType": f"WINDOWS_{action.upper()}",
+                "command_id": f"windows_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "vehicle_id": vid,
+                "command_type": f"windows_{action}",
                 "parameters": {"windows": window_position},
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             await self.cosmos_client.create_command(command)
@@ -228,7 +228,7 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "action": f"windows_{action}",
                     "vehicle_id": vid,
                     "windows": window_position,
-                    "command_id": command["commandId"],
+                    "command_id": command["command_id"],
                 },
             )
 
@@ -266,3 +266,12 @@ class VehicleFeatureControlPlugin(BasePlugin):
             "climate_control": "Adjust temperature, heating, and air conditioning",
             "windows_control": "Open and close vehicle windows",
         }
+
+    def _format_response(
+        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        resp = {"message": message, "success": success}
+        if data:
+            resp["data"] = data
+        return resp
+

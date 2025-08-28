@@ -27,30 +27,63 @@ const IconWrapper = styled(Box)(({ theme }) => ({
   color: theme.palette.primary.main,
 }));
 
+// Simplified: payload already provides raw numbers
+const num = (v) => {
+  if (v === 0) return 0;
+  return (v === undefined || v === null) ? null : (typeof v === 'number' ? v : (isNaN(Number(v)) ? null : Number(v)));
+};
+
 const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
+  const engineTempValue = num(vehicleStatus?.engineTemp);
+  const speedValue = num(vehicleStatus?.speed);
+  const batteryValue = num(vehicleStatus?.battery); // removed batteryLevel fallback
+  const odometerValue = num(vehicleStatus?.odometer);
+  const cabinTempValue = num(vehicleStatus?.temperature); 
+  const oilRemainingValue = num(vehicleStatus?.oilRemaining); 
+
+  const engineColor = engineTempValue == null
+    ? 'primary.main'
+    : engineTempValue >= 100
+      ? 'error.main'
+      : engineTempValue >= 90
+        ? 'warning.main'
+        : 'primary.main';
+
   const metrics = [
     { 
-      label: 'Engine Temperature', 
-      value: vehicleStatus?.engineTemp || 'N/A',
-      icon: <Thermostat fontSize="large" />, 
-      color: vehicleStatus?.engineTemp?.includes('85') ? 'error.main' : 'primary.main'
+      label: 'Engine Temperature',
+      value: engineTempValue != null ? `${engineTempValue}°C` : 'N/A',
+      icon: <Thermostat fontSize="large" />,
+      color: engineColor
     },
     { 
-      label: 'Speed', 
-      value: vehicleStatus?.speed || 'N/A',
-      icon: <SpeedOutlined fontSize="large" />, 
+      label: 'Cabin Temperature',
+      value: cabinTempValue != null ? `${cabinTempValue}°C` : 'N/A',
+      icon: <Thermostat fontSize="large" />,
       color: 'primary.main'
     },
     { 
-      label: 'Battery Level', 
-      value: vehicleStatus?.batteryLevel || 'N/A',
-      icon: <BatteryChargingFullOutlined fontSize="large" />, 
+      label: 'Speed',
+      value: speedValue != null ? `${speedValue} km/h` : 'N/A',
+      icon: <SpeedOutlined fontSize="large" />,
       color: 'primary.main'
     },
     { 
-      label: 'Odometer', 
-      value: vehicleStatus?.odometer || 'N/A',
-      icon: <Timeline fontSize="large" />, 
+      label: 'Battery Level',
+      value: batteryValue != null ? `${batteryValue}%` : 'N/A',
+      icon: <BatteryChargingFullOutlined fontSize="large" />,
+      color: 'primary.main'
+    },
+    { 
+      label: 'Oil Remaining',
+      value: oilRemainingValue != null ? `${oilRemainingValue}%` : 'N/A',
+      icon: <Timeline fontSize="large" />,
+      color: 'primary.main'
+    },
+    { 
+      label: 'Odometer',
+      value: odometerValue != null ? `${odometerValue} km` : 'N/A',
+      icon: <Timeline fontSize="large" />,
       color: 'primary.main'
     }
   ];
@@ -96,3 +129,4 @@ const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
 };
 
 export default VehicleMetrics;
+ 

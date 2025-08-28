@@ -29,7 +29,7 @@ export const controlLights = async (vehicleId, lightType, action) => {
     return await retryRequest(async () => {
       const response = await api.post(
         `/api/vehicles/${vehicleId}/features/lights`,
-        { light_type: lightType, action }
+        { lightType, action } // CHANGED to camelCase
       );
       return response.data;
     });
@@ -41,12 +41,13 @@ export const controlLights = async (vehicleId, lightType, action) => {
   }
 };
 
-export const controlClimate = async (vehicleId, temperature, action = 'set_temperature', auto = true) => {
+export const controlClimate = async (vehicleId, temperature, action = 'setTemperature', auto = true) => {
+  // action default adjusted to camelCase semantic
   try {
     return await retryRequest(async () => {
       const response = await api.post(
         `/api/vehicles/${vehicleId}/features/climate`,
-        { temperature, action, auto }
+        { temperature, action, auto } // already camelCase
       );
       return response.data;
     });
@@ -148,7 +149,7 @@ export const emergencyCall = async (vehicleId, emergencyType = 'general') => {
     return await retryRequest(async () => {
       const response = await api.post(
         `/api/vehicles/${vehicleId}/emergency/call`,
-        { emergency_type: emergencyType }
+        { emergencyType } // CHANGED from emergency_type
       );
       return response.data;
     });
@@ -159,13 +160,12 @@ export const emergencyCall = async (vehicleId, emergencyType = 'general') => {
     throw new Error(error.response?.data?.detail || 'Failed to initiate emergency call');
   }
 };
-
 export const reportCollision = async (vehicleId, severity = 'unknown', location = null) => {
   try {
     return await retryRequest(async () => {
       const response = await api.post(
         `/api/vehicles/${vehicleId}/emergency/collision`,
-        { severity, location }
+        { severity, location } // already camelCase
       );
       return response.data;
     });
@@ -176,13 +176,12 @@ export const reportCollision = async (vehicleId, severity = 'unknown', location 
     throw new Error(error.response?.data?.detail || 'Failed to report collision');
   }
 };
-
 export const reportTheft = async (vehicleId, description = null, lastSeenLocation = null) => {
   try {
     return await retryRequest(async () => {
       const response = await api.post(
         `/api/vehicles/${vehicleId}/emergency/theft`,
-        { description, last_seen_location: lastSeenLocation }
+        { description, lastSeenLocation } // CHANGED from last_seen_location
       );
       return response.data;
     });

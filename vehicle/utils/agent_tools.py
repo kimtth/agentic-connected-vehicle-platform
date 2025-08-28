@@ -37,18 +37,17 @@ async def get_vehicles_from_cosmos() -> List[Dict[str, Any]]:
         formatted_vehicles = []
         for vehicle in vehicles:
             formatted_vehicles.append({
-                "brand": vehicle.get("Brand", ""),
-                "model": vehicle.get("VehicleModel", ""),
-                "year": vehicle.get("Year", 0),
-                "region": vehicle.get("Region", "North America"),
-                "vehicle_id": vehicle.get("VehicleId", ""),
-                "vin": vehicle.get("VIN", ""),
-                "mileage": vehicle.get("Mileage", 0),
-                "status": vehicle.get("Status", "Active"),
-                "is_electric": vehicle.get("Features", {}).get("IsElectric", False),
-                "fuel_level": vehicle.get("FuelLevel", 0),
-                "battery_level": vehicle.get("BatteryLevel", 0),
-                "last_location": vehicle.get("LastLocation", {})
+                "brand": vehicle.get("brand", ""),
+                "model": vehicle.get("model", ""),
+                "year": vehicle.get("year", 0),
+                "region": vehicle.get("region", "North America"),
+                "vehicleId": vehicle.get("vehicleId", ""),
+                "mileage": vehicle.get("mileage", 0),
+                "status": vehicle.get("status", "active"),
+                "isElectric": vehicle.get("features", {}).get("isElectric", False),
+                "fuelLevel": vehicle.get("fuelLevel", 0),
+                "batteryLevel": vehicle.get("batteryLevel", 0),
+                "lastLocation": vehicle.get("lastLocation", {})
             })
         
         return formatted_vehicles
@@ -127,14 +126,14 @@ async def recommend_services(vehicle_id: str,
     try:
         # Try to get all vehicles and find the one with matching ID
         all_vehicles = await get_vehicles_from_cosmos()
-        vehicle = next((v for v in all_vehicles if v.get("vehicle_id") == vehicle_id), None)
+        vehicle = next((v for v in all_vehicles if v.get("vehicleId") == vehicle_id), None)
         
         # If vehicle found and mileage not provided, use vehicle mileage
         if vehicle and not mileage:
             mileage = vehicle.get("mileage", 0)
             
         # Check if vehicle is electric
-        is_electric = vehicle.get("is_electric", False) if vehicle else False
+        is_electric = vehicle.get("isElectric", False) if vehicle else False
     except Exception as e:
         logger.error(f"Error getting vehicle details: {str(e)}")
         # Continue with provided mileage
@@ -153,14 +152,14 @@ async def recommend_services(vehicle_id: str,
             if service_history:
                 # Sort by service date descending
                 sorted_services = sorted(
-                    service_history, 
-                    key=lambda s: s.get("StartDate", ""), 
+                    service_history,
+                    key=lambda s: s.get("startDate", ""),
                     reverse=True
                 )
                 
                 # Get date from most recent service
                 if sorted_services:
-                    last_service_str = sorted_services[0].get("StartDate", "")
+                    last_service_str = sorted_services[0].get("startDate", "")
                     try:
                         last_service = datetime.datetime.fromisoformat(last_service_str)
                     except (ValueError, TypeError):
@@ -179,7 +178,7 @@ async def recommend_services(vehicle_id: str,
         
         # Check if this service type exists in service history
         matching_services = [s for s in service_history 
-                            if service_type.lower() in s.get("ServiceCode", "").lower()]
+                             if service_type.lower() in s.get("serviceCode", "").lower()]
         
         # Get the most recent matching service
         last_matching_service = None
@@ -187,14 +186,14 @@ async def recommend_services(vehicle_id: str,
             # Find most recent service of this type
             sorted_matching = sorted(
                 matching_services,
-                key=lambda s: s.get("StartDate", ""),
+                key=lambda s: s.get("startDate", ""),
                 reverse=True
             )
             if sorted_matching:
                 last_matching_service = sorted_matching[0]
                 
                 # Extract date and mileage from last service
-                last_service_str = last_matching_service.get("StartDate", "")
+                last_service_str = last_matching_service.get("startDate", "")
                 last_service_mileage = last_matching_service.get("mileage", 0)
                 
                 try:
@@ -243,12 +242,12 @@ async def recommend_services(vehicle_id: str,
                 cost = 75
             
             recommended.append({
-                "service_type": service_type,
+                "serviceType": service_type,
                 "priority": "high" if "brake" in service_type or "battery" in service_type else "medium",
                 "reason": reason,
-                "service_details": {
-                    "estimated_cost": f"${cost}",
-                    "estimated_duration": "1-2 hours"
+                "serviceDetails": {
+                    "estimatedCost": f"${cost}",
+                    "estimatedDuration": "1-2 hours"
                 }
             })
     
@@ -267,18 +266,18 @@ async def validate_command(command_id: str, command_type: str, parameters: Optio
         Validation results
     """
     valid_commands = {
-        "START_ENGINE": ["ignition_level"],
+        "START_ENGINE": ["ignitionLevel"],
         "STOP_ENGINE": [],
         "LOCK_DOORS": ["doors"],
         "UNLOCK_DOORS": ["doors"],
-        "ACTIVATE_CLIMATE": ["temperature", "fan_speed"]
+        "ACTIVATE_CLIMATE": ["temperature", "fanSpeed"]
     }
     
     if command_type not in valid_commands:
         return {
             "valid": False,
             "error": f"Unknown command type: {command_type}",
-            "command_id": command_id
+            "commandId": command_id
         }
     
     # Check required parameters
@@ -289,40 +288,20 @@ async def validate_command(command_id: str, command_type: str, parameters: Optio
             return {
                 "valid": False,
                 "error": f"Missing required parameters: {', '.join(missing_params)}",
-                "command_id": command_id
+                "commandId": command_id
             }
     elif required_params:
         return {
             "valid": False,
             "error": "Missing parameters object",
-            "command_id": command_id
+            "commandId": command_id
         }
     
     return {
         "valid": True,
-        "command_id": command_id,
-        "command_type": command_type
+        "commandId": command_id,
+        "commandType": command_type
     }
-
-async def get_vehicle_status_from_cosmos(vehicle_id: str) -> Dict[str, Any]:
-    """
-    Get vehicle status data from Azure Cosmos DB
-    
-    Args:
-        vehicle_id: ID of the vehicle
-        
-    Returns:
-        Status data or empty dict if unavailable
-    """
-    from azure.cosmos_db import cosmos_client
-    
-    try:
-        # Get status from Cosmos DB
-        status = await cosmos_client.get_vehicle_status(vehicle_id)
-        return status
-    except Exception as e:
-        logger.error(f"Failed to get vehicle status from Cosmos DB: {str(e)}")
-        return {}
 
 async def get_latest_status_from_cosmos(vehicle_id: str) -> Dict[str, Any]:
     """
@@ -357,15 +336,14 @@ async def get_latest_status_from_cosmos(vehicle_id: str) -> Dict[str, Any]:
         )
         
         async for item in items:
-            # Map to expected format
             return {
-                "Battery": item.get("batteryLevel", 0),
-                "Temperature": item.get("temperature", 0),
-                "Speed": item.get("speed", 0),
-                "OilRemaining": item.get("oilLevel", 0),
-                "EngineStatus": item.get("engineStatus", "off"),
-                "DoorStatus": item.get("doorStatus", {}),
-                "ClimateSettings": item.get("climateSettings", {})
+                "batteryLevel": item.get("batteryLevel", 0),
+                "temperature": item.get("temperature", 0),
+                "speed": item.get("speed", 0),
+                "oilRemaining": item.get("oilLevel", 0),
+                "engineStatus": item.get("engineStatus", "off"),
+                "doorStatus": item.get("doorStatus", {}),
+                "climateSettings": item.get("climateSettings", {})
             }
             
         return {}
@@ -389,37 +367,46 @@ async def analyze_vehicle_data(vehicle_id: str,
     """
     from azure.cosmos_db import cosmos_client
     
-    # Default metrics if none provided
+    # Normalize and default metrics to camelCase
     if not metrics:
-        metrics = ["fuel_efficiency", "battery_health", "driving_behavior"]
+        metrics = ["fuelEfficiency", "batteryHealth", "drivingBehavior"]
+    else:
+        normalized = []
+        for m in metrics:
+            # convert possible snake_case to camelCase
+            parts = m.split('_')
+            if len(parts) > 1:
+                m = parts[0] + ''.join(p.capitalize() for p in parts[1:])
+            normalized.append(m)
+        metrics = normalized
     
     # Get real vehicle status
     vehicle_status = await get_latest_status_from_cosmos(vehicle_id)
     
     # Initialize with base structure
     analysis = {
-        "vehicle_id": vehicle_id,
-        "time_period": time_period,
-        "analysis_timestamp": datetime.datetime.now().isoformat(),
+        "vehicleId": vehicle_id,
+        "timePeriod": time_period,
+        "analysisTimestamp": datetime.datetime.now().isoformat(),
         "metrics": {}
     }
     
     # Get vehicle details for additional context
     try:
         all_vehicles = await get_vehicles_from_cosmos()
-        vehicle = next((v for v in all_vehicles if v.get("vehicle_id") == vehicle_id), None)
+        vehicle = next((v for v in all_vehicles if v.get("vehicleId") == vehicle_id), None)
         
         if vehicle:
-            analysis["vehicle_details"] = {
+            analysis["vehicleDetails"] = {
                 "brand": vehicle.get("brand", ""),
                 "model": vehicle.get("model", ""),
                 "year": vehicle.get("year", ""),
                 "mileage": vehicle.get("mileage", 0),
-                "is_electric": vehicle.get("is_electric", False)
+                "isElectric": vehicle.get("isElectric", False)
             }
             
             # Use is_electric flag for appropriate analysis
-            is_electric = vehicle.get("is_electric", False)
+            is_electric = vehicle.get("isElectric", False)
         else:
             is_electric = False
     except Exception as e:
@@ -445,27 +432,27 @@ async def analyze_vehicle_data(vehicle_id: str,
         # Analyze each metric
         for metric in metrics:
             try:
-                if metric == "fuel_efficiency" and not is_electric:
+                if metric == "fuelEfficiency" and not is_electric:
                     # Calculate fuel efficiency trends
                     analysis["metrics"][metric] = {
-                        "current_efficiency": f"{vehicle.get('FuelEfficiency', 8.5):.1f} L/100km",
+                        "currentEfficiency": f"{vehicle.get('fuelEfficiency', 8.5):.1f} L/100km",
                         "trend": "stable",
                         "recommendation": "Consider eco-driving techniques"
                     }
-                elif metric == "battery_health" and is_electric:
+                elif metric == "batteryHealth" and is_electric:
                     # Analyze battery health for electric vehicles
-                    battery_level = vehicle_status.get("batteryLevel", vehicle_status.get("Battery", 0))
+                    battery_level = vehicle_status.get("batteryLevel", 0)
                     analysis["metrics"][metric] = {
-                        "current_level": f"{battery_level}%",
-                        "health_score": max(70, 100 - (datetime.datetime.now().year - vehicle.get("Year", 2020)) * 2),
+                        "currentLevel": f"{battery_level}%",
+                        "healthScore": max(70, 100 - (datetime.datetime.now().year - vehicle.get('year', 2020)) * 2),
                         "trend": "good",
                         "recommendation": "Regular charging cycles recommended"
                     }
-                elif metric == "driving_behavior":
+                elif metric == "drivingBehavior":
                     # Analyze driving patterns
-                    avg_speed = sum([h.get("Speed", 0) for h in historical_data[-10:]]) / max(1, len(historical_data[-10:]))
+                    avg_speed = sum([h.get("speed", 0) for h in historical_data[-10:]]) / max(1, len(historical_data[-10:]))
                     analysis["metrics"][metric] = {
-                        "average_speed": f"{avg_speed:.1f} km/h",
+                        "averageSpeed": f"{avg_speed:.1f} km/h",
                         "pattern": "normal",
                         "recommendation": "Maintain current driving habits"
                     }
@@ -481,9 +468,9 @@ async def analyze_vehicle_data(vehicle_id: str,
     except Exception as e:
         logger.error(f"Error in historical data analysis: {str(e)}")
         # Return basic analysis even if historical data fails
-        analysis["metrics"]["basic_status"] = {
-            "vehicle_operational": True,
-            "last_update": vehicle_status.get("timestamp", datetime.datetime.now().isoformat()),
+        analysis["metrics"]["basicStatus"] = {
+            "vehicleOperational": True,
+            "lastUpdate": vehicle_status.get("timestamp", datetime.datetime.now().isoformat()),
             "recommendation": "Vehicle appears to be functioning normally"
         }
         return analysis
@@ -544,5 +531,6 @@ def format_notification(notification_type: str,
         "priority": priority,
         "icon": template["icon"],
         "timestamp": datetime.datetime.now().isoformat(),
-        "requires_acknowledgment": severity in ["high", "critical"]
+        "requiresAcknowledgment": severity in ["high", "critical"]
     }
+

@@ -132,7 +132,7 @@ const CarStatus = ({ vehicleId }) => {
         <Grid container spacing={2}>
           <Grid item xs={6} md={3}>
             <StatusGauge 
-              value={status.Battery} 
+              value={status.battery} 
               max={100} 
               icon={<Battery90 color="primary" fontSize="large" />} 
               label="Battery" 
@@ -141,7 +141,7 @@ const CarStatus = ({ vehicleId }) => {
           </Grid>
           <Grid item xs={6} md={3}>
             <StatusGauge 
-              value={status.Temperature} 
+              value={status.temperature} 
               max={100} 
               icon={<Thermostat color="secondary" fontSize="large" />} 
               label="Temperature" 
@@ -150,7 +150,7 @@ const CarStatus = ({ vehicleId }) => {
           </Grid>
           <Grid item xs={6} md={3}>
             <StatusGauge 
-              value={status.Speed} 
+              value={status.speed} 
               max={200} 
               icon={<Speed color="action" fontSize="large" />} 
               label="Speed" 
@@ -159,7 +159,7 @@ const CarStatus = ({ vehicleId }) => {
           </Grid>
           <Grid item xs={6} md={3}>
             <StatusGauge 
-              value={status.OilRemaining} 
+              value={status.oilRemaining} 
               max={100} 
               icon={<LocalGasStation color="success" fontSize="large" />} 
               label="Oil" 

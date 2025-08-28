@@ -1,14 +1,15 @@
 import datetime
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional  
 from azure.cosmos_db import get_cosmos_client
-from utils.agent_tools import validate_command  # correct source
+from utils.agent_tools import validate_command 
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from agents.base.base_agent import BasePlugin
 from utils.agent_context import extract_vehicle_id
+from utils.vehicle_object_utils import find_vehicle
 
 logger = get_logger(__name__)
 
@@ -65,8 +66,7 @@ class RemoteAccessPlugin(BasePlugin):
 
             # Check if vehicle exists
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
-
+            vehicle = find_vehicle(vehicles, vid)
             if not vehicle:
                 return self._format_response(
                     f"Vehicle with ID {vid} not found.", success=False
@@ -91,13 +91,13 @@ class RemoteAccessPlugin(BasePlugin):
             # Create the command in Cosmos DB
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": command_id,
-                "vehicleId": vid,
-                "commandType": command_type,
+                "command_id": command_id,
+                "vehicle_id": vid,
+                "command_type": command_type.lower(),
                 "parameters": {"doors": "all"},
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             await self.cosmos_client.create_command(command)
@@ -139,8 +139,7 @@ class RemoteAccessPlugin(BasePlugin):
 
             # Check if vehicle exists
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
-
+            vehicle = find_vehicle(vehicles, vid)
             if not vehicle:
                 return self._format_response(
                     f"Vehicle with ID {vid} not found.", success=False
@@ -151,13 +150,13 @@ class RemoteAccessPlugin(BasePlugin):
 
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": command_id,
-                "vehicleId": vid,
-                "commandType": command_type,
+                "command_id": command_id,
+                "vehicle_id": vid,
+                "command_type": command_type.lower(),
                 "parameters": {"remote": True},
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "High",
+                "priority": "high",
             }
 
             await self.cosmos_client.create_command(command)
@@ -196,13 +195,13 @@ class RemoteAccessPlugin(BasePlugin):
 
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": command_id,
-                "vehicleId": vid,
-                "commandType": "HORN_LIGHTS",
+                "command_id": command_id,
+                "vehicle_id": vid,
+                "command_type": "horn_lights",
                 "parameters": {"duration": 10},
-                "status": "Sent",
+                "status": "sent",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             await self.cosmos_client.create_command(command)
@@ -256,3 +255,10 @@ class RemoteAccessPlugin(BasePlugin):
             "locate_vehicle": "Activate horn and lights to locate the vehicle",
         }
 
+    def _format_response(
+        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        resp = {"message": message, "success": success}
+        if data:
+            resp["data"] = data
+        return resp

@@ -1,6 +1,25 @@
 import { api } from './apiClient';
 
 /**
+ * Normalize service object to camelCase
+ * @param {Object} service
+ * @returns {Object} Normalized service object
+ */
+function normalizeService(service) {
+  return {
+    serviceCode: service.serviceCode,
+    description: service.description,
+    startDate: service.startDate,
+    endDate: service.endDate || '',
+    cost: service.cost ?? 0,
+    location: service.location || '',
+    technician: service.technician || '',
+    notes: service.notes || '',
+    vehicleId: service.vehicleId
+  };
+}
+
+/**
  * Fetch services for a specific vehicle
  * @param {string} vehicleId
  * @returns {Promise<Array>} Array of service objects
@@ -17,16 +36,9 @@ export const fetchServices = async (vehicleId) => {
     }
 
     // Map the data to match the expected format in UI
-    return response.data.map((service) => ({
-      ServiceCode: service.ServiceCode || service.serviceCode || service.serviceType,
-      Description: service.Description || service.description,
-      StartDate: service.StartDate || service.startDate || service.serviceDate,
-      EndDate: service.EndDate || service.endDate || service.nextServiceDate || '',
-      Cost: service.cost || 0,
-      Location: service.location || '',
-      Technician: service.technician || '',
-      Notes: service.notes || '',
-    }));
+    return Array.isArray(response.data)
+      ? response.data.map(normalizeService)
+      : [];
   } catch (error) {
     console.error('Error fetching services:', error);
     throw error;
@@ -41,12 +53,22 @@ export const fetchServices = async (vehicleId) => {
  */
 export const addService = async (vehicleId, service) => {
   try {
-    // Update to match backend API structure - use singular "vehicle" not "vehicles"
+    const payload = {
+      vehicleId,
+      serviceCode: service.serviceCode,
+      description: service.description,
+      startDate: service.startDate,
+      endDate: service.endDate || '',
+      cost: service.cost ?? 0,
+      location: service.location || '',
+      technician: service.technician || '',
+      notes: service.notes || ''
+    };
     const response = await api.post(
       `/api/vehicles/${encodeURIComponent(vehicleId)}/services`,
-      service
+      payload
     );
-    return response.data;
+    return normalizeService(response.data);
   } catch (error) {
     console.error('Error adding service:', error);
     throw error;
@@ -62,11 +84,22 @@ export const addService = async (vehicleId, service) => {
  */
 export const updateService = async (vehicleId, serviceId, updates) => {
   try {
+    const payload = {
+      vehicleId,
+      serviceCode: updates.serviceCode,
+      description: updates.description,
+      startDate: updates.startDate,
+      endDate: updates.endDate || '',
+      cost: updates.cost ?? 0,
+      location: updates.location || '',
+      technician: updates.technician || '',
+      notes: updates.notes || ''
+    };
     const response = await api.put(
       `/api/vehicles/${encodeURIComponent(vehicleId)}/services/${encodeURIComponent(serviceId)}`,
-      updates
+      payload
     );
-    return response.data;
+    return normalizeService(response.data);
   } catch (error) {
     console.error('Error updating service:', error);
     throw error;
@@ -88,4 +121,61 @@ export const deleteService = async (vehicleId, serviceId) => {
     console.error('Error deleting service:', error);
     throw error;
   }
+};
+
+
+export const askAIAndSpeak = async (input, languageCode) => {
+  if (!input) return '';
+
+  let messages;
+  if (Array.isArray(input)) {
+    // Already formatted as conversation messages
+    messages = input.filter(msg => msg.content && msg.content.trim());
+  } else if (typeof input === 'string') {
+    messages = [{ role: 'user', content: input }];
+  } else if (typeof input === 'object' && input.content) {
+    messages = [input];
+  } else {
+    return '';
+  }
+
+  try {
+    const payload = { messages, ...(languageCode && { languageCode }) };
+    const { data } = await api.post('/api/speech/ask_ai', payload);
+    return data?.response || '';
+  } catch (error) {
+    console.error('AI request failed:', error);
+    throw error;
+  }
+};
+
+
+export const fetchSpeechToken = async () => {
+  const { data } = await api.get('/api/speech/token');
+  if (!data || typeof data !== 'object') throw new Error('Invalid token response');
+  const { token, region } = data;
+  if (!token || !region) throw new Error('Malformed token payload');
+  return { token, region };
+};
+
+export const fetchSpeechIceToken = async () => {
+  const { data } = await api.get('/api/speech/ice_token');
+  if (!data || typeof data !== 'object') throw new Error('Invalid ICE token response');
+
+  // CamelCase only (no fallbacks)
+  const { urls, username, password } = data;
+
+  if (!Array.isArray(urls) || urls.length === 0 || !username || !password) {
+    throw new Error('Malformed ICE token payload');
+  }
+
+  return {
+    iceServers: [
+      {
+        urls,
+        username,
+        credential: password
+      }
+    ]
+  };
 };

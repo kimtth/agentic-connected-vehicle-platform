@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from utils.logging_config import get_logger
+from models.api_responses import ActionResponse
 
 logger = get_logger(__name__)
+logger.debug("remote_access_routes module imported successfully")
+
 router = APIRouter(
     prefix="/vehicles/{vehicle_id}/remote-access", 
     tags=["Remote Access"]
@@ -18,16 +22,19 @@ class EngineControlRequest(BaseModel):
     action: str  # start, stop
 
 
-# Import agent_manager locally to avoid circular import
-def get_agent_manager():
-    from agents.agent_manager import agent_manager
-    return agent_manager
+# Lazy dependency resolver to avoid circular import issues
+async def _get_agent_manager():
+    """Create AgentManager instance for dependency injection."""
+    from agents.agent_manager import AgentManager
+    return AgentManager()
 
 
-@router.post("/doors")
+@router.post("/doors", response_model=ActionResponse)
 async def control_doors(
     vehicle_id: str,
     request: DoorControlRequest
+    request: DoorControlRequest,
+    agent_manager = Depends(_get_agent_manager)
 ):
     """Lock or unlock vehicle doors remotely"""
     try:
@@ -46,21 +53,23 @@ async def control_doors(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control doors"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error controlling doors for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/engine")
+@router.post("/engine", response_model=ActionResponse)
 async def control_engine(
     vehicle_id: str,
     request: EngineControlRequest
+    request: EngineControlRequest,
+    agent_manager = Depends(_get_agent_manager)
 ):
     """Start or stop vehicle engine remotely"""
     try:
@@ -79,20 +88,22 @@ async def control_engine(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control engine"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error controlling engine for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/locate")
+@router.post("/locate", response_model=ActionResponse)
 async def locate_vehicle(
     vehicle_id: str
+    vehicle_id: str,
+    agent_manager = Depends(_get_agent_manager)
 ):
     """Activate horn and lights to locate vehicle"""
     try:
@@ -111,11 +122,11 @@ async def locate_vehicle(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to locate vehicle"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error locating vehicle {vehicle_id}: {e}")

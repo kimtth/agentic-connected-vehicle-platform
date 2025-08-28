@@ -10,12 +10,11 @@ import uuid
 import json
 import uvicorn
 import atexit
-import random
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional
-from fastapi import Body
 from uuid import uuid4
+import socket
+import time
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -29,10 +28,23 @@ from models.command import Command
 from models.vehicle_profile import VehicleProfile
 from models.service import Service
 from models.status import VehicleStatus
+from models.api_responses import (
+    InfoResponse,
+    HealthResponse,
+    HealthServices,
+    CommandHistoryItem,
+    CommandSubmitResponse,
+    Notification,
+    CreateNotificationResponse,
+    MarkNotificationReadResponse,
+    GenericDetailResponse,
+)
+from models.notification import Notification as NotificationModel
 from dotenv import load_dotenv
 from importlib import import_module
 from azure.azure_auth import AzureADMiddleware
 from fastapi import Request
+from azure.cosmos_db import get_cosmos_client 
 
 # Load environment variables first
 load_dotenv(override=True)
@@ -90,16 +102,14 @@ def _cleanup_at_exit():
         _stop_mcp_processes()
     except Exception:
         pass
-
+    
 
 @asynccontextmanager
 async def lifespan(app):
     logger.info("Starting up the application...")
     # Lazy create only once
     if not hasattr(app.state, "cosmos_client"):
-        from azure.cosmos_db import get_cosmos_client
-
-        app.state.cosmos_client = get_cosmos_client()
+        app.state.cosmos_client = get_cosmos_client()  # unified singleton
         logger.info("Cosmos DB client instantiated (lifespan)")
     client = app.state.cosmos_client
 
@@ -116,14 +126,18 @@ async def lifespan(app):
         ("Agents", "apis.agent_routes"),
         ("Vehicle Features", "apis.vehicle_feature_routes"),
         ("Remote Access", "apis.remote_access_routes"),
+        ("Speech", "apis.speech_routes"),
         ("Emergency & Safety", "apis.emergency_routes"),
+        ("Dev Seed", "apis.seed_routes"),  # Dev: Test data
     ]:
         try:
             module = import_module(modpath)
             app.include_router(module.router, prefix="/api", tags=[name])
             logger.info(f"Loaded router: {name}")
         except Exception as e:
+            # Improved diagnostics: include full traceback at debug level
             logger.warning(f"Router not available ({name}): {e}")
+            logger.debug("Full import traceback for router '%s'", name, exc_info=True)
 
     yield
 
@@ -163,18 +177,9 @@ app.add_middleware(
 )
 
 
-def get_cosmos():
-    """Access the lazily initialized Cosmos client (created in lifespan)."""
-    client = getattr(app.state, "cosmos_client", None)
-    if client is None:
-        raise RuntimeError("Cosmos client not initialized yet (outside lifespan).")
-    return client
-
-
-# Update _cosmos_status to use accessor
 def _cosmos_status():
     try:
-        client = get_cosmos()
+        client = get_cosmos_client()
     except Exception:
         return False, False
     enabled = bool(
@@ -213,113 +218,97 @@ async def log_user_requests(request: Request, call_next):
         raise
 
 
-@app.get("/api/info")
+@app.get("/api/info", response_model=InfoResponse)
 def get_status():
     enabled, connected = _cosmos_status()
-    return {
-        "status": "Connected Car Platform running",
-        "version": "2.0.0",
-        "azure_cosmos_enabled": enabled,
-        "azure_cosmos_connected": connected,
-    }
+    return InfoResponse(
+        status="Connected Car Platform running",
+        version="2.0.0",
+        azure_cosmos_enabled=enabled,
+        azure_cosmos_connected=connected,
+    )
 
 
-@app.get("/api/health")
+@app.get("/api/health", response_model=HealthResponse)
 def health_check():
     enabled, connected = _cosmos_status()
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "services": {
-            "api": "running",
-            "cosmos_db": "connected" if connected else "disconnected",
-        },
-    }
+    mcp_status = _collect_mcp_status()
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(timezone.utc),
+        services=HealthServices(
+            api="running",
+            cosmos_db="connected" if connected else "disconnected",
+            mcp_weather=mcp_status["weather"],
+            mcp_traffic=mcp_status["traffic"],
+            mcp_poi=mcp_status["poi"],
+            mcp_navigation=mcp_status["navigation"],
+        ),
+    )
 
 
-@app.get("/api/vehicles/{vehicle_id}/command-history")
+@app.get("/api/vehicles/{vehicle_id}/command-history", response_model=list[CommandHistoryItem])
 async def get_vehicle_command_history(vehicle_id: str):
     """Get command history for a specific vehicle"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         logger.warning("Cosmos DB not available, returning empty command history")
         return []
-
-    # Get commands for this specific vehicle
     commands = await client.list_commands(vehicle_id)
-
-    # Transform commands to the format expected by frontend
-    history = []
-    for cmd in commands:
-        history.append(
-            {
-                "timestamp": cmd.get("timestamp", ""),
-                "command": cmd.get("commandType", "unknown"),
-                "status": cmd.get("status", "unknown"),
-                "response": cmd.get("response", ""),
-                "error": cmd.get("error", ""),
-            }
+    history = [
+        CommandHistoryItem(
+            timestamp=cmd.get("timestamp", ""),
+            command=cmd.get("command_type", "unknown"),
+            status=cmd.get("status", "unknown"),
+            response=cmd.get("response", ""),
+            error=cmd.get("error", ""),
         )
-
-    # Sort by timestamp (newest first)
-    history.sort(key=lambda x: x["timestamp"], reverse=True)
-
+        for cmd in commands
+    ]
+    history.sort(key=lambda x: x.timestamp, reverse=True)
     return history
 
 
 # Submit a command (simulate external system)
-@app.post("/api/command")
+@app.post("/api/command", response_model=CommandSubmitResponse)
 async def submit_command(command: Command, background_tasks: BackgroundTasks):
     """Submit a command to a vehicle"""
-    client = get_cosmos()
-    # Try to ensure Cosmos DB is connected, but continue if it fails
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
-        logger.warning(
-            "Cosmos DB not available, command will be processed without persistence"
-        )
-
+        logger.warning("Cosmos DB not available, command will be processed without persistence")
     command_id = str(uuid.uuid4())
-    command.commandId = command_id
+    command.command_id = command_id
     command.status = "pending"
-    # Use the non-deprecated method for getting current UTC time
     command.timestamp = datetime.now(timezone.utc).isoformat()
-
-    # Store command in Cosmos DB
-    command_data = command.model_dump()
+    command_data = command.model_dump(by_alias=True)  # use camelCase per CamelModel
     await client.create_command(command_data)
-
-    # Start background processing
     background_tasks.add_task(process_command_async, command_data)
-
-    return {"commandId": command_id}
+    return CommandSubmitResponse(command_id=command_id)
 
 
 # Get command log
-@app.get("/api/commands")
-async def get_commands(vehicleId: str = None):
+@app.get("/api/commands", response_model=list[Command])
+async def get_commands(vehicle_id: str = None):  # renamed query param
     """Get all commands with optional filtering by vehicle ID"""
-    client = get_cosmos()
-    # Try to ensure Cosmos DB is connected
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         logger.warning("Cosmos DB not available, returning empty command list")
         return []
-
     try:
-        commands = await client.list_commands(vehicleId)
-        return commands
+        return await client.list_commands(vehicle_id)
     except Exception as e:
         logger.error(f"Error retrieving commands: {str(e)}")
         return []
 
 
 # Get vehicle status (from Cosmos DB only)
-@app.get("/api/vehicles/{vehicle_id}/status")
+@app.get("/api/vehicles/{vehicle_id}/status", response_model=VehicleStatus)
 async def get_vehicle_status(vehicle_id: str):
     """Get the current status of a vehicle"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     try:
         cosmos_connected = await client.ensure_connected()
         if not cosmos_connected:
@@ -340,31 +329,25 @@ async def get_vehicle_status(vehicle_id: str):
 
 
 # Stream vehicle status updates
-@app.get("/api/vehicle/{vehicleId}/status/stream")
-async def stream_vehicle_status(vehicleId: str):
+@app.get("/api/vehicle/{vehicle_id}/status/stream")  # path param renamed
+async def stream_vehicle_status(vehicle_id: str):
     """Stream real-time status updates for a vehicle"""
 
     async def status_stream_generator():
         agen = None
-        client = get_cosmos()
+        client = get_cosmos_client()
         cosmos_connected = await client.ensure_connected()
         if not cosmos_connected:
-            error_status = {
-                "error": "Database service unavailable",
-                "vehicleId": vehicleId,
-            }
+            error_status = {"error": "Database service unavailable", "vehicle_id": vehicle_id}
             yield f"data: {json.dumps(error_status)}\n\n"
             return
         try:
-            agen = client.subscribe_to_vehicle_status(vehicleId)
+            agen = client.subscribe_to_vehicle_status(vehicle_id)
             async for status in agen:
                 yield f"data: {json.dumps(status)}\n\n"
         except Exception as e:
             logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
-            error_status = {
-                "error": "Status streaming unavailable",
-                "vehicleId": vehicleId,
-            }
+            error_status = {"error": "Status streaming unavailable", "vehicle_id": vehicle_id}
             yield f"data: {json.dumps(error_status)}\n\n"
         finally:
             # Ensure the async generator is properly closed to release underlying resources
@@ -388,30 +371,26 @@ async def stream_vehicle_status(vehicleId: str):
 
 
 # Get notifications
-@app.get("/api/notifications")
-async def get_notifications(vehicleId: str = None):
+@app.get("/api/notifications", response_model=list[Notification])
+async def get_notifications(vehicle_id: str = None):  # renamed query param
     """Get all notifications with optional filtering by vehicle ID"""
-    client = get_cosmos()
-    # Try to ensure Cosmos DB is connected
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         logger.warning("Cosmos DB not available, returning empty notification list")
         return []
-
     try:
-        notifications = await client.list_notifications(vehicleId)
-        return notifications
+        return await client.list_notifications(vehicle_id)
     except Exception as e:
         logger.error(f"Error retrieving notifications: {str(e)}")
         return []
 
 
 # Add a vehicle profile
-@app.post("/api/vehicle")
+@app.post("/api/vehicle", response_model=VehicleProfile)
 async def add_vehicle(profile: VehicleProfile):
     """Add a new vehicle profile"""
-    client = get_cosmos()
-    # Ensure Cosmos DB is connected
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
@@ -420,10 +399,10 @@ async def add_vehicle(profile: VehicleProfile):
 
 
 # List all vehicles
-@app.get("/api/vehicles")
+@app.get("/api/vehicles", response_model=list[VehicleProfile])
 async def list_vehicles():
     """List all vehicles"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
@@ -437,9 +416,9 @@ async def list_vehicles():
 
 
 # GET a single vehicle by ID (for fetchVehicleById)
-@app.get("/api/vehicles/{vehicle_id}")
+@app.get("/api/vehicles/{vehicle_id}", response_model=VehicleProfile)
 async def get_vehicle(vehicle_id: str):
-    client = get_cosmos()
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected() if client else False
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
@@ -453,85 +432,82 @@ async def get_vehicle(vehicle_id: str):
 
 
 # Add a service to a vehicle
-@app.post("/api/vehicles/{vehicleId}/services")
-async def add_service(vehicleId: str, service: Service):
+@app.post("/api/vehicles/{vehicle_id}/services", response_model=Service)
+async def add_service(vehicle_id: str, service: Service):
     """Add a service record to a vehicle"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     # Ensure Cosmos DB is connected
     await client.ensure_connected()
     service_data = service.model_dump()
-    service_data["vehicleId"] = vehicleId
+    service_data["vehicle_id"] = vehicle_id
     service_data["id"] = str(uuid.uuid4())  # Generate unique ID for the service
 
     return await client.create_service(service_data)
 
 
 # List all services for a vehicle
-@app.get("/api/vehicles/{vehicleId}/services")
-async def list_services(vehicleId: str):
+@app.get("/api/vehicles/{vehicle_id}/services", response_model=list[Service])
+async def list_services(vehicle_id: str):
     """List all services for a vehicle"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     # Ensure Cosmos DB is connected
     await client.ensure_connected()
-    return await client.list_services(vehicleId)
+    return await client.list_services(vehicle_id)
 
 
-# Update a service (for updateService)
-@app.put("/api/vehicles/{vehicleId}/services/{serviceId}")
-async def update_service(vehicleId: str, serviceId: str, service: Service):
-    client = get_cosmos()
+# Update a service
+@app.put("/api/vehicles/{vehicle_id}/services/{serviceId}", response_model=Service)
+async def update_service(vehicle_id: str, serviceId: str, service: Service):
+    client = get_cosmos_client()
     await client.ensure_connected()
     data = service.model_dump()
-    return await client.update_service(vehicleId, serviceId, data)
+    return await client.update_service(vehicle_id, serviceId, data)
 
 
-# Delete a service (for deleteService)
-@app.delete("/api/vehicles/{vehicleId}/services/{serviceId}")
-async def delete_service(vehicleId: str, serviceId: str):
-    client = get_cosmos()
+# Delete a service
+@app.delete("/api/vehicles/{vehicle_id}/services/{serviceId}", response_model=GenericDetailResponse)
+async def delete_service(vehicle_id: str, serviceId: str):
+    client = get_cosmos_client()
     await client.ensure_connected()
-    await client.delete_service(vehicleId, serviceId)
-    return {"detail": f"Service {serviceId} deleted successfully"}
+    await client.delete_service(vehicle_id, serviceId)
+    return GenericDetailResponse(detail=f"Service {serviceId} deleted successfully")
 
 
 # Update vehicle status
-@app.put("/api/vehicle/{vehicleId}/status")
-async def update_vehicle_status(vehicleId: str, status: VehicleStatus):
+@app.put("/api/vehicle/{vehicle_id}/status", response_model=VehicleStatus)
+async def update_vehicle_status(vehicle_id: str, status: VehicleStatus):
     """Update the status of a vehicle"""
-    client = get_cosmos()
-    # Ensure Cosmos DB is connected
+    client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
 
     # Validate vehicleId
-    if not vehicleId or not vehicleId.strip():
+    if not vehicle_id or not vehicle_id.strip():
         raise HTTPException(status_code=400, detail="Vehicle ID cannot be empty")
 
     # Ensure vehicleId in path matches the one in the status object
-    if status.vehicleId != vehicleId:
-        raise HTTPException(
-            status_code=400, detail="Vehicle ID in path does not match status object"
-        )
+    if status.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=400, detail="Vehicle ID in path does not match status object")
 
     # Convert status to dict for storage
-    status_data = status.model_dump()
+    status_data = status.model_dump(by_alias=True)
 
     # Add timestamp
     status_data["timestamp"] = datetime.now(timezone.utc).isoformat()
 
     try:
-        result = await client.update_vehicle_status(vehicleId, status_data)
-        logger.info(f"Successfully updated vehicle {vehicleId} status in Cosmos DB")
+        result = await client.update_vehicle_status(vehicle_id, status_data)
+        logger.info(f"Successfully updated vehicle {vehicle_id} status in Cosmos DB")
         return result
 
     except Exception as e:
-        logger.error(f"Error updating vehicle status for {vehicleId}: {str(e)}")
+        logger.error(f"Error updating vehicle status for {vehicle_id}: {str(e)}")
 
         # Determine appropriate HTTP status code based on error type
         if "not found" in str(e).lower():
             raise HTTPException(
-                status_code=404, detail=f"Vehicle {vehicleId} not found"
+                status_code=404, detail=f"Vehicle {vehicle_id} not found"
             )
         elif "validation" in str(e).lower():
             raise HTTPException(
@@ -543,42 +519,32 @@ async def update_vehicle_status(vehicleId: str, status: VehicleStatus):
             )
 
 
-# Partial status update (only specific fields)
-@app.patch("/api/vehicle/{vehicleId}/status")
-async def patch_vehicle_status(vehicleId: str, status_update: dict):
+# Partial status update
+@app.patch("/api/vehicle/{vehicle_id}/status", response_model=VehicleStatus)
+async def patch_vehicle_status(vehicle_id: str, status_update: dict):
     """Update specific fields of a vehicle's status"""
-    client = get_cosmos()
+    client = get_cosmos_client()
     # Ensure Cosmos DB is connected
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
 
     # Validate vehicleId
-    if not vehicleId:
+    if not vehicle_id:
         raise HTTPException(status_code=400, detail="Vehicle ID is required")
 
     try:
         # First get current status
-        current_status = await get_vehicle_status(vehicleId)
+        current_status = await get_vehicle_status(vehicle_id)
 
         # If no current status exists, create a default one
         if not current_status:
-            current_status = {
-                "vehicleId": vehicleId,
-                "Battery": 0,
-                "Temperature": 0,
-                "Speed": 0,
-                "OilRemaining": 0,
-            }
-
-        # Update with new values
+            current_status = {"vehicle_id": vehicle_id}
         current_status.update(status_update)
-
-        # Add timestamp
         current_status["timestamp"] = datetime.now(timezone.utc).isoformat()
 
         # Store updated status in Cosmos DB
-        result = await client.update_vehicle_status(vehicleId, current_status)
+        result = await client.update_vehicle_status(vehicle_id, current_status)
         return result
 
     except HTTPException:
@@ -595,7 +561,7 @@ async def patch_vehicle_status(vehicleId: str, status_update: dict):
 async def process_command_async(command):
     """Process a command asynchronously"""
     try:
-        client = get_cosmos()
+        client = get_cosmos_client()
     except Exception:
         logger.error("Cannot process command: Cosmos client not initialized")
         return
@@ -607,311 +573,73 @@ async def process_command_async(command):
         return
 
     # Extract command details
-    command_id = command["commandId"]
-    vehicleId = command["vehicleId"]
-
-    # Update command status to "processing"
+    command_id = command["command_id"]
+    vehicle_id = command["vehicle_id"]
     try:
         await client.update_command(
             command_id=command_id,
-            vehicleId=vehicleId,
             updated_data={"status": "processing"},
         )
     except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to update command status in Cosmos DB: {str(cosmos_error)}"
-        )
-
-    # Process the command (you can add custom logic here for different command types)
-    # For now, we'll mark it as completed
+        logger.warning(f"Failed to update command status in Cosmos DB: {str(cosmos_error)}")
     try:
         await client.update_command(
             command_id=command_id,
-            vehicleId=vehicleId,
             updated_data={
                 "status": "completed",
                 "completion_time": datetime.now(timezone.utc).isoformat(),
             },
         )
     except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}"
-        )
-
-    # Create notification
+        logger.warning(f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}")
     try:
-        notification = {
-            "id": str(uuid.uuid4()),
-            "vehicleId": vehicleId,
-            "type": "command_executed",
-            "message": f"Command {command['commandType']} executed successfully",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "read": False,
-        }
-        await client.create_notification(notification)
-    except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to create notification in Cosmos DB: {str(cosmos_error)}"
+        notif = NotificationModel(
+            id=str(uuid.uuid4()),
+            vehicle_id=vehicle_id,
+            type="command_executed",
+            message=f"Command {command.get('command_type','unknown')} executed successfully",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            read=False,
+            severity="low",
+            source="System",
+            action_required=False,
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
+        # Persist using the model's serialization (aligns with other uses in the codebase)
+        await client.create_notification(notif.model_dump())
 
-    logger.info(f"Successfully processed command {command_id} for vehicle {vehicleId}")
-
+    except Exception as cosmos_error:
+        logger.warning(f"Failed to create notification in Cosmos DB: {str(cosmos_error)}")
+    logger.info(f"Successfully processed command {command_id} for vehicle {vehicle_id}")
 
 # Create a notification (for createNotification)
-@app.post("/api/notifications")
+@app.post("/api/notifications", response_model=CreateNotificationResponse)
 async def create_notification(notification: dict):
-    client = get_cosmos()
+    client = get_cosmos_client()
     await client.ensure_connected()
     result = await client.create_notification(notification)
-    return {"id": notification.get("id"), "status": "created", "data": result}
+    nid = notification.get("id")
+    return CreateNotificationResponse(id=nid, status="created", data=result)
 
 
 # Mark a notification as read (for markNotificationRead)
-@app.put("/api/notifications/{notificationId}/read")
-async def mark_notification_read(notificationId: str):
-    client = get_cosmos()
+@app.put("/api/notifications/{NotificationId}/read", response_model=MarkNotificationReadResponse)
+async def mark_notification_read(NotificationId: str):
+    client = get_cosmos_client()
     await client.ensure_connected()
-    updated = await client.mark_notification_read(notificationId)
+    updated = await client.mark_notification_read(NotificationId)
     if not updated:
-        raise HTTPException(
-            status_code=404, detail=f"Notification {notificationId} not found"
-        )
-    return {"id": notificationId, "status": "marked_as_read", "data": updated}
+        raise HTTPException(status_code=404, detail=f"Notification {NotificationId} not found")
+    return MarkNotificationReadResponse(id=NotificationId, status="marked_as_read", data=updated)
 
 
 # Delete a notification (for deleteNotification)
-@app.delete("/api/notifications/{notificationId}")
-async def delete_notification(notificationId: str):
-    client = get_cosmos()
+@app.delete("/api/notifications/{NotificationId}", response_model=GenericDetailResponse)
+async def delete_notification(NotificationId: str):
+    client = get_cosmos_client()
     await client.ensure_connected()
-    await client.delete_notification(notificationId)
-    return {"detail": f"Notification {notificationId} deleted successfully"}
-
-
-# Dev: seed a test vehicle and status
-@app.post("/api/dev/seed")
-async def seed_dev_data(vehicleId: Optional[str] = None):
-    """Create a test vehicle profile and initial status for development."""
-    client = get_cosmos()
-    # Ensure DB is available
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        raise HTTPException(status_code=503, detail="Database service unavailable")
-
-    # Use provided or default test vehicle ID
-    vehicle_id = (vehicleId or "a640f210-dca4-4db7-931a-9f119bbe54e0").strip()
-
-    created_vehicle = False
-    try:
-        # Check if vehicle exists
-        vehicle = await client.get_vehicle(vehicle_id)
-        if not vehicle:
-            # Create a minimal profile (fields commonly used by UI)
-            profile = {
-                "VehicleId": vehicle_id,
-                "vehicleId": vehicle_id,
-                "Make": "Demo",
-                "Model": "Car",
-                "Year": 2024,
-                "Status": "Active",
-                "LastLocation": {"Latitude": 43.6532, "Longitude": -79.3832},
-            }
-            await client.create_vehicle(profile)
-            created_vehicle = True
-
-        # Seed/Upsert vehicle status
-        status_data = {
-            "vehicleId": vehicle_id,
-            "Battery": 82,
-            "Temperature": 36,
-            "Speed": 0,
-            "OilRemaining": 75,
-            "Odometer": 12456,
-            "location": {"latitude": 43.6532, "longitude": -79.3832},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        await client.update_vehicle_status(vehicle_id, status_data)
-
-        return {
-            "vehicleId": vehicle_id,
-            "createdVehicle": created_vehicle,
-            "statusSeeded": True,
-        }
-    except Exception as e:
-        logger.error(f"Seed failed for {vehicle_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
-
-
-# Track last seed summary (dev utility)
-LAST_SEED_SUMMARY = {}
-
-
-@app.post("/api/dev/seed/bulk")
-async def seed_dev_data_bulk(config: dict = Body(default=None)):
-    """
-    Bulk-generate test data and insert into Cosmos DB.
-    {
-      "vehicles": 10,
-      "commandsPerVehicle": 2,
-      "notificationsPerVehicle": 2,
-      "servicesPerVehicle": 1,
-      "statusesPerVehicle": 1
-    }
-    """
-    client = get_cosmos()
-    # Ensure DB is available
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        raise HTTPException(status_code=503, detail="Database service unavailable")
-
-    # Defaults
-    cfg = {
-        "vehicles": 10,
-        "commandsPerVehicle": 2,
-        "notificationsPerVehicle": 2,
-        "servicesPerVehicle": 1,
-        "statusesPerVehicle": 1,
-    }
-    if isinstance(config, dict):
-        cfg.update(
-            {
-                k: v
-                for k, v in config.items()
-                if k in cfg and isinstance(v, int) and v >= 0
-            }
-        )
-
-    created = {
-        "vehicles": 0,
-        "statuses": 0,
-        "services": 0,
-        "commands": 0,
-        "notifications": 0,
-        "vehicleIds": [],
-    }
-
-    # Simple test data pools
-    makes = ["Demo", "Tesla", "Toyota", "Ford", "BMW"]
-    models = ["Car", "Model 3", "RAV4", "F-150", "X3"]
-
-    try:
-        for _ in range(cfg["vehicles"]):
-            vehicle_id = str(uuid.uuid4())
-
-            # Minimal vehicle profile used by UI and DB (ensure partition key)
-            profile = {
-                "id": str(uuid.uuid4()),
-                "VehicleId": vehicle_id,
-                "vehicleId": vehicle_id,  # partition key
-                "Make": random.choice(makes),
-                "Model": random.choice(models),
-                "Year": random.choice([2021, 2022, 2023, 2024]),
-                "Status": random.choice(["Active", "Inactive", "Maintenance"]),
-                "LastLocation": {"Latitude": 43.6532, "Longitude": -79.3832},
-            }
-            await client.create_vehicle(profile)
-            created["vehicles"] += 1
-            created["vehicleIds"].append(vehicle_id)
-
-            # Status history
-            for _n in range(cfg["statusesPerVehicle"]):
-                status_data = {
-                    "vehicleId": vehicle_id,  # partition key
-                    "Battery": random.randint(50, 100),
-                    "Temperature": random.randint(15, 40),
-                    "Speed": random.choice([0, random.randint(10, 120)]),
-                    "OilRemaining": random.randint(40, 100),
-                    "Odometer": random.randint(1000, 150000),
-                    "location": {"latitude": 43.6532, "longitude": -79.3832},
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                await client.update_vehicle_status(vehicle_id, status_data)
-                created["statuses"] += 1
-
-            # Services
-            for _n in range(cfg["servicesPerVehicle"]):
-                service = {
-                    "id": str(uuid.uuid4()),
-                    "vehicleId": vehicle_id,  # partition key
-                    "ServiceCode": random.choice(
-                        ["OIL_CHANGE", "TIRE_ROTATION", "BRAKE_SERVICE"]
-                    ),
-                    "Description": "Auto-generated test service",
-                    "StartDate": datetime.now(timezone.utc).isoformat(),
-                    "EndDate": datetime.now(timezone.utc).isoformat(),
-                    "NextServiceDate": datetime.now(timezone.utc).isoformat(),
-                    "mileage": random.randint(1000, 150000),
-                    "nextServiceMileage": random.randint(1000, 150000) + 5000,
-                    "cost": round(random.uniform(50.0, 500.0), 2),
-                    "cost": round(random.uniform(50.0, 500.0), 2),
-                    "location": "Service Center 1",
-                    "technician": "Tech A",
-                    "invoiceNumber": f"INV-{random.randint(10000, 99999)}",
-                    "serviceStatus": "Completed",
-                    "serviceType": random.choice(["Scheduled", "Repair"]),
-                }
-                await client.create_service(service)
-                created["services"] += 1
-
-            # Commands
-            for _n in range(cfg["commandsPerVehicle"]):
-                command = {
-                    "id": str(uuid.uuid4()),
-                    "commandId": str(uuid.uuid4()),
-                    "vehicleId": vehicle_id,  # partition key
-                    "commandType": random.choice(
-                        ["LOCK_DOORS", "UNLOCK_DOORS", "START_ENGINE", "STOP_ENGINE"]
-                    ),
-                    "parameters": {},
-                    "status": random.choice(["Sent", "Processing", "Completed"]),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                await client.create_command(command)
-                created["commands"] += 1
-
-            # Notifications
-            for _n in range(cfg["notificationsPerVehicle"]):
-                notification = {
-                    "id": str(uuid.uuid4()),
-                    "vehicleId": vehicle_id,  # partition key
-                    "type": random.choice(
-                        ["service_reminder", "low_battery_alert", "speed_alert"]
-                    ),
-                    "message": "Auto-generated test notification",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "read": False,
-                    "severity": random.choice(["low", "medium", "high"]),
-                    "source": random.choice(["Vehicle", "System"]),
-                    "actionRequired": False,
-                }
-                await client.create_notification(notification)
-                created["notifications"] += 1
-
-        summary = {
-            "ok": True,
-            "config": cfg,
-            "created": created,
-            "azure_cosmos_connected": True,
-        }
-        # Save last seed summary for status endpoint
-        global LAST_SEED_SUMMARY
-        LAST_SEED_SUMMARY = summary
-        return summary
-
-    except Exception as e:
-        logger.error(f"Bulk seed failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Bulk seeding failed: {str(e)}")
-
-
-@app.get("/api/dev/seed/status")
-async def seed_status():
-    """Return the last bulk seed summary (if any) and current Cosmos connectivity."""
-    enabled, connected = _cosmos_status()
-    return {
-        "azure_cosmos_enabled": enabled,
-        "azure_cosmos_connected": connected,
-        "last_seed": LAST_SEED_SUMMARY or {},
-    }
+    await client.delete_notification(NotificationId)
+    return GenericDetailResponse(detail=f"Notification {NotificationId} deleted successfully")
 
 
 # Top-level entry points for multiprocessing
@@ -927,14 +655,15 @@ def run_weather_process():
     try:
         from plugin.mcp_weather_server import start_weather_server
         import asyncio
-
-        asyncio.run(start_weather_server(host="0.0.0.0", port=8001))
-    except Exception as e:
-        import logging
-
         logger = logging.getLogger(__name__)
-        logger.error(f"Weather server failed to start: {e}")
-
+        logger.info("Weather MCP subprocess starting (pre-bind)")
+        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
+        asyncio.run(start_weather_server(host=base_host, port=8001))
+        logger.info("Weather MCP subprocess exited normally")
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Weather server failed to start: {e}\n{traceback.format_exc()}")
 
 def run_traffic_process():
     """Entry for MCP traffic server."""
@@ -948,14 +677,15 @@ def run_traffic_process():
     try:
         from plugin.mcp_traffic_server import start_traffic_server
         import asyncio
-
-        asyncio.run(start_traffic_server(host="0.0.0.0", port=8002))
-    except Exception as e:
-        import logging
-
         logger = logging.getLogger(__name__)
-        logger.error(f"Traffic server failed to start: {e}")
-
+        logger.info("Traffic MCP subprocess starting (pre-bind)")
+        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
+        asyncio.run(start_traffic_server(host=base_host, port=8002))
+        logger.info("Traffic MCP subprocess exited normally")
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Traffic server failed to start: {e}\n{traceback.format_exc()}")
 
 def run_poi_process():
     """Entry for MCP POI server."""
@@ -969,14 +699,15 @@ def run_poi_process():
     try:
         from plugin.mcp_poi_server import start_poi_server
         import asyncio
-
-        asyncio.run(start_poi_server(host="0.0.0.0", port=8003))
-    except Exception as e:
-        import logging
-
         logger = logging.getLogger(__name__)
-        logger.error(f"POI server failed to start: {e}")
-
+        logger.info("POI MCP subprocess starting (pre-bind)")
+        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
+        asyncio.run(start_poi_server(host=base_host, port=8003))
+        logger.info("POI MCP subprocess exited normally")
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"POI server failed to start: {e}\n{traceback.format_exc()}")
 
 def run_navigation_process():
     """Entry for MCP navigation server."""
@@ -990,13 +721,44 @@ def run_navigation_process():
     try:
         from plugin.mcp_navigation_server import start_navigation_server
         import asyncio
-
-        asyncio.run(start_navigation_server(host="0.0.0.0", port=8004))
-    except Exception as e:
-        import logging
-
         logger = logging.getLogger(__name__)
-        logger.error(f"Navigation server failed to start: {e}")
+        logger.info("Navigation MCP subprocess starting (pre-bind)")
+        base_host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
+        asyncio.run(start_navigation_server(host=base_host, port=8004))
+        logger.info("Navigation MCP subprocess exited normally")
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Navigation server failed to start: {e}\n{traceback.format_exc()}")
+
+# MCP server configurations
+MCP_SERVER_CONFIG = [
+    ("weather", 8001, run_weather_process),
+    ("traffic", 8002, run_traffic_process),
+    ("poi", 8003, run_poi_process),
+    ("navigation", 8004, run_navigation_process),
+]
+
+def _is_port_open(host: str, port: int, timeout: float = 0.25) -> bool:
+    """Check if a TCP port is accepting connections."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _collect_mcp_status() -> dict:
+    """Build current MCP service status map (running/starting/stopped)."""
+    host = os.environ.get("MCP_SERVER_HOST", "localhost")
+    status = {}
+    for name, port, _ in MCP_SERVER_CONFIG:
+        proc = next((p for p in MCP_PROCESSES if p.name == name), None)
+        if proc and proc.is_alive():
+            status[name] = "running" if _is_port_open(host, port) else "starting"
+        else:
+            status[name] = "stopped"
+    return status
 
 
 if __name__ == "__main__":
@@ -1032,20 +794,32 @@ if __name__ == "__main__":
             from multiprocessing import Process, set_start_method
 
             set_start_method("spawn", force=True)
-            for name, target, mcp_port in [
-                ("weather", run_weather_process, 8001),
-                ("traffic", run_traffic_process, 8002),
-                ("poi", run_poi_process, 8003),
-                ("navigation", run_navigation_process, 8004),
-            ]:
+            for name, port_num, target in MCP_SERVER_CONFIG:
                 try:
-                    logger.info(f"Starting MCP ({name}) server on port {mcp_port}")
-                    p = Process(target=target, daemon=True)
+                    logger.info(f"Starting MCP ({name}) server on port {port_num}")
+                    p = Process(target=target, name=name, daemon=True)
                     p.start()
-                    MCP_PROCESSES.append(p)  # track for shutdown
+                    MCP_PROCESSES.append(p)
                     logger.debug(f"{name.title()} MCP server PID: {p.pid}")
                 except Exception as e:
                     logger.error(f"Failed to start {name} MCP server: {e}")
+
+            # Wait for readiness (ports open) with timeout
+            DEFAULT_MCP_HOST = os.environ.get("MCP_SERVER_HOST", "localhost")
+            timeout = float(os.environ.get("MCP_STARTUP_TIMEOUT", "15")) 
+            start = time.time()
+            pending = {name: port for name, port, _ in MCP_SERVER_CONFIG}
+            # small initial delay to let event loops spin up
+            time.sleep(0.5)
+            while pending and (time.time() - start) < timeout:
+                for name, port in list(pending.items()):
+                    if _is_port_open(DEFAULT_MCP_HOST, port):
+                        logger.info(f"MCP ({name}) ready on {DEFAULT_MCP_HOST}:{port}")
+                        pending.pop(name)
+                if pending:
+                    time.sleep(0.4)
+            for name in pending:
+                logger.warning(f"MCP ({name}) not responsive on port {pending[name]} after {timeout}s (host={DEFAULT_MCP_HOST})")
         except Exception as e:
             logger.error(f"Failed to start MCP servers: {e}")
     else:
@@ -1059,7 +833,7 @@ if __name__ == "__main__":
             app,
             host=host,
             port=port,
-            reload=False,  # Explicitly disable auto-reload
+            # reload=False,  # Explicitly disable auto-reload
             workers=1,  # Single worker process
             log_level=log_level.lower(),
         )

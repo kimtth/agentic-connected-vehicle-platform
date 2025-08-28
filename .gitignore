@@ -319,3 +319,4 @@ poetry.lock
 *.lock
 /.vscode
 memo.md
+/doc/azure-avatar-demo-main

@@ -15,6 +15,12 @@ import remarkGfm from 'remark-gfm';
 // Define available agents with their details
 const AVAILABLE_AGENTS = [
   {
+    type: "auto-select",
+    title: "Auto-Select Agent",
+    description: "Automatically choose the best agent based on your query.",
+    placeholderText: "E.g., 'What is the status of my vehicle?' or 'Find nearby charging stations'"
+  },
+  {
     type: "remote-access",
     title: "Remote Access",
     description: "Control vehicle access and remote operations such as door locking, engine start, and syncing personal data.",
@@ -219,16 +225,14 @@ const AgentChat = ({ vehicleId }) => {
     setLoading(true);
     
     try {
-      // Prepare the request payload with proper structure
       const requestPayload = {
         query: textToSend,
-        context: { 
-          agentType: selectedAgent.type, // Frontend agent type
-          vehicleId: vehicleId, // Include vehicleId in all requests
-          vehicle_id: vehicleId, // added snake_case for backend agents
+        context: {
+          agentType: selectedAgent.type,
+          vehicleId: vehicleId,
           timestamp: new Date().toISOString()
         },
-        session_id: sessionId,
+        sessionId: sessionId,
         stream: false
       };
 
@@ -238,6 +242,11 @@ const AgentChat = ({ vehicleId }) => {
       }
       
       const responseData = await askAgent(requestPayload);
+      const agentMsg = responseData.response || "Sorry, I couldn't process that request.";
+      const dataBlock = responseData.data;
+      const plugins = responseData.pluginsUsed || []; // enforce camelCase only
+      const execTime = responseData.executionTime || 0;
+      const success = responseData.success === true;
       
       // Log the response in development
       if (process.env.NODE_ENV === 'development') {
@@ -247,13 +256,13 @@ const AgentChat = ({ vehicleId }) => {
       // Add agent response to chat history
       const agentMessage = {
         type: 'agent',
-        text: responseData.response || "Sorry, I couldn't process that request.",
+        text: agentMsg,
         agentType: selectedAgent.type,
         agentTitle: selectedAgent.title,
-        data: responseData.data,
-        pluginsUsed: responseData.plugins_used || [],
-        executionTime: responseData.execution_time || 0,
-        success: responseData.success !== false,
+        data: dataBlock,
+        pluginsUsed: plugins,
+        executionTime: execTime,
+        success,
         timestamp: new Date().toISOString()
       };
       

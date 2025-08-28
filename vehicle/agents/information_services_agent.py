@@ -7,9 +7,13 @@ from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from utils.logging_config import get_logger
-from plugin.oai_service import create_chat_service  # fixed import
+from plugin.oai_service import create_chat_service  
+from utils.vehicle_object_utils import find_vehicle
+from utils.agent_context import extract_vehicle_id
 import json
 import os
+
+
 
 logger = get_logger(__name__)
 
@@ -102,10 +106,7 @@ class InformationServicesPlugin:
         if not vehicle_id:
             # Try to get vehicle_id from kernel context
             try:
-                from semantic_kernel.kernel import Kernel
-                kernel = Kernel.get_current()
-                if kernel and hasattr(kernel, 'arguments'):
-                    vehicle_id = kernel.arguments.get('vehicle_id')
+                vehicle_id = extract_vehicle_id(vehicle_id)
             except:
                 pass
         
@@ -142,10 +143,7 @@ class InformationServicesPlugin:
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
             try:
-                from semantic_kernel.kernel import Kernel
-                kernel = Kernel.get_current()
-                if kernel and hasattr(kernel, 'arguments'):
-                    vehicle_id = kernel.arguments.get('vehicle_id')
+                vehicle_id = extract_vehicle_id(vehicle_id)
             except:
                 pass
                 
@@ -172,10 +170,7 @@ class InformationServicesPlugin:
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
             try:
-                from semantic_kernel.kernel import Kernel
-                kernel = Kernel.get_current()
-                if kernel and hasattr(kernel, 'arguments'):
-                    vehicle_id = kernel.arguments.get('vehicle_id')
+                vehicle_id = extract_vehicle_id(vehicle_id)
             except:
                 pass
                 
@@ -202,10 +197,7 @@ class InformationServicesPlugin:
         # Extract vehicle_id from context if not provided directly
         if not vehicle_id:
             try:
-                from semantic_kernel.kernel import Kernel
-                kernel = Kernel.get_current()
-                if kernel and hasattr(kernel, 'arguments'):
-                    vehicle_id = kernel.arguments.get('vehicle_id')
+                vehicle_id = extract_vehicle_id(vehicle_id)
             except:
                 pass
                 
@@ -242,9 +234,16 @@ class InformationServicesPlugin:
 
             # Try to get from vehicle data if not in status
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
-            )
+            vehicle_obj = find_vehicle(vehicles, vehicle_id)
+            vehicle = {}
+            if vehicle_obj:
+                if hasattr(vehicle_obj, "model_dump"):
+                    try:
+                        vehicle = vehicle_obj.model_dump(by_alias=True)
+                    except:
+                        vehicle = {}
+                elif isinstance(vehicle_obj, dict):
+                    vehicle = vehicle_obj
 
             if vehicle and "LastLocation" in vehicle:
                 # Convert to lowercase keys for consistency
@@ -307,4 +306,7 @@ class InformationServicesPlugin:
         }
 
     def _format_response(self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {"message": message, "success": success, "data": data or {}}
+        resp = {"message": message, "success": success}
+        if data:
+            resp["data"] = data
+        return resp

@@ -3,7 +3,6 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatPromptExecutionSettings
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 from azure.cosmos_db import get_cosmos_client
 
@@ -17,6 +16,12 @@ from agents.vehicle_feature_control_agent import VehicleFeatureControlAgent
 from plugin.oai_service import create_chat_service
 from plugin.sk_plugin import GeneralPlugin
 from utils.logging_config import get_logger
+from utils.vehicle_object_utils import ensure_dict
+from models.agent_response import (
+    ParsedAgentMessage,
+    AgentResponse,
+    StreamingChunk,
+)
 
 logger = get_logger(__name__)
 
@@ -33,18 +38,18 @@ class AgentManager:
         try:
             # Get the singleton cosmos client instance
             self.cosmos_client = get_cosmos_client()
-            
+
             # create a single service factory
             service_factory = create_chat_service()
 
             # domain agents - improve initialization with error handling
             self._initialize_domain_agents(service_factory)
             self._initialize_manager_agent(service_factory)
-            
+
             self.thread: Optional[ChatHistoryAgentThread] = None
             self._active_sessions = set()  # Track active sessions for cleanup
             logger.info("Agent Manager successfully initialized")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize Agent Manager: {e}")
             raise
@@ -123,7 +128,10 @@ class AgentManager:
     async def _ensure_thread(self, session_id: str) -> None:
         """Ensure thread exists and matches session ID."""
         try:
-            if not self.thread or getattr(self.thread, '_thread_id', None) != session_id:
+            if (
+                not self.thread
+                or getattr(self.thread, "_thread_id", None) != session_id
+            ):
                 if self.thread:
                     await self._cleanup_thread()
                 self.thread = ChatHistoryAgentThread(thread_id=session_id)
@@ -142,130 +150,109 @@ class AgentManager:
             logger.warning(f"Error during thread cleanup: {e}")
 
     async def _get_vehicle_data(self, vehicle_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve vehicle data from Cosmos DB with improved error handling."""
+        """Retrieve single vehicle data from Cosmos DB and return as camelCase dict."""
         if not vehicle_id:
-            logger.warning("No vehicle ID provided")
+            logger.warning("No vehicle_id provided")
             return None
-            
         try:
-            logger.debug(f"Fetching vehicle data for ID: {vehicle_id}")
             await self.cosmos_client.ensure_connected()
-            vehicles = await self.cosmos_client.list_vehicles()
-            
-            # Handle both vehicleId and VehicleId field names for backward compatibility
-            vehicle_data = next((v for v in vehicles if 
-                               v.get("vehicleId") == vehicle_id or 
-                               v.get("VehicleId") == vehicle_id), None)
-            
-            if vehicle_data:
-                logger.debug(f"Found vehicle data for ID: {vehicle_id}")
-            else:
+            vehicle = await self.cosmos_client.get_vehicle(vehicle_id)
+            vehicle_dict = ensure_dict(vehicle)
+            if not vehicle_dict:
                 logger.warning(f"No vehicle found with ID: {vehicle_id}")
-                
-            return vehicle_data
-            
+                return None
+            return vehicle_dict
         except Exception as e:
             logger.error(f"Error retrieving vehicle data for {vehicle_id}: {e}")
             return None
 
     async def _enrich_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Enrich context with vehicle data and status."""
+        # Expect camelCase only
         enriched_context = context.copy()
-        # support both keys from frontend payload
-        vehicle_id = context.get("vehicle_id") or context.get("vehicleId")
-
+        vehicle_id = context.get("vehicleId")
         if not vehicle_id:
             return enriched_context
-            
         try:
-            # Get vehicle data
             vehicle_data = await self._get_vehicle_data(vehicle_id)
             if vehicle_data:
-                enriched_context["vehicle_data"] = vehicle_data
-                # ensure a single, unified key
-                enriched_context["vehicle_id"] = vehicle_id
-                
-            # Get vehicle status
-            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
+                enriched_context["vehicleData"] = vehicle_data
+                enriched_context["vehicleId"] = vehicle_id
+            vehicle_status_raw = await self.cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_status = ensure_dict(vehicle_status_raw)
             if vehicle_status:
-                enriched_context["vehicle_status"] = vehicle_status
-                
-            logger.debug(f"Context enriched for vehicle {vehicle_id}")
-            
+                enriched_context["vehicleStatus"] = vehicle_status
+            logger.debug(f"Context enriched for vehicleId {vehicle_id}")
         except Exception as e:
-            logger.error(f"Error enriching context for vehicle {vehicle_id}: {e}")
-            
+            logger.error(f"Error enriching context for vehicleId {vehicle_id}: {e}")
         return enriched_context
 
-    def _parse_response_safely(self, response_content: str) -> Dict[str, Any]:
-        """Safely parse response content into the expected format."""
+    def _parse_response_safely(self, response_content: str) -> ParsedAgentMessage:
+        """Safely parse response content into ParsedAgentMessage model."""
         try:
-            # Handle ChatMessageContent objects
-            if hasattr(response_content, 'content'):
+            if hasattr(response_content, "content"):
                 content = response_content.content
             else:
                 content = str(response_content)
-                
-            # Clean up the content
             content = content.strip()
-            
-            # Try to parse as JSON first
-            if content.startswith('{') and content.endswith('}'):
+            if content.startswith("{") and content.endswith("}"):
                 try:
                     parsed = json.loads(content)
                     if isinstance(parsed, dict):
-                        # Validate required fields and provide defaults
-                        return {
-                            "message": parsed.get("message", content),
-                            "status": parsed.get("status", "completed"),
-                            "plugins_used": parsed.get("plugins_used", []),
-                            "data": parsed.get("data")
-                        }
+                        return ParsedAgentMessage(
+                            message=parsed.get("message") or content,
+                            status=parsed.get("status") or "completed",
+                            plugins_used=parsed.get("plugins_used") or [],
+                            data=parsed.get("data"),
+                        )
                 except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse response as JSON: {content[:100]}...")
-            
-            # Fallback to plain text response - ensure we have a message
+                    logger.warning(
+                        f"Failed to parse response as JSON: {content[:100]}..."
+                    )
             if content:
-                return {
-                    "message": content,
-                    "status": "completed",
-                    "plugins_used": [],
-                    "data": None
-                }
-            else:
-                return {
-                    "message": "Command executed successfully.",
-                    "status": "completed", 
-                    "plugins_used": [],
-                    "data": None
-                }
-            
+                return ParsedAgentMessage(message=content)
+            return ParsedAgentMessage(message="Command executed successfully.")
         except Exception as e:
             logger.error(f"Error parsing response: {e}")
-            return {
-                "message": "I apologize, but I encountered an error processing the response.",
-                "status": "error",
-                "plugins_used": [],
-                "data": None
-            }
+            return ParsedAgentMessage(
+                message="I apologize, but I encountered an error processing the response.",
+                status="error",
+                plugins_used=[],
+                data=None,
+            )
+
+    def _build_agent_response(
+        self,
+        parsed: ParsedAgentMessage,
+        fallback_used: bool = False,
+        error: Optional[str] = None,
+    ) -> AgentResponse:
+        """Convert a ParsedAgentMessage into the outward AgentResponse model."""
+        return AgentResponse(
+            response=parsed.message or "The command has been processed successfully.",
+            success=parsed.status == "completed",
+            plugins_used=parsed.plugins_used or [],
+            data=parsed.data,
+            fallback_used=fallback_used,
+            error=error,
+        )
 
     async def _prepare_kernel_arguments(self, enriched_context: Dict[str, Any]) -> KernelArguments:
-        """Prepare kernel arguments with proper vehicle context."""
         try:
-            # Create kernel arguments with vehicle context
-            arguments = KernelArguments()
-            
-            # Add vehicle_id to arguments for function calls
-            vehicle_id = enriched_context.get("vehicle_id")
-            if vehicle_id:
-                arguments["vehicle_id"] = vehicle_id
-                
-            # Add other context data
-            for key, value in enriched_context.items():
-                if key not in ["vehicle_id"]:  # Don't duplicate vehicle_id
-                    arguments[key] = value
-                    
-            return arguments
+            args = KernelArguments()
+            if "vehicleId" in enriched_context:
+                args["vehicleId"] = enriched_context["vehicleId"]
+            if "vehicleData" in enriched_context:
+                args["vehicleData"] = enriched_context["vehicleData"]
+            if "vehicleStatus" in enriched_context:
+                args["vehicleStatus"] = enriched_context["vehicleStatus"]
+            if "sessionId" in enriched_context:
+                args["sessionId"] = enriched_context["sessionId"]
+            if "agentType" in enriched_context:
+                args["agentType"] = enriched_context["agentType"]
+            if "query" in enriched_context:
+                args["query"] = enriched_context["query"]
+            logger.debug(f"Prepared kernel arguments with keys: {list(args.keys())}")
+            return args
         except Exception as e:
             logger.error(f"Error preparing kernel arguments: {e}")
             return KernelArguments()
@@ -273,75 +260,57 @@ class AgentManager:
     async def process_request(
         self, query: str, context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Process a single vehicle request and return structured response."""
-        session_id = context.get("session_id", "default")
-        
+        """Process a single vehicle request and return structured response (aliased dict)."""
+        session_id = context.get("sessionId", "default")
         async with self._managed_session(session_id):
             try:
                 logger.info(f"Processing request: {query[:100]}...")
-                
-                # Enrich context with vehicle data
+                # Attach query into context for kernel argument usage
+                context["query"] = query
                 enriched_context = await self._enrich_context(context)
-                
-                # Ensure thread exists
                 await self._ensure_thread(session_id)
-                
-                # Prepare kernel arguments with vehicle context
                 kernel_args = await self._prepare_kernel_arguments(enriched_context)
-                
-                # Get response using the manager agent with proper arguments
                 sk_response = await self.manager.get_response(
-                    messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}", 
+                    messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
                     thread=self.thread,
-                    arguments=kernel_args
+                    arguments=kernel_args,
                 )
-                
-                # Log the raw response for debugging
                 logger.debug(f"Raw SK response: {sk_response}")
-                
-                # Parse response safely
-                parsed_response = self._parse_response_safely(sk_response.message)
-                
-                # Ensure we have a valid message
-                if not parsed_response.get("message"):
-                    parsed_response["message"] = "The command has been processed successfully."
-                
-                result = {
-                    "response": parsed_response["message"],
-                    "success": parsed_response["status"] == "completed",
-                    "plugins_used": parsed_response["plugins_used"],
-                }
-                
-                if parsed_response.get("data"):
-                    result["data"] = parsed_response["data"]
-                    
-                logger.info(f"Request processed successfully: {result.get('response', '')[:100]}...")
-                return result
-                
+                parsed = self._parse_response_safely(sk_response.message)
+                agent_resp = self._build_agent_response(parsed)
+                logger.info(
+                    f"Request processed successfully: {agent_resp.response[:100]}..."
+                )
+                return agent_resp.model_dump(by_alias=True)
             except Exception as e:
                 logger.error(f"Error processing request: {e}", exc_info=True)
-                
-                # Ensure enriched_context is available for fallback
                 try:
-                    if 'enriched_context' not in locals():
+                    if "enriched_context" not in locals():
                         enriched_context = await self._enrich_context(context)
-                    
-                    fallback_result = await self._process_with_fallback(query, enriched_context)
+                    fallback_result = await self._process_with_fallback(
+                        query, enriched_context
+                    )
                     logger.info("Request processed successfully with fallback")
                     return fallback_result
                 except Exception as fallback_error:
-                    logger.error(f"Fallback also failed: {fallback_error}", exc_info=True)
-                    return {
-                        "response": "I apologize, but I encountered an error processing your request. Please try again.",
-                        "success": False,
-                        "plugins_used": [],
-                        "error": str(e)
-                    }
+                    logger.error(
+                        f"Fallback also failed: {fallback_error}", exc_info=True
+                    )
+                    failure = AgentResponse(
+                        response="I apologize, but I encountered an error processing your request. Please try again.",
+                        success=False,
+                        plugins_used=[],
+                        data=None,
+                        fallback_used=False,
+                        error=str(e),
+                    )
+                    return failure.model_dump(by_alias=True)
 
-    async def _process_with_fallback(self, query: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_with_fallback(
+        self, query: str, enriched_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Process request using fallback manager without response format constraints."""
         try:
-            # Create a simple fallback manager without structured response format
             fallback_manager = ChatCompletionAgent(
                 service=create_chat_service(),
                 name="VehicleManagerFallback",
@@ -361,28 +330,15 @@ class AgentManager:
                     self.general_agent,
                 ],
             )
-            
-            # Prepare kernel arguments for fallback
             kernel_args = await self._prepare_kernel_arguments(enriched_context)
-            
-            # Get response without structured format
             sk_response = await fallback_manager.get_response(
-                messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}", 
+                messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
                 thread=self.thread,
-                arguments=kernel_args
+                arguments=kernel_args,
             )
-            
-            # Parse response content safely
-            parsed_response = self._parse_response_safely(sk_response.message)
-            
-            return {
-                "response": parsed_response["message"],
-                "success": True,
-                "plugins_used": parsed_response["plugins_used"],
-                "data": parsed_response.get("data"),
-                "fallback_used": True
-            }
-            
+            parsed = self._parse_response_safely(sk_response.message)
+            agent_resp = self._build_agent_response(parsed, fallback_used=True)
+            return agent_resp.model_dump(by_alias=True)
         except Exception as e:
             logger.error(f"Fallback processing failed: {e}")
             raise
@@ -390,79 +346,73 @@ class AgentManager:
     async def process_request_stream(
         self, query: str, context: Dict[str, Any]
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Process request with streaming response."""
-        session_id = context.get("session_id", "default")
-        
+        """Process request with streaming response (yield serialized StreamingChunk)."""
+        session_id = context.get("sessionId", "default")
         async with self._managed_session(session_id):
             try:
                 logger.info(f"Processing streaming request: {query[:100]}...")
-                
-                # Enrich context
+                context["query"] = query
                 enriched_context = await self._enrich_context(context)
-                
-                # Send initial response
-                yield {"response": "Processing your request...", "complete": False}
-
-                # Ensure thread exists
+                yield StreamingChunk(
+                    response="Processing your request...", complete=False
+                ).model_dump(by_alias=True)
                 await self._ensure_thread(session_id)
-                
-                # Collect streaming chunks
                 chunks: List[Any] = []
                 async for chunk in self.manager.invoke_stream(
-                    messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}", 
-                    thread=self.thread
+                    messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
+                    thread=self.thread,
                 ):
                     chunks.append(chunk)
-
                 if not chunks:
-                    yield {"response": "No response received", "complete": True, "plugins_used": []}
+                    yield StreamingChunk(
+                        response="No response received", complete=True
+                    ).model_dump(by_alias=True)
                     return
-
-                # Parse final response safely
-                final_content = chunks[-1].message if hasattr(chunks[-1], 'message') else str(chunks[-1])
-                parsed_response = self._parse_response_safely(final_content)
-
-                # Stream response sentence by sentence
-                sentences = parsed_response["message"].split(". ")
+                final_content = (
+                    chunks[-1].message
+                    if hasattr(chunks[-1], "message")
+                    else str(chunks[-1])
+                )
+                parsed = self._parse_response_safely(final_content)
+                sentences = [s for s in parsed.message.split(". ") if s]
                 for i, sentence in enumerate(sentences):
-                    if i < len(sentences) - 1:
+                    if i < len(sentences) - 1 and not sentence.endswith("."):
                         sentence += "."
-                    
                     is_last = i == len(sentences) - 1
-                    yield {
-                        "response": sentence,
-                        "complete": is_last,
-                        "plugins_used": parsed_response["plugins_used"] if is_last else [],
-                    }
-                    
+                    sc = StreamingChunk(
+                        response=sentence,
+                        complete=is_last,
+                        plugins_used=parsed.plugins_used if is_last else [],
+                    )
+                    yield sc.model_dump(by_alias=True)
                 logger.info("Streaming request processed successfully")
-                
             except Exception as e:
                 logger.error(f"Error in streaming request: {e}")
-                yield {
-                    "response": "I apologize, but I encountered an error processing your request.",
-                    "complete": True,
-                    "plugins_used": [],
-                    "error": str(e)
-                }
+                err = StreamingChunk(
+                    response="I apologize, but I encountered an error processing your request.",
+                    complete=True,
+                    plugins_used=[],
+                    error=str(e),
+                )
+                yield err.model_dump(by_alias=True)
 
     async def cleanup(self) -> None:
         """Cleanup resources when shutting down."""
         try:
             # Clean up all active sessions
             cleanup_tasks = [
-                self._cleanup_session_resources(session_id) 
+                self._cleanup_session_resources(session_id)
                 for session_id in list(self._active_sessions)
             ]
             if cleanup_tasks:
                 await asyncio.gather(*cleanup_tasks, return_exceptions=True)
-            
+
             # Clean up thread
             await self._cleanup_thread()
-            
+
             # Clear active sessions
             self._active_sessions.clear()
-            
+
             logger.info("Agent Manager cleanup completed")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
@@ -470,3 +420,21 @@ class AgentManager:
 
 # singleton
 agent_manager = AgentManager()
+
+# FastAPI scoped dependency factory
+async def get_agent_manager() -> AgentManager:
+    """
+    Provides a scoped (per-request) AgentManager instance.
+    Usage (FastAPI):
+        @app.get("/endpoint")
+        async def endpoint(agent_manager: AgentManager = Depends(get_agent_manager)):
+            return await agent_manager.process_request(...)
+
+    A new AgentManager is created per request and cleaned up automatically.
+    """
+    manager = AgentManager()
+    try:
+        return manager
+    finally:
+        # Note: cleanup will happen via context managers in the manager itself
+        pass

@@ -13,18 +13,23 @@ An intelligent vehicle management platform where specialized AI agents handle di
 Notes:
 - MCP services use plugin/sample_data.py (no external keys needed by default).
 
+## Naming & Serialization
+- API + stored JSON: camelCase (enforced by CamelModel).
+- Python internals: snake_case.
+- Never manually transform keys—return model instances.
+
 ## Dev Test Data Seeding
 
 Use the built-in dev seed endpoints to create sample data for local development.
 
 ```bash
-# Default seed (creates a demo vehicle if not present)
+# Default seed
 curl -X POST http://localhost:8000/api/dev/seed
 
 # Seed a specific vehicleId
 curl -X POST "http://localhost:8000/api/dev/seed?vehicleId=a640f210-dca4-4db7-931a-9f119bbe54e0"
 
-# Bulk seed multiple vehicles and related data
+# Bulk seed (camelCase keys)
 curl -X POST http://localhost:8000/api/dev/seed/bulk \
   -H "Content-Type: application/json" \
   -d '{
@@ -276,7 +281,7 @@ curl -X PUT http://localhost:8000/api/vehicle/vehicle-123/status \
 curl -X POST http://localhost:8000/api/command \
   -H "Content-Type: application/json" \
   -d '{
-    "vehicle_id": "vehicle-123",
+    "vehicleId": "vehicle-123",
     "type": "LOCK_DOORS",
     "parameters": { "doors": "all" }
   }'
@@ -335,8 +340,6 @@ You can use a single app registration for both the SPA frontend and API backend.
 5. Select **Delegated permissions**
 6. Check: ✓ `access_as_user`
 7. Click **Add permissions**
-8. Click **Grant admin consent** (requires admin privileges)
-   - Status should show green checkmark ✓
 
 #### Step 5: Configure Environment Variables
 
@@ -574,15 +577,17 @@ logger = get_logger(__name__)
    - Review structured logs for detailed error information
 
 3. **Cosmos DB Connection Issues**
-   ```bash
-   # Test connection
-   python -c "
-   from azure.cosmos_db import cosmos_client
-   import asyncio
-   asyncio.run(cosmos_client.connect())
-   print('Connection successful')
-   "
-   ```
+(Use ensured client + await ensure_connected before queries.)
+```python
+# Minimal connectivity test
+import asyncio
+from vehicle.azure.cosmos_db import get_cosmos_client
+async def main():
+    client = await get_cosmos_client()
+    await client.ensure_connected()
+asyncio.run(main())
+print("Cosmos connected")
+```
 
 4. **MCP Service Issues**
    - Ensure MCP servers are running on the correct ports:

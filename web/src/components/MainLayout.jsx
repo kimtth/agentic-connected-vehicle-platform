@@ -14,6 +14,7 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import BuildIcon from '@mui/icons-material/Build';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatIcon from '@mui/icons-material/Chat';
+import VoiceChatIcon from '@mui/icons-material/VoiceChat';
 import SecurityIcon from '@mui/icons-material/Security';
 import InfoIcon from '@mui/icons-material/Info';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
@@ -76,7 +77,7 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   justifyContent: 'flex-end',
 }));
 
-const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange, extraHeaderRight }) => {
+const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange, extraHeaderRight }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = useTheme();
   // On mobile, we want the drawer to be temporarily displayed over content instead of pushing content
@@ -88,7 +89,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
 
   const handleVehicleChange = (event) => {
     const selectedId = event.target.value;
-    const vehicle = vehicles.find(v => v.VehicleId === selectedId);
+    const vehicle = vehicles.find(v => v.vehicleId === selectedId);
     if (vehicle) {
       onVehicleChange(vehicle);
     }
@@ -100,6 +101,7 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
     { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
     { path: '/simulator', icon: <DirectionsCarIcon />, text: 'Car Simulator' },
     { path: '/remote-drive', icon: <SportsEsportsIcon />, text: 'Remote Drive' },
+    { path: '/voice-control', icon: <VoiceChatIcon />, text: 'Voice Control' },
     { path: '/services', icon: <BuildIcon />, text: 'Services' },
     { path: '/notifications', icon: <NotificationsIcon />, text: 'Notifications' },
   ];
@@ -133,14 +135,14 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
               <InputLabel id="vehicle-select-label" sx={{ color: 'white' }}>Vehicle</InputLabel>
               <Select
                 labelId="vehicle-select-label"
-                value={selectedVehicle?.VehicleId || ''}
+                value={selectedVehicle?.vehicleId || ''}
                 label="Vehicle"
                 onChange={handleVehicleChange}
                 sx={{ color: 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: 'white' } }}
               >
                 {vehicles.map((vehicle) => (
-                  <MenuItem key={vehicle.VehicleId} value={vehicle.VehicleId}>
-                    {vehicle.Brand || vehicle.Make} {vehicle.VehicleModel || vehicle.Model} ({vehicle.VehicleId})
+                  <MenuItem key={vehicle.vehicleId} value={vehicle.vehicleId}>
+                    {vehicle.make} {vehicle.model} ({vehicle.vehicleId})
                   </MenuItem>
                 ))}
               </Select>
@@ -246,4 +248,4 @@ const DashboardLayout = ({ children, vehicles = [], selectedVehicle, onVehicleCh
   );
 };
 
-export default DashboardLayout;
+export default MainLayout;

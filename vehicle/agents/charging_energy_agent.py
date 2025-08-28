@@ -8,6 +8,7 @@ from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
+from utils.vehicle_object_utils import find_vehicle, ensure_dict
 
 logger = get_logger(__name__)
 
@@ -153,12 +154,12 @@ class ChargingEnergyPlugin:
 
             # Get vehicle details to check if it's electric
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
-
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
@@ -218,14 +219,12 @@ class ChargingEnergyPlugin:
 
             # Get vehicle details to check if it's electric
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
@@ -244,17 +243,17 @@ class ChargingEnergyPlugin:
             # Create charging command in Cosmos DB
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": f"charge-{str(uuid.uuid4())[:8]}",
-                "vehicleId": vid,
-                "commandType": "START_CHARGING",
+                "command_id": f"charge-{str(uuid.uuid4())[:8]}",
+                "vehicle_id": vid,
+                "command_type": "start_charging",
                 "parameters": {},
                 "status": "pending",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             # Store in Cosmos DB
-            result = await cosmos_client.create_command(command)
+            result = await self.cosmos_client.create_command(command)
 
             if result:
                 return self._format_response(
@@ -265,7 +264,7 @@ class ChargingEnergyPlugin:
                         "action": "start_charging",
                         "vehicle_id": vid,
                         "status": "success",
-                        "command_id": command["commandId"],
+                        "command_id": command["command_id"],
                     },
                 )
             else:
@@ -303,14 +302,12 @@ class ChargingEnergyPlugin:
 
             # Get vehicle details to check if it's electric
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
@@ -329,17 +326,17 @@ class ChargingEnergyPlugin:
             # Create stop charging command in Cosmos DB
             command = {
                 "id": str(uuid.uuid4()),
-                "commandId": f"stop-charge-{str(uuid.uuid4())[:8]}",
-                "vehicleId": vid,
-                "commandType": "STOP_CHARGING",
+                "command_id": f"stop-charge-{str(uuid.uuid4())[:8]}",
+                "vehicle_id": vid,
+                "command_type": "stop_charging",
                 "parameters": {},
                 "status": "pending",
                 "timestamp": datetime.datetime.now().isoformat(),
-                "priority": "Normal",
+                "priority": "normal",
             }
 
             # Store in Cosmos DB
-            result = await cosmos_client.create_command(command)
+            result = await self.cosmos_client.create_command(command)
 
             if result:
                 return self._format_response(
@@ -349,7 +346,7 @@ class ChargingEnergyPlugin:
                         "action": "stop_charging",
                         "vehicle_id": vid,
                         "status": "success",
-                        "command_id": command["commandId"],
+                        "command_id": command["command_id"],
                     },
                 )
             else:
@@ -386,15 +383,13 @@ class ChargingEnergyPlugin:
             # In a production system, this would come from a specific energy usage tracking system
 
             # Get vehicle details to check if it's electric
-            vehicles = await cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-
-            if not vehicle:
+            vehicles = await self.cosmos_client.list_vehicles()
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
@@ -405,10 +400,10 @@ class ChargingEnergyPlugin:
                 )
 
             # Get status history
-            status_container = cosmos_client.status_container
+            status_container = await self.cosmos_client.status_container
 
             # Query for recent status entries of this vehicle
-            query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 20"
+            query = "SELECT * FROM c WHERE c.vehicle_id = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 20"
             parameters = [{"name": "@vehicleId", "value": vid}]
 
             items = status_container.query_items(query=query, parameters=parameters)
@@ -512,14 +507,12 @@ class ChargingEnergyPlugin:
 
             # Get vehicle details
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "I couldn't find details for your vehicle.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
@@ -605,7 +598,7 @@ class ChargingEnergyPlugin:
             # Try to get from vehicle data if not in status
             vehicles = await self.cosmos_client.list_vehicles()
             vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vehicle_id), None
+                (v for v in vehicles if v.get("vehicle_id") == vehicle_id), None
             )
 
             if vehicle and "LastLocation" in vehicle:
@@ -731,8 +724,7 @@ class ChargingEnergyPlugin:
     def _format_response(
         self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
     ) -> Dict[str, Any]:
-        """Format the response message."""
-        response = {"message": message, "success": success}
+        resp = {"message": message, "success": success}
         if data:
-            response["data"] = data
-        return response
+            resp["data"] = data
+        return resp

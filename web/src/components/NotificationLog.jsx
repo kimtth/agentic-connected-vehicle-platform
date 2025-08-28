@@ -35,6 +35,8 @@ const NotificationLog = ({ vehicleId }) => {
     return str ? str.substring(start, end) : 'N/A';
   };
 
+  const formatType = (t) => t ? t.replace(/_/g, ' ') : 'N/A';
+
   return (
     <>
       <Typography variant="h6" component="h2" gutterBottom>
@@ -51,28 +53,26 @@ const NotificationLog = ({ vehicleId }) => {
             <TableHead>
               <TableRow>
                 <TableCell>ID</TableCell>
-                <TableCell>Command ID</TableCell>
-                <TableCell>Vehicle ID</TableCell>
+                <TableCell>Type</TableCell>
                 <TableCell>Message</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell>Read</TableCell>
                 <TableCell>Timestamp</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {notifications.length > 0 ? (
-                notifications.map((notification) => (
-                  <TableRow key={notification.id || notification.notificationId || Math.random()}>
-                    <TableCell>{safeSubstring(notification.notificationId, 0, 8)}</TableCell>
-                    <TableCell>{safeSubstring(notification.commandId, 0, 8)}</TableCell>
-                    <TableCell>{notification.vehicleId || 'N/A'}</TableCell>
-                    <TableCell>{notification.message || 'N/A'}</TableCell>
-                    <TableCell>{notification.status || 'N/A'}</TableCell>
-                    <TableCell>{notification.timestamp ? new Date(notification.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
+                notifications.map((n) => (
+                  <TableRow key={n.id}>
+                    <TableCell>{safeSubstring(n.id, 0, 8)}</TableCell>
+                    <TableCell>{formatType(n.type)}</TableCell>
+                    <TableCell>{n.message || 'N/A'}</TableCell>
+                    <TableCell>{n.read ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
+                  <TableCell colSpan={5} align="center">
                     No notifications found
                   </TableCell>
                 </TableRow>

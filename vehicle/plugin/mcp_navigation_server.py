@@ -1,10 +1,8 @@
 from typing import Dict, Any
 from fastmcp import FastMCP
 import asyncio
-import sys
-from pathlib import Path
-from utils.logging_config import get_logger  # type: ignore
-from plugin.sample_data import generate_directions  # type: ignore
+from utils.logging_config import get_logger  
+from plugin.mcp_mock_data import generate_directions  
 
 
 logger = get_logger(__name__)

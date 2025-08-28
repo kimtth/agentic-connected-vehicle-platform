@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import BaseModel
 
 from utils.logging_config import get_logger
+from models.api_responses import ActionResponse
 
 logger = get_logger(__name__)
 router = APIRouter(
@@ -33,7 +34,7 @@ def get_agent_manager():
     return agent_manager
 
 
-@router.post("/lights")
+@router.post("/lights", response_model=ActionResponse)
 async def control_lights(
     vehicle_id: str,
     request: LightsControlRequest
@@ -55,18 +56,18 @@ async def control_lights(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control lights"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),  # alias accepted
+        )
         
     except Exception as e:
         logger.error(f"Error controlling lights for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/climate")
+@router.post("/climate", response_model=ActionResponse)
 async def control_climate(
     vehicle_id: str,
     request: ClimateControlRequest
@@ -88,18 +89,18 @@ async def control_climate(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control climate"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error controlling climate for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/windows")
+@router.post("/windows", response_model=ActionResponse)
 async def control_windows(
     vehicle_id: str,
     request: WindowsControlRequest
@@ -121,18 +122,18 @@ async def control_windows(
         if not response.get("success", False):
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control windows"))
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error controlling windows for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/status")
+@router.get("/status", response_model=ActionResponse)
 async def get_feature_status(
     vehicle_id: str
 ):
@@ -149,11 +150,11 @@ async def get_feature_status(
             context
         )
         
-        return {
-            "message": response.get("response"),
-            "data": response.get("data", {}),
-            "plugins_used": response.get("plugins_used", [])
-        }
+        return ActionResponse(
+            message=response.get("response"),
+            data=response.get("data", {}),
+            pluginsUsed=response.get("plugins_used", []),
+        )
         
     except Exception as e:
         logger.error(f"Error getting feature status for vehicle {vehicle_id}: {e}")
