@@ -3,12 +3,13 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
 import { Routes, Route } from 'react-router-dom';
-import DashboardLayout from './components/DashboardLayout';
+import MainLayout from './components/MainLayout';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
 import AgentChat from './components/AgentChat';
 import SimulatorPanel from './components/simulator/SimulatorPanel';
 import RemoteDrive from './components/RemoteDrive';
+import VoiceControl from './components/VoiceControl';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import Dashboard from './pages/Dashboard';
@@ -230,20 +231,23 @@ function App() {
     setLoading(true);
     try {
       const data = await fetchVehicles();
+      // Removed normalization; backend guarantees camelCase
       setVehicles(data || []);
       if ((data || []).length > 0) {
-        setSelectedVehicle(data[0]);
+        setSelectedVehicle((data || [])[0]);
       }
     } catch {
-      // Simple fallback for hackathon use
+      // Simple fallback (camelCase)
       const mockVehicles = [
         {
-          VehicleId: 'demo-vehicle-001',
           vehicleId: 'demo-vehicle-001',
-          Make: 'Demo',
-          Model: 'Car',
-          Year: 2024,
-          Status: 'Demo Mode'
+          make: 'Demo',
+          model: 'Car',
+          year: 2024,
+          status: 'Demo Mode',
+          trim: null,
+          features: null,
+          lastLocation: null
         }
       ];
       setVehicles(mockVehicles);
@@ -280,7 +284,7 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box className="App">
-        <DashboardLayout
+        <MainLayout
           vehicles={vehicles}
           selectedVehicle={selectedVehicle}
           onVehicleChange={setSelectedVehicle}
@@ -305,21 +309,28 @@ function App() {
             <Route path="/agent-chat" element={
               <ProtectedRoute>
                 <Container maxWidth="lg">
-                  <AgentChat vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                  <AgentChat vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
+                </Container>
+              </ProtectedRoute>
+            } />
+            <Route path="/voice-control" element={
+              <ProtectedRoute>
+                <Container maxWidth="lg">
+                  <VoiceControl vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
                 </Container>
               </ProtectedRoute>
             } />
             <Route path="/simulator" element={
               <ProtectedRoute>
                 <Container maxWidth="lg">
-                  <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                  <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
                 </Container>
               </ProtectedRoute>
             } />
             <Route path="/remote-drive" element={
               <ProtectedRoute>
                 <Container maxWidth="lg">
-                  <RemoteDrive vehicleId={selectedVehicle ? selectedVehicle.VehicleId : null} />
+                  <RemoteDrive vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
                 </Container>
               </ProtectedRoute>
             } />
@@ -334,7 +345,7 @@ function App() {
                       This page displays all available services for your vehicles.
                     </Typography>
                     {selectedVehicle ? (
-                      <ServiceInfo vehicleId={selectedVehicle.VehicleId} />
+                      <ServiceInfo vehicleId={selectedVehicle.vehicleId} />
                     ) : (
                       <Box sx={{ mt: 2 }}>
                         <Typography variant="subtitle1" color="text.secondary">
@@ -355,7 +366,7 @@ function App() {
                   <Typography variant="body1" paragraph>
                     This page displays all notifications from your connected vehicles.
                   </Typography>
-                  <NotificationLog vehicleId={selectedVehicle?.VehicleId} />
+                  <NotificationLog vehicleId={selectedVehicle?.vehicleId} />
                 </Paper>
               </Container>
             } />
@@ -488,7 +499,7 @@ function App() {
               </Container>
             } />
           </Routes>
-        </DashboardLayout>
+        </MainLayout>
       </Box>
     </ThemeProvider>
   );

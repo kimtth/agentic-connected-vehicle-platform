@@ -52,6 +52,7 @@ class AzureADMiddleware(BaseHTTPMiddleware):
             "/favicon.ico",
         }
         self.exclude_prefixes = (
+            "/", # Dev: Disable auth for root and docs during development
             "/docs",
             "/redoc",
             "/api/dev/seed"     # includes /api/dev/seed, /bulk, /status, etc.

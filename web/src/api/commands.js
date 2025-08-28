@@ -31,19 +31,28 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
  * @param {string} vehicleId - The ID of the vehicle
  * @param {string} command - The command to send
  * @param {boolean} isCustom - Whether this is a custom command
+ * @param {Object} payload - Optional payload for the command
  * @returns {Promise<Object>} - Response data
  */
-export const sendVehicleCommand = async (vehicleId, command, isCustom = false) => {
+export const sendVehicleCommand = async (vehicleId, command, isCustom = false, payload) => {
+  // Allow object-form: sendVehicleCommand({ vehicleId, commandType, command, isCustom, payload })
+  if (typeof vehicleId === 'object' && vehicleId !== null) {
+    const o = vehicleId;
+    payload = o.payload;
+    isCustom = !!o.isCustom;
+    command = o.commandType || o.command;
+    vehicleId = o.vehicleId;
+  }
   try {
-    const payload = {
+    const body = {
       vehicleId,
       commandType: command,
       isCustom,
       timestamp: new Date().toISOString(),
+      ...(payload !== undefined ? { payload } : {})
     };
-
     return await retryRequest(async () => {
-      const response = await api.post('/api/command', payload);
+      const response = await api.post('/api/command', body);
       return response.data;
     });
   } catch (error) {

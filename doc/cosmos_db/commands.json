@@ -1,0 +1,14 @@
+{
+    "id": "32530ad8-3d32-41f6-8f8e-12558fb9e721",
+    "commandId": "938bd9eb-aa89-4a0c-94f5-519c1b522290",
+    "vehicleId": "16d5ca70-9457-4e68-8783-c181dd68c4e2",
+    "commandType": "UNLOCK_DOORS",
+    "status": "Processing",
+    "timestamp": "2025-08-28T10:34:24.407734Z",
+    "parameters": {},
+    "_rid": "S-5ZAPXTlpwCAAAAAAAAAA==",
+    "_self": "dbs/S-5ZAA==/colls/S-5ZAPXTlpw=/docs/S-5ZAPXTlpwCAAAAAAAAAA==/",
+    "_etag": "\"2f00a907-0000-4d00-0000-68b030b10000\"",
+    "_attachments": "attachments/",
+    "_ts": 1756377265
+}

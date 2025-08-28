@@ -18,6 +18,14 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 - Frontend: React, Material-UI
 - MCP: Weather, Traffic, POI, Navigation via FastMCP (sample data in plugin/sample_data.py)
 
+> Full architecture, agent specs, and API list: see [PROJECT.md](./PROJECT.md).
+
+### Data / Naming Conventions
+- External (API, frontend, Cosmos stored docs): camelCase via Pydantic CamelModel.
+- Backend Python attributes: snake_case.
+- Do not manually recase dict keys—always return model instances.
+- Historical Cosmos items with older casing should be left intact; new writes use camelCase.
+
 ## 🚀 Quick Start
 ```bash
 az login
@@ -107,10 +115,6 @@ REACT_APP_AZURE_CLIENT_ID=<raw spa client guid>   # NOT the api:// Application I
 REACT_APP_AZURE_TENANT_ID=<tenant-guid>
 REACT_APP_AZURE_SCOPE=api://<your-app-client-id>/access_as_user
 ```
-If you mistakenly set REACT_APP_AZURE_CLIENT_ID to the Application ID URI (api://...), the UI will now display a specific guidance message. Use the SPA app registration's Client (Application) ID GUID.
-
-aud in the access token must equal the Application ID URI (without the /access_as_user).  
-If you change the Application ID URI in “Expose an API”, update AZURE_CLIENT_ID accordingly.
 
 ## 📜 License
 MIT © kimtth

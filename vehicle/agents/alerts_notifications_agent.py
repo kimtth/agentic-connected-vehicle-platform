@@ -7,6 +7,7 @@ from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
+from utils.vehicle_object_utils import notification_to_dict
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,6 @@ class AlertsNotificationsAgent:
 
 class AlertsNotificationsPlugin:
     def __init__(self):
-        # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
     @kernel_function(description="Check the status of all vehicle alerts")
@@ -45,24 +45,27 @@ class AlertsNotificationsPlugin:
             )
         try:
             await self.cosmos_client.ensure_connected()
-            alerts = await self.cosmos_client.list_notifications(vid)
+            alerts_raw = await self.cosmos_client.list_notifications(vid)
+            alerts = [notification_to_dict(a) for a in alerts_raw]
             alerts = [
-                a
-                for a in alerts
+                a for a in alerts
                 if a.get("type", "").endswith("_alert")
                 or a.get("severity", "") in ["high", "critical"]
+                or a.get("Type", "").endswith("_alert")
+                or a.get("Severity", "") in ["high", "critical"]
             ]
             if not alerts:
                 return self._format_response(
                     "There are no active alerts for your vehicle at this time.",
                     data={"alerts": [], "vehicle_id": vid},
                 )
-            unack = [a for a in alerts if not a.get("read", False)]
+            unack = [a for a in alerts if not a.get("read", a.get("Read", False))]
             text = "\n".join(
                 [
-                    f"• {a.get('type','').replace('_',' ').title()}: {a.get('message','No message')} "
-                    f"({a.get('severity','medium')} severity, "
-                    f"{'unacknowledged' if not a.get('read',False) else 'acknowledged'})"
+                    f"• {(a.get('type') or a.get('Type','')).replace('_',' ').title()}: "
+                    f"{a.get('message', a.get('Message','No message'))} "
+                    f"({a.get('severity', a.get('Severity','medium'))} severity, "
+                    f"{'unacknowledged' if not a.get('read', a.get('Read', False)) else 'acknowledged'})"
                     for a in alerts
                 ]
             )
@@ -108,15 +111,15 @@ class AlertsNotificationsPlugin:
             await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
-                "notificationId": str(uuid.uuid4()),
-                "vehicleId": vid,
+                "notification_id": str(uuid.uuid4()),
+                "vehicle_id": vid,
                 "type": "speed_alert",
                 "message": f"Speed alert set for {speed_limit} km/h",
                 "timestamp": datetime.datetime.now().isoformat(),
                 "read": False,
                 "severity": "medium",
-                "source": "System",
-                "actionRequired": False,
+                "source": "system",
+                "action_required": False,
                 "parameters": {"speed_limit": speed_limit},
             }
             await self.cosmos_client.create_notification(notification)
@@ -153,15 +156,15 @@ class AlertsNotificationsPlugin:
             await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
-                "notificationId": str(uuid.uuid4()),
-                "vehicleId": vid,
+                "notification_id": str(uuid.uuid4()),
+                "vehicle_id": vid,
                 "type": "curfew_alert",
                 "message": f"Curfew alert set from {start} to {end}",
                 "timestamp": datetime.datetime.now().isoformat(),
                 "read": False,
                 "severity": "medium",
-                "source": "System",
-                "actionRequired": False,
+                "source": "system",
+                "action_required": False,
                 "parameters": {"start_time": start, "end_time": end},
             }
             await self.cosmos_client.create_notification(notification)
@@ -207,15 +210,15 @@ class AlertsNotificationsPlugin:
             await self.cosmos_client.ensure_connected()
             notification = {
                 "id": str(uuid.uuid4()),
-                "notificationId": str(uuid.uuid4()),
-                "vehicleId": vid,
+                "notification_id": str(uuid.uuid4()),
+                "vehicle_id": vid,
                 "type": "battery_alert",
                 "message": f"Battery alert set for {threshold}%",
                 "timestamp": datetime.datetime.now().isoformat(),
                 "read": False,
                 "severity": "medium",
-                "source": "System",
-                "actionRequired": False,
+                "source": "system",
+                "action_required": False,
                 "parameters": {"threshold": threshold},
             }
             await self.cosmos_client.create_notification(notification)
@@ -247,11 +250,12 @@ class AlertsNotificationsPlugin:
             )
         try:
             await self.cosmos_client.ensure_connected()
-            notifications = await self.cosmos_client.list_notifications(vid)
+            notifications_raw = await self.cosmos_client.list_notifications(vid)
+            notifications = [notification_to_dict(n) for n in notifications_raw]
             types = {
-                n.get("type", "")
+                (n.get("type") or n.get("Type") or "")
                 for n in notifications
-                if n.get("type", "").endswith("_alert")
+                if (n.get("type") or n.get("Type") or "").endswith("_alert")
             }
             settings = {
                 "speed_alerts": "speed_alert" in types,
@@ -341,20 +345,9 @@ class AlertsNotificationsPlugin:
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Format the response to be sent back to the user.
-
-        Args:
-            message: Response message
-            success: Indicates if the operation was successful
-            data: Additional data to include in the response
-
-        Returns:
-            Formatted response as a dictionary
-        """
-        response = {"message": message, "success": success}
+        resp = {"message": message, "success": success}
         if data:
-            response.update(data)
-        return response
+            resp["data"] = data
+        return resp
 
 

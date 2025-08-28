@@ -69,11 +69,6 @@ export const fetchVehicleById = async (vehicleId) => {
       const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}`);
       const vehicle = response.data;
       
-      // Ensure consistent field naming
-      if (vehicle.VehicleId && !vehicle.vehicleId) {
-        vehicle.vehicleId = vehicle.VehicleId;
-      }
-      
       return vehicle;
     });
   } catch (error) {
@@ -117,12 +112,10 @@ export const fetchVehicleStatus = async (vehicleId) => {
  */
 export const addVehicle = async (vehicleData) => {
   try {
-    // Ensure consistent field naming before sending to backend
     const payload = {
       ...vehicleData,
-      vehicleId: vehicleData.vehicleId || vehicleData.VehicleId
     };
-    
+
     return await retryRequest(async () => {
       const response = await api.post('/api/vehicle', payload);
       return response.data;
@@ -136,3 +129,4 @@ export const addVehicle = async (vehicleData) => {
     throw error;
   }
 };
+

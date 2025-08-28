@@ -21,7 +21,7 @@ const CommandLog = ({ vehicleId }) => {
   const loadCommands = useCallback(async () => {
     try {
       const data = await fetchCommands(vehicleId);
-      setCommands(data);
+      setCommands(data || []);
     } catch (error) {
       console.error('Error loading commands:', error);
     }
@@ -109,12 +109,12 @@ const CommandLog = ({ vehicleId }) => {
           </TableHead>
           <TableBody>
             {commands.length > 0 ? (
-              commands.map((command) => (
-                <TableRow key={command.commandId}>
-                  <TableCell>{command.commandId}</TableCell>
-                  <TableCell>{command.vehicleId}</TableCell>
-                  <TableCell>{command.commandType}</TableCell>
-                  <TableCell>{command.status}</TableCell>
+              commands.map(cmd => (
+                <TableRow key={cmd.commandId}>
+                  <TableCell>{cmd.commandId}</TableCell>
+                  <TableCell>{cmd.vehicleId}</TableCell>
+                  <TableCell>{cmd.commandType}</TableCell>
+                  <TableCell>{cmd.status}</TableCell>
                 </TableRow>
               ))
             ) : (

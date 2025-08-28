@@ -1,0 +1,16 @@
+{
+  "short_name": "Connected Car",
+  "name": "Agentic Connected Car Platform",
+  "description": "AI-powered connected car platform with voice control, avatar interaction, and intelligent vehicle management",
+  "icons": [
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1976d2",
+  "background_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "categories": ["automotive", "productivity", "utilities"],
+  "lang": "en-US",
+  "scope": "/",
+  "prefer_related_applications": false
+}

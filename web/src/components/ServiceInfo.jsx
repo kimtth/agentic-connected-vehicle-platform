@@ -12,10 +12,10 @@ const ServiceInfo = ({ vehicleId }) => {
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [newService, setNewService] = useState({
-    ServiceCode: '',
-    Description: '',
-    StartDate: new Date().toISOString().split('T')[0],
-    EndDate: ''
+    serviceCode: '',
+    description: '',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: ''
   });
 
   const loadServices = useCallback(async () => {
@@ -87,14 +87,14 @@ const ServiceInfo = ({ vehicleId }) => {
           <List>
             {services.length > 0 ? (
               services.map((service, index) => (
-                <React.Fragment key={`${service.ServiceCode}-${index}`}>
+                <React.Fragment key={`${service.serviceCode}-${index}`}>
                   <ListItem alignItems="flex-start" className="service-item">
                     <ListItemText
                       primary={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <span>{service.Description}</span>
+                          <span>{service.description}</span>
                           <Chip 
-                            label={service.ServiceCode} 
+                            label={service.serviceCode} 
                             size="small" 
                             color="primary" 
                             variant="outlined" 
@@ -104,13 +104,13 @@ const ServiceInfo = ({ vehicleId }) => {
                       secondary={
                         <>
                           <Typography component="span" variant="body2" color="text.primary">
-                            Start: {new Date(service.StartDate).toLocaleDateString()}
+                            Start: {new Date(service.startDate).toLocaleDateString()}
                           </Typography>
-                          {service.EndDate && (
+                          {service.endDate && (
                             <>
                               {" — "}
                               <Typography component="span" variant="body2" color="text.primary">
-                                End: {new Date(service.EndDate).toLocaleDateString()}
+                                End: {new Date(service.endDate).toLocaleDateString()}
                               </Typography>
                             </>
                           )}
@@ -136,41 +136,41 @@ const ServiceInfo = ({ vehicleId }) => {
         <DialogContent>
           <TextField
             margin="dense"
-            name="ServiceCode"
+            name="serviceCode"
             label="Service Code"
             fullWidth
             variant="outlined"
-            value={newService.ServiceCode}
+            value={newService.serviceCode}
             onChange={handleInputChange}
           />
           <TextField
             margin="dense"
-            name="Description"
+            name="description"
             label="Description"
             fullWidth
             variant="outlined"
-            value={newService.Description}
+            value={newService.description}
             onChange={handleInputChange}
           />
           <TextField
             margin="dense"
-            name="StartDate"
+            name="startDate"
             label="Start Date"
             type="date"
             fullWidth
             variant="outlined"
-            value={newService.StartDate}
+            value={newService.startDate}
             onChange={handleInputChange}
             InputLabelProps={{ shrink: true }}
           />
           <TextField
             margin="dense"
-            name="EndDate"
+            name="endDate"
             label="End Date (Optional)"
             type="date"
             fullWidth
             variant="outlined"
-            value={newService.EndDate}
+            value={newService.endDate}
             onChange={handleInputChange}
             InputLabelProps={{ shrink: true }}
           />

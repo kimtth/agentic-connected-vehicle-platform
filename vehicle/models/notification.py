@@ -1,10 +1,14 @@
-from pydantic import BaseModel
 from typing import Optional
+from models.base import CamelModel
 
-class Notification(BaseModel):
-    notificationId: str
-    commandId: str
-    vehicleId: str
-    message: str
-    status: str
-    timestamp: str  # ISO format
+class Notification(CamelModel):
+    id: Optional[str] = None
+    vehicle_id: Optional[str] = None
+    type: Optional[str] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+    read: Optional[bool] = False
+    severity: Optional[str] = None
+    source: Optional[str] = None
+    action_required: Optional[bool] = None
+    created_at: Optional[str] = None

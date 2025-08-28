@@ -6,10 +6,8 @@ This module provides weather data through the Model Context Protocol (MCP).
 from typing import Dict, Any, List
 from fastmcp import FastMCP
 import asyncio
-import sys
-from pathlib import Path
-from utils.logging_config import get_logger  # type: ignore
-from plugin.sample_data import generate_weather, generate_forecast  # type: ignore
+from utils.logging_config import get_logger  
+from plugin.mcp_mock_data import generate_weather, generate_forecast  
 
 
 logger = get_logger(__name__)

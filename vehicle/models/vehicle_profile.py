@@ -1,42 +1,35 @@
-from pydantic import BaseModel
+from models.base import CamelModel
 from typing import Optional, Dict, Any
 
-class VehicleProfile(BaseModel):
+class VehicleProfile(CamelModel):
     """Model for vehicle profile data"""
-    vehicleId: str  # Changed from VehicleId to vehicleId
-    Brand: str
-    VehicleModel: str
-    Year: int
-    Country: str
-    Region: str
-    VIN: Optional[str] = None
-    Color: Optional[str] = None
-    Mileage: Optional[int] = 0
-    Status: Optional[str] = "Active"
-    Features: Optional[Dict[str, Any]] = None
-    LastLocation: Optional[Dict[str, float]] = None
+    id: Optional[str] = None
+    vehicle_id: str
+    make: str
+    model: str
+    year: int
+    trim: Optional[str] = None
+    status: Optional[str] = None
+    features: Optional[Dict[str, Any]] = None
+    last_location: Optional[Dict[str, float]] = None
     
     class Config:
         json_schema_extra = {
             "example": {
                 "vehicleId": "abc123",
-                "Brand": "Tesla",
-                "VehicleModel": "Model 3",
-                "Year": 2023,
-                "Country": "USA",
-                "Region": "North America",
-                "VIN": "1HGBH41JXMN109186",
-                "Color": "Red",
-                "Mileage": 15000,
-                "Status": "Active",
-                "Features": {
-                    "IsElectric": True,
-                    "HasNavigation": True,
-                    "HasAutoPilot": False
+                "make": "Tesla",
+                "model": "Model 3",
+                "year": 2023,
+                "trim": "Performance",
+                "status": "Active",
+                "features": {
+                    "isElectric": True,
+                    "hasNavigation": True,
+                    "hasAutoPilot": False
                 },
-                "LastLocation": {
-                    "Latitude": 37.7749,
-                    "Longitude": -122.4194
+                "lastLocation": {
+                    "latitude": 37.7749,
+                    "longitude": -122.4194
                 }
             }
         }

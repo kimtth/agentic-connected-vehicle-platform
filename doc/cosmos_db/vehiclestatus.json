@@ -1,0 +1,16 @@
+{
+    "vehicleId": "16d5ca70-9457-4e68-8783-c181dd68c4e2",
+    "battery": 61,
+    "temperature": 30,
+    "speed": 0,
+    "oilRemaining": 85,
+    "odometer": 42632,
+    "engineTemp": 85,
+    "timestamp": "2025-08-28T10:34:19.680373Z",
+    "id": "209e181e-8c6b-4882-aa92-eea67aca8a41",
+    "_rid": "S-5ZALrvbPMOAAAAAAAAAA==",
+    "_self": "dbs/S-5ZAA==/colls/S-5ZALrvbPM=/docs/S-5ZALrvbPMOAAAAAAAAAA==/",
+    "_etag": "\"41012385-0000-4d00-0000-68b030ac0000\"",
+    "_attachments": "attachments/",
+    "_ts": 1756377260
+}

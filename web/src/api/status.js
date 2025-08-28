@@ -71,9 +71,7 @@ export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
  */
 export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) => {
   try {
-    // Use the new public streaming endpoint that doesn't require authentication
     const streamUrl = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
-    
     const eventSource = new EventSource(streamUrl);
     
     eventSource.onmessage = (event) => {
@@ -181,18 +179,15 @@ export const subscribeToVehicleStatus = (vehicleId, onStatusUpdate, onError) => 
  */
 export const updateClimateSettings = async (vehicleId, climateSettings) => {
   try {
-    // Create a status update that includes climate settings
     const statusUpdate = {
       climateSettings: {
-        temperature: climateSettings.temperature || 22,
-        fanSpeed: climateSettings.fanSpeed || 0,
-        mode: climateSettings.mode || 'off',
+        temperature: climateSettings.temperature ?? 22,
+        fanSpeed: climateSettings.fanSpeed ?? 0,
+        mode: climateSettings.mode ?? 'off',
         ...climateSettings
       },
       timestamp: new Date().toISOString()
     };
-
-    // Use the patch endpoint to update only specific fields
     const response = await patchVehicleStatus(vehicleId, statusUpdate);
     return response;
   } catch (error) {

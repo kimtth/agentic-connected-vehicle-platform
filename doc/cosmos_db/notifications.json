@@ -1,0 +1,16 @@
+{
+    "id": "faa0b3fb-505b-4f1d-9229-c2f2dca05c3e",
+    "vehicleId": "16d5ca70-9457-4e68-8783-c181dd68c4e2",
+    "type": "low_battery_alert",
+    "message": "Auto-generated test notification",
+    "timestamp": "2025-08-28T10:34:24.980210Z",
+    "read": false,
+    "severity": "low",
+    "source": "System",
+    "actionRequired": false,
+    "_rid": "S-5ZAPGO2P0BAAAAAAAAAA==",
+    "_self": "dbs/S-5ZAA==/colls/S-5ZAPGO2P0=/docs/S-5ZAPGO2P0BAAAAAAAAAA==/",
+    "_etag": "\"6a0054fd-0000-4d00-0000-68b030b10000\"",
+    "_attachments": "attachments/",
+    "_ts": 1756377265
+}

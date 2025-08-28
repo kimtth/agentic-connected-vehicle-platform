@@ -1,0 +1,17 @@
+{
+    "vehicleId": "16d5ca70-9457-4e68-8783-c181dd68c4e2",
+    "make": "Tesla",
+    "model": "RAV4",
+    "year": 2024,
+    "status": "Maintenance",
+    "lastLocation": {
+        "latitude": 43.6532,
+        "longitude": -79.3832
+    },
+    "id": "6f27e6a3-e419-43ff-ad9f-737d8b7f68de",
+    "_rid": "S-5ZALTMqVRnAAAAAAAAAA==",
+    "_self": "dbs/S-5ZAA==/colls/S-5ZALTMqVQ=/docs/S-5ZALTMqVRnAAAAAAAAAA==/",
+    "_etag": "\"5500ee17-0000-4d00-0000-68b030ab0000\"",
+    "_attachments": "attachments/",
+    "_ts": 1756377259
+}

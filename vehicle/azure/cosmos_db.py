@@ -12,7 +12,9 @@ import uuid
 from datetime import datetime, timedelta
 import weakref
 import atexit
-
+from functools import lru_cache
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Any, List, Optional, AsyncGenerator
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey, ConsistencyLevel
 from azure.core.exceptions import AzureError
@@ -20,8 +22,13 @@ from azure.identity.aio import DefaultAzureCredential, AzureDeveloperCliCredenti
 from dotenv import load_dotenv
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
-# Replace standard logging with loguru
 from utils.logging_config import get_logger
+from models.status import VehicleStatus
+from models.vehicle_profile import VehicleProfile
+from models.service import Service
+from models.command import Command
+from models.notification import Notification
+
 
 # Get logger for this module
 logger = get_logger(__name__)
@@ -68,23 +75,8 @@ atexit.register(_safe_atexit_cleanup)
 
 class CosmosDBClient:
     """Azure Cosmos DB client implementation for Connected Car Platform"""
-    
-    _instances = {}
-    _creation_lock = None
-    
-    def __new__(cls):
-        """Implement singleton pattern to prevent multiple instances"""
-        global _singleton_instance
-        
-        if _singleton_instance is None:
-            logger.info("Creating new Cosmos DB client instance")
-            _singleton_instance = super(CosmosDBClient, cls).__new__(cls)
-            _singleton_instance._initialized = False
-        else:
-            logger.debug("Returning existing Cosmos DB client instance")
-            
-        return _singleton_instance
-    
+    # Partition key strategy: use only /vehicleId (camelCase). No legacy snake_case duplication.
+
     def __init__(self):
         """Initialize the client with environment variables (only once)"""
         # Prevent multiple initialization of the same instance
@@ -122,12 +114,22 @@ class CosmosDBClient:
         self.database_name = os.getenv("COSMOS_DB_DATABASE", "VehiclePlatformDB")
         
         # Container names with validation
-        self.vehicles_container_name = os.getenv("COSMOS_DB_CONTAINER_VEHICLES", "vehicles")
-        self.services_container_name = os.getenv("COSMOS_DB_CONTAINER_SERVICES", "services")
-        self.commands_container_name = os.getenv("COSMOS_DB_CONTAINER_COMMANDS", "commands")
-        self.notifications_container_name = os.getenv("COSMOS_DB_CONTAINER_NOTIFICATIONS", "notifications")
-        self.status_container_name = os.getenv("COSMOS_DB_CONTAINER_STATUS", "VehicleStatus")
-        
+        self.vehicles_container_name = os.getenv(
+            "COSMOS_DB_CONTAINER_VEHICLES", "vehicles"
+        )
+        self.services_container_name = os.getenv(
+            "COSMOS_DB_CONTAINER_SERVICES", "services"
+        )
+        self.commands_container_name = os.getenv(
+            "COSMOS_DB_CONTAINER_COMMANDS", "commands"
+        )
+        self.notifications_container_name = os.getenv(
+            "COSMOS_DB_CONTAINER_NOTIFICATIONS", "notifications"
+        )
+        self.status_container_name = os.getenv(
+            "COSMOS_DB_CONTAINER_STATUS", "vehiclestatus"
+        )
+
         # Connection configuration
         self.connection_config = {
             'consistency_level': ConsistencyLevel.Session,
@@ -332,7 +334,7 @@ class CosmosDBClient:
         self.status_container = self.database.get_container_client(self.status_container_name)
 
     async def _ensure_containers_exist(self):
-        """Ensure required containers exist with proper configuration"""
+        """Ensure required containers exist (camelCase /vehicleId only)."""
         container_configs = {
             self.vehicles_container_name: {
                 "partition_key": "/vehicleId",
@@ -356,7 +358,7 @@ class CosmosDBClient:
             },
             self.commands_container_name: {
                 "partition_key": "/vehicleId",
-                "default_ttl": 86400,  # 24 hours for commands
+                "default_ttl": 86400,
                 "indexing_policy": {
                     "indexingMode": "consistent",
                     "automatic": True,
@@ -371,7 +373,7 @@ class CosmosDBClient:
             },
             self.notifications_container_name: {
                 "partition_key": "/vehicleId",
-                "default_ttl": 2592000,  # 30 days for notifications
+                "default_ttl": 2592000,
                 "indexing_policy": {
                     "indexingMode": "consistent",
                     "automatic": True,
@@ -385,7 +387,7 @@ class CosmosDBClient:
             },
             self.status_container_name: {
                 "partition_key": "/vehicleId",
-                "default_ttl": 604800,  # 7 days for status
+                "default_ttl": 604800,
                 "indexing_policy": {
                     "indexingMode": "consistent",
                     "automatic": True,
@@ -393,19 +395,23 @@ class CosmosDBClient:
                         {"path": "/vehicleId/?"},
                         {"path": "/_ts/?"}
                     ],
-                    "excludedPaths": [{"path": "/*"}]
-                }
-            }
+                    "excludedPaths": [{"path": "/*"}],
+                },
+            },
         }
         
         for container_name, config in container_configs.items():
             try:
                 container = self.database.get_container_client(container_name)
-                await container.read()
-                logger.debug(f"Container {container_name} exists")
+                props = await container.read()
+                # props['partitionKey']['paths'] might be ['/vehicle_id'] (legacy) or ['/vehicleId'] (new).
+                # We accept either and continue—write path stores both fields to remain queryable.
+                logger.debug(f"Container {container_name} exists (pk paths={props.get('partitionKey', {}).get('paths')})")
             except CosmosResourceNotFoundError:
+                # Container missing: create with new camelCase partition key.
+                # This does not impact legacy containers already present.
                 try:
-                    logger.info(f"Creating Cosmos DB container: {container_name}")
+                    logger.info(f"Creating Cosmos DB container: {container_name} (pk {config['partition_key']})")
                     await self.database.create_container(
                         id=container_name,
                         partition_key=PartitionKey(path=config["partition_key"]),
@@ -414,10 +420,9 @@ class CosmosDBClient:
                     )
                     logger.info(f"Successfully created container: {container_name}")
                 except Exception as e:
-                    logger.error(f"Failed to create container {container_name}: {str(e)}")
+                    logger.error(f"Failed to create container {container_name}: {e}")
                     raise
-        
-        # Re-initialize container clients after ensuring they exist
+
         self._initialize_containers()
 
     async def _verify_connection(self):
@@ -549,470 +554,409 @@ class CosmosDBClient:
                 pass  # Ignore errors in destructor
 
     # Vehicle Status operations
-    
-    async def get_vehicle_status(self, vehicleId: str) -> Dict[str, Any]:
-        """Get the latest status for a vehicle with proper error handling"""
+
+    async def get_vehicle_status(self, vehicle_id: str) -> Optional[VehicleStatus]:
+        """Get the latest status for a vehicle (returns VehicleStatus or None)."""
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot get vehicle status.")
-            return {}
-            
-        if not vehicleId or not isinstance(vehicleId, str):
-            logger.error("Invalid vehicleId provided")
-            return {}
-            
+            return None
+        if not vehicle_id or not isinstance(vehicle_id, str):
+            logger.error("Invalid vehicle_id provided")
+            return None
         try:
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 1"
-            parameters = [{"name": "@vehicleId", "value": vehicleId}]
-            
+            parameters = [{"name": "@vehicleId", "value": vehicle_id}]
             items = self.status_container.query_items(
-                query=query,
-                parameters=parameters,
-                partition_key=vehicleId
+                query=query, parameters=parameters, partition_key=vehicle_id
             )
-            
             async for item in items:
-                return {
-                    "Battery": item.get("batteryLevel", 0),
-                    "Temperature": item.get("temperature", 0),
-                    "Speed": item.get("speed", 0),
-                    "OilRemaining": item.get("oilLevel", 0),
-                    "timestamp": item.get("_ts")
-                }
-                
-            logger.debug(f"No status found for vehicle {vehicleId}")
-            return {}
+                # Map storage doc to model (timestamp from _ts if missing)
+                if "timestamp" not in item and "_ts" in item:
+                    item["timestamp"] = (
+                        datetime.fromtimestamp(item["_ts"], tz=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                    )
+                return VehicleStatus(**item)
+            return None
         except Exception as e:
-            logger.error(f"Error getting vehicle status for {vehicleId}: {str(e)}")
-            return {}
+            logger.error(f"Error getting vehicle status for {vehicle_id}: {str(e)}")
+            return None
 
-    async def list_vehicle_status(self, vehicleId: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """List recent status entries for a vehicle (supports diagnostics/energy agents)."""
+    async def list_vehicle_status(
+        self, vehicle_id: str, limit: int = 10
+    ) -> List[VehicleStatus]:
+        """List recent status entries for a vehicle."""
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot list vehicle status history.")
             return []
         try:
             query = "SELECT TOP @limit * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
             parameters = [
-                {"name": "@vehicleId", "value": vehicleId},
+                {"name": "@vehicleId", "value": vehicle_id},
                 {"name": "@limit", "value": limit},
             ]
-            items = self.status_container.query_items(query=query, parameters=parameters, partition_key=vehicleId)
-            result: List[Dict[str, Any]] = []
+            items = self.status_container.query_items(
+                query=query, parameters=parameters, partition_key=vehicle_id
+            )
+            result: List[VehicleStatus] = []
             async for item in items:
-                result.append(item)
+                if "timestamp" not in item and "_ts" in item:
+                    item["timestamp"] = (
+                        datetime.fromtimestamp(item["_ts"], tz=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                    )
+                result.append(VehicleStatus(**item))
             return result
         except Exception as e:
-            logger.error(f"Error listing vehicle status for {vehicleId}: {e}")
+            logger.error(f"Error listing vehicle status for {vehicle_id}: {e}")
             return []
 
-    async def subscribe_to_vehicle_status(self, vehicleId: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def subscribe_to_vehicle_status(
+        self, vehicle_id: str
+    ) -> AsyncGenerator[VehicleStatus, None]:
         """
-        Subscribe to status updates for a vehicle using Change Feed
-        
-        Args:
-            vehicleId: ID of the vehicle
-            
-        Yields:
-            Dictionary with updated vehicle status data
+        Subscribe to status updates for a vehicle (polling).
+        Yields VehicleStatus instances.
         """
-        if not await self.ensure_connected():
-            logger.warning("No Cosmos DB connection. Cannot subscribe to vehicle status.")
+        if not await self.ensure_connected() or not self.status_container:
+            logger.warning(
+                "No Cosmos DB connection. Cannot subscribe to vehicle status."
+            )
             return
-            
-        if not self.status_container:
-            logger.warning("Status container not available. Cannot subscribe to vehicle status.")
-            return
-            
         try:
-            # Initialize with latest status
-            latest_status = await self.get_vehicle_status(vehicleId)
+            latest_status = await self.get_vehicle_status(vehicle_id)
+            last_timestamp_epoch = 0
             if latest_status:
                 yield latest_status
-            
-            # Use a simpler polling approach instead of change feed for better compatibility
-            last_timestamp = latest_status.get("timestamp", 0) if latest_status else 0
-            
+                # Derive last timestamp from ISO string if available
+                try:
+                    if latest_status.timestamp:
+                        last_timestamp_epoch = int(
+                            datetime.fromisoformat(
+                                latest_status.timestamp.replace("Z", "")
+                            ).timestamp()
+                        )
+                except Exception:
+                    pass
+
             while True:
                 try:
-                    # Ensure we still have a valid connection and container
                     if not self.connected or not self.status_container:
-                        logger.warning("Connection lost during status subscription. Attempting to reconnect...")
                         if not await self.ensure_connected():
-                            logger.error("Failed to reconnect. Ending status subscription.")
                             break
-                        if not self.status_container:
-                            logger.error("Status container not available after reconnection.")
-                            break
-                    
-                    # Query for newer status updates
-                    query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId AND c._ts > @lastTimestamp ORDER BY c._ts DESC"
+                    query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId AND c._ts > @lastTs ORDER BY c._ts DESC"
                     parameters = [
-                        {"name": "@vehicleId", "value": vehicleId},
-                        {"name": "@lastTimestamp", "value": last_timestamp}
+                        {"name": "@vehicleId", "value": vehicle_id},
+                        {"name": "@lastTs", "value": last_timestamp_epoch},
                     ]
-                    
                     items = self.status_container.query_items(
-                        query=query,
-                        parameters=parameters,
-                        partition_key=vehicleId
+                        query=query, parameters=parameters, partition_key=vehicle_id
                     )
-                    
-                    has_updates = False
+                    had_updates = False
                     async for item in items:
-                        updated_status = {
-                            "Battery": item.get("batteryLevel", 0),
-                            "Temperature": item.get("temperature", 0),
-                            "Speed": item.get("speed", 0),
-                            "OilRemaining": item.get("oilLevel", 0),
-                            "timestamp": item.get("_ts")
-                        }
-                        yield updated_status
-                        last_timestamp = max(last_timestamp, item.get("_ts", 0))
-                        has_updates = True
-                    
-                    # If no updates, wait before checking again
-                    if not has_updates:
-                        await asyncio.sleep(5.0)  # Poll every 5 seconds
-                    else:
-                        await asyncio.sleep(1.0)  # Check more frequently if there are updates
-                        
+                        if "timestamp" not in item and "_ts" in item:
+                            item["timestamp"] = (
+                                datetime.fromtimestamp(item["_ts"], tz=timezone.utc)
+                                .isoformat()
+                                .replace("+00:00", "Z")
+                            )
+                        model = VehicleStatus(**item)
+                        yield model
+                        had_updates = True
+                        last_timestamp_epoch = max(
+                            last_timestamp_epoch, item.get("_ts", 0)
+                        )
+                    await asyncio.sleep(1.0 if had_updates else 5.0)
                 except Exception as e:
                     logger.error(f"Error in status polling iteration: {str(e)}")
-                    await asyncio.sleep(10.0)  # Wait longer on error before retrying
-                    
-                    # Try to reconnect if we get connection-related errors
-                    if any(phrase in str(e).lower() for phrase in ["connection", "timeout", "unavailable", "nonetype"]):
-                        logger.info("Attempting to reconnect due to connection error...")
-                        try:
-                            await self.connect()
-                        except Exception as reconnect_error:
-                            logger.error(f"Reconnection failed: {str(reconnect_error)}")
+                    await asyncio.sleep(10.0)
                     continue
-                    
         except Exception as e:
             logger.error(f"Error in vehicle status subscription: {str(e)}")
             return
 
-    async def update_vehicle_status(self, vehicleId: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update or create vehicle status record"""
+    async def update_vehicle_status(
+        self, vehicle_id: str, status_data: Dict[str, Any]
+    ) -> VehicleStatus:
+        """
+        Persist a vehicle status snapshot.
+        Accepts dict (snake or camel via Pydantic) and returns VehicleStatus.
+        Always writes a new item (no legacy merge).
+        Handles incoming status_data that may already contain vehicle_id / vehicleId keys.
+        """
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot update vehicle status.")
-            return status_data
-        
-        # Normalize incoming fields to storage schema
-        def _normalize(data: Dict[str, Any]) -> Dict[str, Any]:
-            out = dict(data)  # shallow copy
-            # Canonical keys
-            if "Battery" in out and "batteryLevel" not in out:
-                out["batteryLevel"] = out.pop("Battery")
-            if "Temperature" in out and "temperature" not in out:
-                out["temperature"] = out.pop("Temperature")
-            if "Speed" in out and "speed" not in out:
-                out["speed"] = out.pop("Speed")
-            if "OilRemaining" in out and "oilLevel" not in out:
-                out["oilLevel"] = out.pop("OilRemaining")
-            if "Odometer" in out and "odometer" not in out:
-                out["odometer"] = out.pop("Odometer")
-            # Ensure required fields
-            out["vehicleId"] = vehicleId
-            return out
+            return VehicleStatus(vehicle_id=vehicle_id)
 
         try:
-            normalized = _normalize(status_data)
+            if not isinstance(status_data, dict):
+                logger.error("status_data must be a dict")
+                return VehicleStatus(vehicle_id=vehicle_id)
 
-            # Check if status exists
-            query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC OFFSET 0 LIMIT 1"
-            parameters = [{"name": "@vehicleId", "value": vehicleId}]
-            items = self.status_container.query_items(query=query, parameters=parameters, partition_key=vehicleId)
-            
-            existing_status = None
-            async for item in items:
-                existing_status = item
-                break
-                
-            if existing_status:
-                # Update existing status
-                for key, value in normalized.items():
-                    existing_status[key] = value
-                existing_status["_ts"] = int(datetime.now().timestamp())
-                result = await self.status_container.replace_item(
-                    item=existing_status["id"], body=existing_status
+            # Copy & sanitize to avoid mutating caller data and duplicate vehicle_id kwargs
+            sanitized = status_data.copy()
+            sanitized.pop("vehicleId", None)  # prevent duplicate arg
+
+            # Build model (Pydantic will map aliases). We intentionally persist snake_case
+            # to align with backend + Cosmos naming rules (partition key /vehicle_id).
+            model = VehicleStatus(vehicle_id=vehicle_id, **sanitized)
+            body = model.model_dump(by_alias=True, exclude_none=True)
+            # Ensure partition key
+            body["vehicleId"] = vehicle_id
+            body["id"] = str(uuid.uuid4())
+            body["timestamp"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            created = await self.status_container.create_item(body=body)
+            if "timestamp" not in created and "_ts" in created:
+                created["timestamp"] = (
+                    datetime.fromtimestamp(created["_ts"], tz=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
                 )
-                logger.info(f"Updated status for vehicle {vehicleId}")
-                return result
-            else:
-                # Create new status
-                normalized["id"] = str(uuid.uuid4())
-                normalized["_ts"] = int(datetime.now().timestamp())
-                result = await self.status_container.create_item(body=normalized)
-                logger.info(f"Created status for vehicle {vehicleId}")
-                return result
+            return VehicleStatus(**created)
         except Exception as e:
             logger.error(f"Error updating vehicle status: {str(e)}")
-            return status_data
-    
+            return VehicleStatus(vehicle_id=vehicle_id)
+
     # Vehicles operations
-    
-    async def create_vehicle(self, vehicle_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def create_vehicle(self, vehicle_data: Dict[str, Any]) -> VehicleProfile:
         """Create a new vehicle"""
         if not await self.ensure_connected() or not self.vehicles_container:
             logger.warning("No Cosmos DB connection. Cannot create vehicle.")
-            return vehicle_data
-            
+            return VehicleProfile(**vehicle_data)
         try:
-            # Ensure we have an id
-            if "id" not in vehicle_data:
-                vehicle_data["id"] = str(uuid.uuid4())
-                
-            result = await self.vehicles_container.create_item(body=vehicle_data)
-            logger.info(f"Created vehicle with ID: {result.get('id')}")
-            return result
+            if not isinstance(vehicle_data, VehicleProfile):
+                vehicle = VehicleProfile(**vehicle_data)
+            else:
+                vehicle = vehicle_data
+            doc = vehicle.model_dump(by_alias=True, exclude_none=True)
+            if "id" not in doc:
+                doc["id"] = str(uuid.uuid4())
+            if "vehicleId" not in doc:
+                doc["vehicleId"] = doc.get("id")
+            created = await self.vehicles_container.create_item(body=doc)
+            return VehicleProfile(**created)
         except Exception as e:
-            logger.error(f"Error creating vehicle: {str(e)}")
-            return vehicle_data
-            
-    async def list_vehicles(self) -> List[Dict[str, Any]]:
+            logger.error(f"Error creating vehicle: {e}")
+            return VehicleProfile(**vehicle_data)
+
+    async def list_vehicles(self) -> List[VehicleProfile]:
         """List all vehicles"""
         if not await self.ensure_connected() or not self.vehicles_container:
             logger.warning("No Cosmos DB connection. Cannot list vehicles.")
             return []
-            
         try:
             query = "SELECT * FROM c"
             items = self.vehicles_container.query_items(query=query)
-            
-            result = []
+            result: List[VehicleProfile] = []
             async for item in items:
-                result.append(item)
-                
+                result.append(VehicleProfile(**item))
             return result
         except Exception as e:
-            logger.error(f"Error listing vehicles: {str(e)}")
+            logger.error(f"Error listing vehicles: {e}")
             return []
 
-    async def get_vehicle(self, vehicleId: str) -> Optional[Dict[str, Any]]:
-        """Get a single vehicle by VehicleId."""
+    async def get_vehicle(self, vehicle_id: str) -> Optional[VehicleProfile]:
+        """Get a single vehicle by vehicle_id."""
         if not await self.ensure_connected() or not self.vehicles_container:
             logger.warning("No Cosmos DB connection. Cannot get vehicle.")
             return None
         try:
-            query = "SELECT TOP 1 * FROM c WHERE c.vehicleId = @vehicleId OR c.VehicleId = @vehicleId"
-            parameters = [{"name": "@vehicleId", "value": vehicleId}]
+            query = "SELECT TOP 1 * FROM c WHERE c.vehicleId = @vehicleId"
+            params = [{"name": "@vehicleId", "value": vehicle_id}]
             items = self.vehicles_container.query_items(
-                query=query,
-                parameters=parameters,
-                partition_key=vehicleId
+                query=query, parameters=params, partition_key=vehicle_id
             )
             async for item in items:
-                return item
-            # Fallback cross-partition (in case partition key mismatch)
-            items = self.vehicles_container.query_items(
-                query=query,
-                parameters=parameters
-            )
+                return VehicleProfile(**item)
+            # fallback cross-partition
+            items = self.vehicles_container.query_items(query=query, parameters=params)
             async for item in items:
-                return item
+                return VehicleProfile(**item)
             return None
         except Exception as e:
-            logger.error(f"Error getting vehicle {vehicleId}: {e}")
+            logger.error(f"Error getting vehicle {vehicle_id}: {e}")
             return None
 
     # Services operations
-    
-    async def create_service(self, service_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def create_service(self, service_data: Dict[str, Any]) -> Service:
         """Create a new service record"""
         if not await self.ensure_connected() or not self.services_container:
             logger.warning("No Cosmos DB connection. Cannot create service.")
-            return service_data
-            
+            return Service(**service_data)
         try:
-            result = await self.services_container.create_item(body=service_data)
-            logger.info(f"Created service with ID: {result.get('id')}")
-            return result
+            service = service_data if isinstance(service_data, Service) else Service(**service_data)
+            doc = service.model_dump(by_alias=True, exclude_none=True)
+            if "id" not in doc:
+                doc["id"] = str(uuid.uuid4())
+            if "vehicleId" not in doc and service_data.get("vehicleId"):
+                doc["vehicleId"] = service_data["vehicleId"]
+            created = await self.services_container.create_item(body=doc)
+            return Service(**created)
         except Exception as e:
-            logger.error(f"Error creating service: {str(e)}")
-            return service_data
-            
-    async def list_services(self, vehicleId: str) -> List[Dict[str, Any]]:
+            logger.error(f"Error creating service: {e}")
+            return Service(**service_data)
+
+    async def list_services(self, vehicle_id: str) -> List[Service]:
         """List all services for a vehicle"""
         if not await self.ensure_connected() or not self.services_container:
             logger.warning("No Cosmos DB connection. Cannot list services.")
             return []
-            
         try:
-            # Use parameters instead of string interpolation
             query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId"
-            parameters = [{"name": "@vehicleId", "value": vehicleId}]
-            
+            params = [{"name": "@vehicleId", "value": vehicle_id}]
             items = self.services_container.query_items(
-                query=query,
-                parameters=parameters,
-                partition_key=vehicleId
+                query=query, parameters=params, partition_key=vehicle_id
             )
-            
-            result = []
+            result: List[Service] = []
             async for item in items:
-                result.append(item)
-                
+                result.append(Service(**item))
             return result
         except Exception as e:
-            logger.error(f"Error listing services: {str(e)}")
+            logger.error(f"Error listing services: {e}")
             return []
 
     # Commands operations
-    
-    async def create_command(self, command_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def create_command(self, command_data: Dict[str, Any]) -> Command:
         """Create a new command"""
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot create command.")
-            return command_data
-            
+            return Command(**command_data)
         try:
-            # Ensure we have an id
-            if "id" not in command_data:
-                command_data["id"] = str(uuid.uuid4())
-                
-            result = await self.commands_container.create_item(body=command_data)
-            logger.info(f"Created command with ID: {result.get('commandId')}")
-            return result
+            command = command_data if isinstance(command_data, Command) else Command(**command_data)
+            doc = command.model_dump(by_alias=True, exclude_none=True)
+            if "id" not in doc:
+                doc["id"] = str(uuid.uuid4())
+            if "vehicleId" not in doc and command_data.get("vehicleId"):
+                doc["vehicleId"] = command_data["vehicleId"]
+            created = await self.commands_container.create_item(body=doc)
+            return Command(**created)
         except Exception as e:
-            logger.error(f"Error creating command: {str(e)}")
-            return command_data
-            
-    async def update_command(self, command_id: str, vehicleId: str, updated_data: Dict[str, Any]) -> Dict[str, Any]:
+            logger.error(f"Error creating command: {e}")
+            return Command(**command_data)
+
+    async def update_command(self, command_id: str, updated_data: Dict[str, Any]) -> Optional[Command]:
         """Update an existing command"""
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot update command.")
-            return updated_data
-            
+            return None
         try:
-            # Use parameters for security
-            query = "SELECT * FROM c WHERE c.commandId = @commandId"
-            parameters = [{"name": "@commandId", "value": command_id}]
-            
-            items = self.commands_container.query_items(
-                query=query,
-                parameters=parameters
+            query = (
+                "SELECT * FROM c WHERE c.commandId = @id OR c.command_id = @id OR c.id = @id"
             )
-            
-            command = None
+            params = [{"name": "@id", "value": command_id}]
+            items = self.commands_container.query_items(query=query, parameters=params)
+            existing = None
             async for item in items:
-                command = item
+                existing = item
                 break
-                
-            if not command:
+            if not existing:
                 logger.warning(f"Command {command_id} not found")
-                return updated_data
-                
-            # Update the command
-            for key, value in updated_data.items():
-                command[key] = value
-                
-            result = await self.commands_container.replace_item(
-                item=command["id"],
-                body=command
+                return None
+            # Merge
+            for k, v in updated_data.items():
+                existing[k] = v
+            # Normalize through model
+            cmd_model = Command(**existing)
+            doc = cmd_model.model_dump(by_alias=True, exclude_none=True)
+            pk = doc.get("vehicleId")
+            replaced = await self.commands_container.replace_item(
+                item=existing.get("id"), body=doc, partition_key=pk
             )
-            
-            logger.info(f"Updated command with ID: {command_id}")
-            return result
+            return Command(**replaced)
         except Exception as e:
-            logger.error(f"Error updating command: {str(e)}")
-            return updated_data
-            
-    async def list_commands(self, vehicleId: str = None) -> List[Dict[str, Any]]:
+            logger.error(f"Error updating command {command_id}: {e}")
+            return None
+
+    async def list_commands(self, vehicle_id: str = None) -> List[Command]:
         """List all commands with optional filter by vehicle ID"""
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot list commands.")
             return []
-            
         try:
-            if vehicleId:
-                # Using parameters for security
+            if vehicle_id:
                 query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
-                parameters = [{"name": "@vehicleId", "value": vehicleId}]
-                
+                params = [{"name": "@vehicleId", "value": vehicle_id}]
                 items = self.commands_container.query_items(
-                    query=query,
-                    parameters=parameters,
-                    partition_key=vehicleId
+                    query=query, parameters=params, partition_key=vehicle_id
                 )
             else:
                 query = "SELECT * FROM c ORDER BY c._ts DESC"
                 items = self.commands_container.query_items(query=query)
-        
-            result = []
+            result: List[Command] = []
             async for item in items:
-                result.append(item)
-                
+                result.append(Command(**item))
             return result
         except Exception as e:
-            logger.error(f"Error listing commands: {str(e)}")
+            logger.error(f"Error listing commands: {e}")
             return []
 
-    # Notifications operations
-    
-    async def create_notification(self, notification_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_notification(self, notification_data: Dict[str, Any]) -> Notification:
         """Create a new notification"""
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot create notification.")
-            return notification_data
-            
+            return Notification(**notification_data)
         try:
-            # Ensure we have an id
-            if "id" not in notification_data:
-                notification_data["id"] = str(uuid.uuid4())
-                
-            result = await self.notifications_container.create_item(body=notification_data)
-            logger.info(f"Created notification with ID: {result.get('id')}")
-            return result
+            notification = (
+                notification_data
+                if isinstance(notification_data, Notification)
+                else Notification(**notification_data)
+            )
+            doc = notification.model_dump(by_alias=True, exclude_none=True)
+            if "id" not in doc:
+                doc["id"] = str(uuid.uuid4())
+            if "vehicleId" not in doc and notification_data.get("vehicleId"):
+                doc["vehicleId"] = notification_data["vehicleId"]
+            created = await self.notifications_container.create_item(body=doc)
+            return Notification(**created)
         except Exception as e:
-            logger.error(f"Error creating notification: {str(e)}")
-            return notification_data
-            
-    async def list_notifications(self, vehicleId: str = None) -> List[Dict[str, Any]]:
+            logger.error(f"Error creating notification: {e}")
+            return Notification(**notification_data)
+
+    async def list_notifications(self, vehicle_id: str = None) -> List[Notification]:
         """List all notifications with optional filter by vehicle ID"""
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot list notifications.")
             return []
-            
         try:
-            if vehicleId:
-                # Using parameters for security
+            if vehicle_id:
                 query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
-                parameters = [{"name": "@vehicleId", "value": vehicleId}]
-                
+                params = [{"name": "@vehicleId", "value": vehicle_id}]
                 items = self.notifications_container.query_items(
-                    query=query,
-                    parameters=parameters,
-                    partition_key=vehicleId
+                    query=query, parameters=params, partition_key=vehicle_id
                 )
             else:
                 query = "SELECT * FROM c ORDER BY c._ts DESC"
                 items = self.notifications_container.query_items(query=query)
-        
-            result = []
+            result: List[Notification] = []
             async for item in items:
-                result.append(item)
-                
+                result.append(Notification(**item))
             return result
         except Exception as e:
-            logger.error(f"Error listing notifications: {str(e)}")
+            logger.error(f"Error listing notifications: {e}")
             return []
 
-    async def mark_notification_read(self, notificationId: str) -> Optional[Dict[str, Any]]:
-        """Mark a notification as read by its id."""
+    async def mark_notification_read(self, notificationId: str) -> Optional[Notification]:
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot mark notification read.")
             return None
         try:
-            # Find notification by id (cross-partition)
             query = "SELECT TOP 1 * FROM c WHERE c.id = @id"
-            parameters = [{"name": "@id", "value": notificationId}]
-            items = self.notifications_container.query_items(query=query, parameters=parameters)
+            params = [{"name": "@id", "value": notificationId}]
+            items = self.notifications_container.query_items(query=query, parameters=params)
             async for item in items:
                 item["read"] = True
-                result = await self.notifications_container.replace_item(item=item["id"], body=item, partition_key=item.get("vehicleId"))
-                return result
+                model = Notification(**item)
+                doc = model.model_dump(by_alias=True, exclude_none=True)
+                pk = doc.get("vehicleId")
+                replaced = await self.notifications_container.replace_item(
+                    item=notificationId, body=doc, partition_key=pk
+                )
+                return Notification(**replaced)
             logger.warning(f"Notification {notificationId} not found")
             return None
         except Exception as e:
@@ -1020,15 +964,13 @@ class CosmosDBClient:
             return None
 
     async def delete_notification(self, notificationId: str) -> bool:
-        """Delete a notification by its id."""
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot delete notification.")
             return False
         try:
-            # Find notification by id to get partition key
             query = "SELECT TOP 1 c.id, c.vehicleId FROM c WHERE c.id = @id"
-            parameters = [{"name": "@id", "value": notificationId}]
-            items = self.notifications_container.query_items(query=query, parameters=parameters)
+            params = [{"name": "@id", "value": notificationId}]
+            items = self.notifications_container.query_items(query=query, parameters=params)
             async for item in items:
                 await self.notifications_container.delete_item(item=notificationId, partition_key=item.get("vehicleId"))
                 return True
@@ -1038,11 +980,15 @@ class CosmosDBClient:
             logger.error(f"Error deleting notification: {e}")
             return False
 
-# Create a singleton instance
-def get_cosmos_client():
-    """Factory function to get the singleton Cosmos DB client instance"""
-    global _singleton_instance
-    if _singleton_instance is None:
-        _singleton_instance = CosmosDBClient()
-    return _singleton_instance
+    # Removed unused _to_camel helper (model-based conversion now)
 
+
+@lru_cache(maxsize=1)
+def get_cosmos_client():
+    return CosmosDBClient()
+
+
+async def get_cosmos_client_connected():
+    client = get_cosmos_client()
+    await client.ensure_connected()
+    return client

@@ -12,6 +12,7 @@ from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
+from utils.vehicle_object_utils import find_vehicle, ensure_dict
 
 logger = get_logger(__name__)
 
@@ -36,7 +37,6 @@ class DiagnosticsBatteryAgent:
 
 class DiagnosticsBatteryPlugin:
     def __init__(self):
-        # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
     @kernel_function(description="Run diagnostics on vehicle systems")
@@ -61,16 +61,17 @@ class DiagnosticsBatteryPlugin:
                     "No recent vehicle status data is available for diagnostics.",
                     success=False,
                 )
+            vehicle_status_dict = ensure_dict(vehicle_status)
 
             # Get vehicle details to check specs
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "Vehicle details are not available for diagnostics.", success=False
                 )
+            vehicle = ensure_dict(vehicle_obj)
+            telemetry = ensure_dict(vehicle.get("CurrentTelemetry", {}))
 
             # Placeholder for diagnostics data analysis
             diagnostics_data = {}
@@ -79,21 +80,20 @@ class DiagnosticsBatteryPlugin:
             issues = []
 
             # Check battery level
-            battery_level = vehicle_status.get(
-                "batteryLevel", vehicle_status.get("Battery", 0)
+            battery_level = vehicle_status_dict.get(
+                "batteryLevel", vehicle_status_dict.get("Battery", 0)
             )
             if battery_level < 20:
                 issues.append("Low battery level detected")
 
             # Check temperature
-            temperature = vehicle_status.get(
-                "temperature", vehicle_status.get("Temperature", 0)
+            temperature = vehicle_status_dict.get(
+                "temperature", vehicle_status_dict.get("Temperature", 0)
             )
             if temperature > 90:
                 issues.append("High engine/system temperature detected")
 
             # Check tire pressure from telemetry if available
-            telemetry = vehicle.get("CurrentTelemetry", {})
             tire_pressure = telemetry.get("TirePressure", {})
 
             for tire_position, pressure in tire_pressure.items():
@@ -107,8 +107,8 @@ class DiagnosticsBatteryPlugin:
 
             # For non-electric vehicles, check oil level
             if not is_electric:
-                oil_level = vehicle_status.get(
-                    "oilLevel", vehicle_status.get("OilLevel", 0)
+                oil_level = vehicle_status_dict.get(
+                    "oilLevel", vehicle_status_dict.get("OilLevel", 0)
                 )
                 if oil_level < 25:
                     issues.append("Low oil level detected")
@@ -184,24 +184,26 @@ class DiagnosticsBatteryPlugin:
                 return self._format_response(
                     "No recent battery status data is available.", success=False
                 )
+            vehicle_status_dict = ensure_dict(vehicle_status)
 
             # Get vehicle details
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next((v for v in vehicles if v.get("VehicleId") == vid), None)
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "Vehicle details are not available for battery status.",
                     success=False,
                 )
+            vehicle = ensure_dict(vehicle_obj)
 
             # Check if the vehicle is electric
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
 
             if is_electric:
                 # For electric vehicles, get battery data
-                battery_level = vehicle_status.get(
+                battery_level = vehicle_status_dict.get(
                     "batteryLevel",
-                    vehicle_status.get("Battery", vehicle.get("BatteryLevel", 0)),
+                    vehicle_status_dict.get("Battery", vehicle.get("BatteryLevel", 0)),
                 )
 
                 # Calculate range based on battery level and vehicle type
@@ -227,11 +229,9 @@ class DiagnosticsBatteryPlugin:
                 charge_rate = 0
 
                 # Looking at status history can help determine if charging is happening
-                status_history = await self.cosmos_client.list_vehicle_status(
-                    vid, limit=5
-                )
+                status_history_raw = await self.cosmos_client.list_vehicle_status(vid, limit=5)
+                status_history = [ensure_dict(s) for s in status_history_raw]
                 if len(status_history) > 1:
-                    # If the battery level has increased over time, the vehicle might be charging
                     sorted_history = sorted(
                         status_history,
                         key=lambda x: x.get("timestamp", ""),
@@ -239,15 +239,10 @@ class DiagnosticsBatteryPlugin:
                     )
                     latest = sorted_history[0]
                     previous = sorted_history[-1]
-
                     latest_level = latest.get("batteryLevel", latest.get("Battery", 0))
-                    previous_level = previous.get(
-                        "batteryLevel", previous.get("Battery", 0)
-                    )
-
+                    previous_level = previous.get("batteryLevel", previous.get("Battery", 0))
                     if latest_level > previous_level:
                         charging = True
-                        # Rough estimate of charge rate
                         charge_rate = 11  # Standard charge rate in kW
 
                 # Build the response data
@@ -364,26 +359,15 @@ class DiagnosticsBatteryPlugin:
                     "No recent vehicle status data is available for system health check.",
                     success=False,
                 )
-
-            # Get vehicle details
-            vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-            if not vehicle:
-                return self._format_response(
-                    "Vehicle details are not available for system health check.",
-                    success=False,
-                )
+            vehicle_status_dict = ensure_dict(vehicle_status)
 
             # Get command history to check for any failed commands
-            commands = await self.cosmos_client.list_commands(vid)
+            commands_raw = await self.cosmos_client.list_commands(vid)
+            commands = [ensure_dict(c) for c in commands_raw]
             recent_commands = sorted(
                 commands, key=lambda c: c.get("timestamp", ""), reverse=True
             )[:10]
-            failed_commands = [
-                cmd for cmd in recent_commands if cmd.get("status", "") == "Failed"
-            ]
+            failed_commands = [cmd for cmd in recent_commands if cmd.get("status", "") == "Failed"]
 
             # System components to check
             system_health = {
@@ -401,16 +385,16 @@ class DiagnosticsBatteryPlugin:
             }
 
             # Check for issues based on vehicle status
-            temperature = vehicle_status.get(
-                "temperature", vehicle_status.get("Temperature", 0)
+            temperature = vehicle_status_dict.get(
+                "temperature", vehicle_status_dict.get("Temperature", 0)
             )
             if temperature > 90:
                 system_health["components"]["engine"] = "Warning"
                 system_health["issues"].append("High engine temperature detected")
                 system_health["recommendations"].append("Check cooling system")
 
-            battery_level = vehicle_status.get(
-                "batteryLevel", vehicle_status.get("Battery", 0)
+            battery_level = vehicle_status_dict.get(
+                "batteryLevel", vehicle_status_dict.get("Battery", 0)
             )
             if battery_level < 20:
                 system_health["components"]["battery"] = "Low"
@@ -478,17 +462,18 @@ class DiagnosticsBatteryPlugin:
 
             # Get vehicle details
             vehicles = await self.cosmos_client.list_vehicles()
-            vehicle = next(
-                (v for v in vehicles if v.get("VehicleId") == vid), None
-            )
-            if not vehicle:
+            vehicle_obj = find_vehicle(vehicles, vid)
+            if not vehicle_obj:
                 return self._format_response(
                     "Vehicle details are not available for maintenance check.",
                     success=False,
                 )
-
-            # Get service history
-            services = await self.cosmos_client.list_services(vid)
+            vehicle = ensure_dict(vehicle_obj)
+            services_raw = await self.cosmos_client.list_services(vid)
+            services = [
+                s.model_dump(by_alias=True) if hasattr(s, "model_dump") else s
+                for s in services_raw
+            ]
 
             # Check vehicle properties
             is_electric = vehicle.get("Features", {}).get("IsElectric", False)
@@ -696,10 +681,23 @@ class DiagnosticsBatteryPlugin:
     def _format_response(
         self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
     ) -> Dict[str, Any]:
-        """Format the response message."""
         return {
             "message": message,
             "data": data or {},
             "success": success,
         }
+        return {
+            "diagnostics": "Run comprehensive diagnostics on vehicle systems",
+            "battery_status": "Check battery charge level, health, and status",
+            "system_health": "Get detailed reports on all vehicle systems",
+            "maintenance_check": "Review maintenance schedule and upcoming service needs",
+        }
 
+    def _format_response(
+        self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
+    ) -> Dict[str, Any]:
+        return {
+            "message": message,
+            "data": data or {},
+            "success": success,
+        }

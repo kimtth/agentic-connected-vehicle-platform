@@ -5,13 +5,13 @@
 
 # Bulk seed defaults
 @vehicles = 5
-@commandsPerVehicle = 2
-@notificationsPerVehicle = 2
-@servicesPerVehicle = 1
+@commandsPerVehicle = 7
+@notificationsPerVehicle = 8
+@servicesPerVehicle = 10
 @statusesPerVehicle = 1
 
 # Known and random vehicle IDs
-@vehicleId = a640f210-dca4-4db7-931a-9f119bbe54e0
+@vehicleId = 8863ea11-175f-4a87-a48b-dc5c4a419c2e
 @newVehicleId = {{$guid}}
 
 ###
@@ -40,11 +40,11 @@ Content-Type: application/json
 Accept: application/json
 
 {
-  "vehicles": {{vehicles}},
-  "commandsPerVehicle": {{commandsPerVehicle}},
-  "notificationsPerVehicle": {{notificationsPerVehicle}},
-  "servicesPerVehicle": {{servicesPerVehicle}},
-  "statusesPerVehicle": {{statusesPerVehicle}}
+  "Vehicles": {{vehicles}},
+  "CommandsPerVehicle": {{commandsPerVehicle}},
+  "NotificationsPerVehicle": {{notificationsPerVehicle}},
+  "ServicesPerVehicle": {{servicesPerVehicle}},
+  "StatusesPerVehicle": {{statusesPerVehicle}}
 }
 
 ###
@@ -52,3 +52,13 @@ Accept: application/json
 # Verify seed status
 GET {{host}}/api/dev/seed/status
 Accept: application/json
+
+###
+# Fetch ICE Token for Speech Avatar Service
+###
+@region = YOUR_REGION_HERE
+@SPEECH_SERVICE_API_KEY = YOUR_API_KEY_HERE
+GET https://{{region}}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1
+Accept: application/json
+Ocp-Apim-Subscription-Key: {{SPEECH_SERVICE_API_KEY}}
+

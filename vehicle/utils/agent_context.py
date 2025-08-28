@@ -11,7 +11,7 @@ def extract_vehicle_id(vehicle_id: Optional[str] = None) -> Optional[str]:
         from semantic_kernel.kernel import Kernel
         kernel = Kernel.get_current()
         if kernel and hasattr(kernel, "arguments"):
-            return kernel.arguments.get("vehicle_id") or kernel.arguments.get("vehicleId")
+            return kernel.arguments.get("vehicleId")
     except Exception:
         pass
     return None
