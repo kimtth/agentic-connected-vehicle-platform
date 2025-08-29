@@ -6,9 +6,7 @@ from .base import CamelModel
 # so we only specify explicit aliases where names differ.
 
 class ActionResponse(CamelModel):
-    message: str
-    data: Optional[Any] = None
-    plugins_used: List[str]
+    data: Any
 
 class AIResponse(CamelModel):
     response: str

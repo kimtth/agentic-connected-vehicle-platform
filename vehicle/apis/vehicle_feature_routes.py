@@ -1,9 +1,8 @@
-from fastapi import APIRouter, HTTPException
-from typing import Optional, Dict, Any
-from pydantic import BaseModel
-
+from fastapi import APIRouter, Depends, HTTPException
 from utils.logging_config import get_logger
 from models.api_responses import ActionResponse
+from models.agent_request import LightsControlRequest, ClimateControlRequest, WindowsControlRequest
+from agents.agent_manager import AgentManager
 
 logger = get_logger(__name__)
 router = APIRouter(
@@ -12,36 +11,19 @@ router = APIRouter(
 )
 
 
-class LightsControlRequest(BaseModel):
-    light_type: str = "headlights"  # headlights, interior_lights, hazard_lights
-    action: str = "on"  # on, off
-
-
-class ClimateControlRequest(BaseModel):
-    temperature: Optional[int] = 22
-    action: str = "set_temperature"  # heating, cooling, set_temperature
-    auto: bool = True
-
-
-class WindowsControlRequest(BaseModel):
-    action: str = "up"  # up, down
-    windows: str = "all"  # all, driver, passenger
-
-
 # Import agent_manager locally to avoid circular import
-def get_agent_manager():
-    from agents.agent_manager import agent_manager
-    return agent_manager
+def _get_agent_manager() -> AgentManager:
+    return AgentManager()
 
 
 @router.post("/lights", response_model=ActionResponse)
 async def control_lights(
     vehicle_id: str,
-    request: LightsControlRequest
+    request: LightsControlRequest,
+    agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle lights (headlights, interior, hazard)"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"turn {request.action} {request.light_type}",
@@ -57,9 +39,7 @@ async def control_lights(
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control lights"))
         
         return ActionResponse(
-            message=response.get("response"),
-            data=response.get("data", {}),
-            pluginsUsed=response.get("plugins_used", []),  # alias accepted
+            data=response
         )
         
     except Exception as e:
@@ -70,11 +50,11 @@ async def control_lights(
 @router.post("/climate", response_model=ActionResponse)
 async def control_climate(
     vehicle_id: str,
-    request: ClimateControlRequest
+    request: ClimateControlRequest,
+    agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle climate settings"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"set climate to {request.temperature} degrees {request.action}",
@@ -90,9 +70,7 @@ async def control_climate(
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control climate"))
         
         return ActionResponse(
-            message=response.get("response"),
-            data=response.get("data", {}),
-            pluginsUsed=response.get("plugins_used", []),
+            data=response
         )
         
     except Exception as e:
@@ -103,11 +81,11 @@ async def control_climate(
 @router.post("/windows", response_model=ActionResponse)
 async def control_windows(
     vehicle_id: str,
-    request: WindowsControlRequest
+    request: WindowsControlRequest,
+    agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle windows"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "query": f"roll {request.action} {request.windows} windows",
@@ -123,9 +101,7 @@ async def control_windows(
             raise HTTPException(status_code=400, detail=response.get("response", "Failed to control windows"))
         
         return ActionResponse(
-            message=response.get("response"),
-            data=response.get("data", {}),
-            pluginsUsed=response.get("plugins_used", []),
+            data=response
         )
         
     except Exception as e:
@@ -135,11 +111,11 @@ async def control_windows(
 
 @router.get("/status", response_model=ActionResponse)
 async def get_feature_status(
-    vehicle_id: str
+    vehicle_id: str,
+    agent_manager=Depends(_get_agent_manager)
 ):
     """Get current status of vehicle features"""
     try:
-        agent_manager = get_agent_manager()
         context = {
             "vehicle_id": vehicle_id,
             "session_id": f"status_{vehicle_id}"
@@ -151,9 +127,7 @@ async def get_feature_status(
         )
         
         return ActionResponse(
-            message=response.get("response"),
-            data=response.get("data", {}),
-            pluginsUsed=response.get("plugins_used", []),
+            data=response
         )
         
     except Exception as e:
