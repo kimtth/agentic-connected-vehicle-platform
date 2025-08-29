@@ -162,8 +162,15 @@ export const fetchSpeechIceToken = async () => {
   const { data } = await api.get('/api/speech/ice_token');
   if (!data || typeof data !== 'object') throw new Error('Invalid ICE token response');
 
-  // CamelCase only (no fallbacks)
-  const { urls, username, password } = data;
+  // Support both shapes:
+  // { urls, username, password }
+  // or { payload: { Urls, Username, Password } }
+  const payload = data.payload && typeof data.payload === 'object' ? data.payload : data;
+
+  // Accept either lowercase or PascalCase keys from backend
+  const urls = payload.urls || payload.Urls;
+  const username = payload.username || payload.Username;
+  const password = payload.password || payload.Password;
 
   if (!Array.isArray(urls) || urls.length === 0 || !username || !password) {
     throw new Error('Malformed ICE token payload');

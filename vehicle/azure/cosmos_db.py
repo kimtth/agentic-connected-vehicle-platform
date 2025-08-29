@@ -35,8 +35,6 @@ logger = get_logger(__name__)
 
 # Global registry for tracking client instances
 _client_registry = weakref.WeakSet()
-_singleton_instance = None
-_singleton_lock = asyncio.Lock() if hasattr(asyncio, 'Lock') else None
 
 async def _cleanup_all_clients():
     """Cleanup all registered clients on shutdown"""
@@ -174,6 +172,8 @@ class CosmosDBClient:
         self._initialized = True
         
         logger.info("Cosmos DB client configuration completed")
+        
+        self._closing = False  # new: track shutdown state
         
     def _parse_preferred_locations(self):
         """Parse preferred locations from environment variable"""
@@ -442,8 +442,22 @@ class CosmosDBClient:
             return False
         return datetime.now() - self.last_health_check < timedelta(seconds=self.health_check_interval)
 
+    def _is_transport_closed_error(self, err: Exception) -> bool:
+        """Return True when the underlying HTTP transport is already closed."""
+        try:
+            msg = str(err).lower()
+            return "http transport has already been closed" in msg or "transport has already been closed" in msg
+        except Exception:
+            return False
+
+    def is_active(self) -> bool:
+        """True if client is connected and not closing."""
+        return self.connected and not self._closing
+
     async def ensure_connected(self):
         """Ensure we have a valid connection with automatic retry"""
+        if self._closing:  # new guard
+            return False
         if self.connected and self._is_connection_healthy():
             return True
             
@@ -458,6 +472,24 @@ class CosmosDBClient:
             wait_time += 1
             
         return self.connected
+
+    async def close(self):
+        """Close Cosmos DB client connection properly with enhanced cleanup"""
+        self._closing = True  # set flag early
+        try:
+            # Use the connection lock to prevent concurrent operations
+            async with self._connection_lock:
+                await self._cleanup_client()
+                
+            # Remove from registry
+            try:
+                _client_registry.discard(self)
+            except Exception:
+                pass  # Registry cleanup is not critical
+                
+            # logger.info("Cosmos DB connection closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing Cosmos DB connection: {str(e)}")
 
     async def _cleanup_client(self):
         """Clean up client resources properly with enhanced session management"""
@@ -512,24 +544,6 @@ class CosmosDBClient:
         except Exception as e:
             logger.debug(f"Error during client close: {str(e)}")
 
-    async def close(self):
-        """Close Cosmos DB client connection properly with enhanced cleanup"""
-        
-        try:
-            # Use the connection lock to prevent concurrent operations
-            async with self._connection_lock:
-                await self._cleanup_client()
-                
-            # Remove from registry
-            try:
-                _client_registry.discard(self)
-            except Exception:
-                pass  # Registry cleanup is not critical
-                
-            # logger.info("Cosmos DB connection closed successfully")
-        except Exception as e:
-            logger.error(f"Error closing Cosmos DB connection: {str(e)}")
-
     # Context manager support for proper resource management
     async def __aenter__(self):
         """Async context manager entry"""
@@ -556,6 +570,8 @@ class CosmosDBClient:
     # Vehicle Status operations
 
     async def get_vehicle_status(self, vehicle_id: str) -> Optional[VehicleStatus]:
+        if self._closing:
+            return None
         """Get the latest status for a vehicle (returns VehicleStatus or None)."""
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot get vehicle status.")
@@ -586,6 +602,8 @@ class CosmosDBClient:
     async def list_vehicle_status(
         self, vehicle_id: str, limit: int = 10
     ) -> List[VehicleStatus]:
+        if self._closing:
+            return []
         """List recent status entries for a vehicle."""
         if not await self.ensure_connected() or not self.status_container:
             logger.warning("No Cosmos DB connection. Cannot list vehicle status history.")
@@ -620,10 +638,10 @@ class CosmosDBClient:
         Subscribe to status updates for a vehicle (polling).
         Yields VehicleStatus instances.
         """
-        if not await self.ensure_connected() or not self.status_container:
-            logger.warning(
-                "No Cosmos DB connection. Cannot subscribe to vehicle status."
-            )
+        if self._closing:
+            return
+        if not await self.ensure_connected() or not self.status_container or self._closing:
+            logger.warning("No Cosmos DB connection. Cannot subscribe to vehicle status.")
             return
         try:
             latest_status = await self.get_vehicle_status(vehicle_id)
@@ -642,9 +660,11 @@ class CosmosDBClient:
                     pass
 
             while True:
+                if self._closing or not self.connected:
+                    break  # new exit condition
                 try:
                     if not self.connected or not self.status_container:
-                        if not await self.ensure_connected():
+                        if self._closing or not await self.ensure_connected():
                             break
                     query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId AND c._ts > @lastTs ORDER BY c._ts DESC"
                     parameters = [
@@ -670,6 +690,11 @@ class CosmosDBClient:
                         )
                     await asyncio.sleep(1.0 if had_updates else 5.0)
                 except Exception as e:
+                    if self._closing:
+                        break
+                    if self._is_transport_closed_error(e):
+                        logger.info("Stopping status polling: underlying HTTP transport closed")
+                        break
                     logger.error(f"Error in status polling iteration: {str(e)}")
                     await asyncio.sleep(10.0)
                     continue
@@ -802,6 +827,8 @@ class CosmosDBClient:
 
     async def list_services(self, vehicle_id: str) -> List[Service]:
         """List all services for a vehicle"""
+        if self._closing:
+            return []
         if not await self.ensure_connected() or not self.services_container:
             logger.warning("No Cosmos DB connection. Cannot list services.")
             return []
@@ -863,10 +890,8 @@ class CosmosDBClient:
             # Normalize through model
             cmd_model = Command(**existing)
             doc = cmd_model.model_dump(by_alias=True, exclude_none=True)
-            pk = doc.get("vehicleId")
-            replaced = await self.commands_container.replace_item(
-                item=existing.get("id"), body=doc, partition_key=pk
-            )
+            # Persist via upsert to avoid partition_key forwarding issues
+            replaced = await self.commands_container.upsert_item(body=doc)
             return Command(**replaced)
         except Exception as e:
             logger.error(f"Error updating command {command_id}: {e}")
@@ -874,6 +899,8 @@ class CosmosDBClient:
 
     async def list_commands(self, vehicle_id: str = None) -> List[Command]:
         """List all commands with optional filter by vehicle ID"""
+        if self._closing:
+            return []
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot list commands.")
             return []
@@ -911,7 +938,25 @@ class CosmosDBClient:
                 doc["id"] = str(uuid.uuid4())
             if "vehicleId" not in doc and notification_data.get("vehicleId"):
                 doc["vehicleId"] = notification_data["vehicleId"]
-            created = await self.notifications_container.create_item(body=doc)
+            try:
+                created = await self.notifications_container.create_item(body=doc)
+            except Exception as e:
+                # If HTTP transport closed, try reconnect once and retry
+                if self._is_transport_closed_error(e):
+                    logger.warning("HTTP transport closed during create_notification, attempting reconnect and retry")
+                    try:
+                        # Cleanup any stale client resources and reconnect
+                        await self._cleanup_client()
+                        await self.connect()
+                        # ensure containers are initialized after reconnect
+                        if not self.notifications_container:
+                            self._initialize_containers()
+                        created = await self.notifications_container.create_item(body=doc)
+                    except Exception as retry_exc:
+                        logger.error(f"Retry create_notification also failed: {retry_exc}")
+                        raise
+                else:
+                    raise
             return Notification(**created)
         except Exception as e:
             logger.error(f"Error creating notification: {e}")
@@ -941,6 +986,8 @@ class CosmosDBClient:
             return []
 
     async def mark_notification_read(self, notificationId: str) -> Optional[Notification]:
+        if self._closing:
+            return None
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot mark notification read.")
             return None
@@ -952,10 +999,8 @@ class CosmosDBClient:
                 item["read"] = True
                 model = Notification(**item)
                 doc = model.model_dump(by_alias=True, exclude_none=True)
-                pk = doc.get("vehicleId")
-                replaced = await self.notifications_container.replace_item(
-                    item=notificationId, body=doc, partition_key=pk
-                )
+                # Persist via upsert to avoid passing partition_key into lower-level request
+                replaced = await self.notifications_container.upsert_item(body=doc)
                 return Notification(**replaced)
             logger.warning(f"Notification {notificationId} not found")
             return None
@@ -964,6 +1009,8 @@ class CosmosDBClient:
             return None
 
     async def delete_notification(self, notificationId: str) -> bool:
+        if self._closing:
+            return False
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot delete notification.")
             return False

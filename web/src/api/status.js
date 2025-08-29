@@ -16,7 +16,7 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
       if (i === retries - 1) throw error;
       if (error.name === 'AbortError') throw error; // Don't retry aborted requests
       if (error.code === 'USER_NOT_AUTHENTICATED') throw error; // Don't retry auth errors
-      
+
       console.log(`Status API retry attempt ${i + 1}/${retries} after ${delay}ms`);
       const wait = delay;
       await new Promise(resolve => setTimeout(resolve, wait));
@@ -25,41 +25,78 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
   }
 }
 
+// ---- Added: fetch throttling / caching state ----
+const FETCH_STATUS_MIN_INTERVAL = 5000; // ms throttle to avoid background hammering
+const statusFetchCache = new Map(); // vehicleId -> { data, ts }
+const statusInFlight = new Map();   // vehicleId -> Promise
+
+// ---- Added: shared stream manager (single EventSource per vehicle) ----
+const activeStatusStreams = new Map();
+/*
+Structure:
+activeStatusStreams.set(vehicleId, {
+  eventSource,
+  handlers: Set<{ onStatusUpdate, onError }>,
+  refCount,
+  started,
+  connect()
+})
+*/
+
 /**
  * Fetch the current vehicle status
  * @param {string} vehicleId 
  * @param {number} retries Number of retries if request fails (default: 2)
  * @returns {Promise<Object>} Vehicle status data
  */
-export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
-  try {
-    return await retryRequest(async () => {
-      const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`);
-      if (response.data) {
-        return response.data;
-      } else {
-        throw new Error("No status data returned");
-      }
-    }, retries);
-  } catch (error) {
-    if (error.code === 'USER_NOT_AUTHENTICATED') {
-      console.error('Authentication required: User must be logged in to fetch vehicle status');
-      throw new Error('Please log in to access vehicle status');
-    }
-    
-    // Handle 404 errors specifically
-    if (error.response && error.response.status === 404) {
-      console.error(`Vehicle status not found for vehicle ID: ${vehicleId}. Vehicle may not exist or have status data.`);
-    }
-    
-    // Handle 405 Method Not Allowed specifically
-    if (error.response && error.response.status === 405) {
-      console.error(`Method not allowed for vehicle status endpoint. This suggests the backend endpoint exists but doesn't support GET requests for vehicle ID: ${vehicleId}`);
-    }
-    
-    console.error(`Error fetching vehicle status for ${vehicleId}:`, error);
-    throw error;
+export const fetchVehicleStatus = async (vehicleId, retries = 2, options = {}) => {
+  // options: { force?: boolean, signal?: AbortSignal }
+  const { force = false, signal } = options || {};
+  const now = Date.now();
+  const cached = statusFetchCache.get(vehicleId);
+
+  // Skip network if streaming already active and we have any cache
+  const streamRec = activeStatusStreams.get(vehicleId);
+  if (!force && streamRec && streamRec.eventSource && cached) return cached.data;
+
+  // Throttle if not forced and we have relatively fresh data
+  if (!force && cached && (now - cached.ts) < FETCH_STATUS_MIN_INTERVAL) {
+    return cached.data;
   }
+
+  // Coalesce concurrent fetches
+  if (!force && statusInFlight.has(vehicleId)) {
+    return statusInFlight.get(vehicleId);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      return await retryRequest(async () => {
+        // Support abort via AbortController
+        const controller = new AbortController();
+        if (signal) {
+          if (signal.aborted) {
+            controller.abort();
+          } else {
+            signal.addEventListener('abort', () => controller.abort(), { once: true });
+          }
+        }
+        const response = await api.get(`/api/vehicles/${encodeURIComponent(vehicleId)}/status`, {
+          signal: controller.signal
+        });
+        if (response.data) {
+          statusFetchCache.set(vehicleId, { data: response.data, ts: Date.now() });
+          return response.data;
+        }
+        throw new Error("No status data returned");
+      }, retries);
+    } finally {
+      statusInFlight.delete(vehicleId);
+    }
+  })();
+
+  statusInFlight.set(vehicleId, fetchPromise);
+  return fetchPromise;
 };
 
 /**
@@ -70,50 +107,104 @@ export const fetchVehicleStatus = async (vehicleId, retries = 2) => {
  * @returns {function} Cleanup function to stop streaming
  */
 export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) => {
-  try {
-    const streamUrl = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
-    const eventSource = new EventSource(streamUrl);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const statusData = JSON.parse(event.data);
-        
-        // Check for errors in the stream
-        if (statusData.error) {
-          const streamError = new Error(statusData.error);
-          streamError.code = 'STREAM_ERROR';
-          onError(streamError);
+  // Defensive: manage a single EventSource per vehicle with ref counting
+  let record = activeStatusStreams.get(vehicleId);
+
+  if (!record) {
+    record = {
+      eventSource: null,
+      handlers: new Set(),
+      refCount: 0,
+      started: false,
+      connect() {
+        if (record.started || (typeof document !== 'undefined' && document.hidden)) {
           return;
         }
-        
-        onStatusUpdate(statusData);
-      } catch (error) {
-        console.error('Error parsing status update:', error);
-        onError(error);
+        record.started = true;
+        const streamUrl = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
+        const es = new EventSource(streamUrl);
+        record.eventSource = es;
+
+        es.onmessage = (event) => {
+          let statusData;
+          try {
+            statusData = JSON.parse(event.data);
+          } catch (e) {
+            record.handlers.forEach(h => h.onError?.(e));
+            return;
+          }
+          if (statusData?.error) {
+            const err = new Error(statusData.error);
+            err.code = 'STREAM_ERROR';
+            record.handlers.forEach(h => h.onError?.(err));
+            return;
+          }
+          record.handlers.forEach(h => h.onStatusUpdate?.(statusData));
+        };
+
+        es.onerror = (error) => {
+          if (es.readyState === EventSource.CLOSED) {
+            const err = new Error('Status stream connection closed');
+            err.code = 'STREAM_CLOSED';
+            record.handlers.forEach(h => h.onError?.(err));
+          } else {
+            record.handlers.forEach(h => h.onError?.(error));
+          }
+        };
       }
     };
-    
-    eventSource.onerror = (error) => {
-      console.error('Error in status stream:', error);
-      
-      // Check if this might be a connection error
-      if (eventSource.readyState === EventSource.CLOSED) {
-        const streamError = new Error('Status stream connection closed');
-        streamError.code = 'STREAM_CLOSED';
-        onError(streamError);
-      } else {
-        onError(error);
-      }
-    };
-    
-    // Return cleanup function
-    return () => {
-      eventSource.close();
-    };
-  } catch (error) {
-    console.error('Error setting up status stream:', error);
-    throw error;
+    activeStatusStreams.set(vehicleId, record);
+
+    // Visibility handling: defer or reconnect when tab becomes visible
+    if (typeof document !== 'undefined') {
+      const visibilityHandler = () => {
+        if (!activeStatusStreams.has(vehicleId)) {
+          document.removeEventListener('visibilitychange', visibilityHandler);
+          return;
+        }
+        if (!document.hidden && record.eventSource == null) {
+          record.started = false;
+          record.connect();
+        } else if (document.hidden && record.eventSource) {
+          // Suspend to reduce background usage
+          record.eventSource.close();
+          record.eventSource = null;
+          record.started = false;
+        }
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
+      // Initial attempt
+      visibilityHandler();
+    } else {
+      // Non-browser environment
+      record.connect();
+    }
   }
+
+  // Register handlers
+  const handlerObj = { onStatusUpdate, onError };
+  record.handlers.add(handlerObj);
+  record.refCount += 1;
+
+  // If stream not started (e.g., created while document hidden) try to connect
+  record.connect();
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (!activeStatusStreams.has(vehicleId)) return;
+    record.handlers.delete(handlerObj);
+    record.refCount -= 1;
+    if (record.refCount <= 0) {
+      if (record.eventSource) {
+        record.eventSource.close();
+      }
+      activeStatusStreams.delete(vehicleId);
+    }
+  };
+
+  return cleanup;
 };
 
 /**
@@ -206,10 +297,10 @@ export const updateClimateSettings = async (vehicleId, climateSettings) => {
  */
 export const setupPolling = (vehicleId, onStatusUpdate, onError, interval = INTERVALS.REALTIME_POLLING) => {
   let isActive = true;
-  
+
   const poll = async () => {
     if (!isActive) return;
-    
+
     try {
       const status = await fetchVehicleStatus(vehicleId);
       if (isActive) {
@@ -221,15 +312,15 @@ export const setupPolling = (vehicleId, onStatusUpdate, onError, interval = INTE
         onError(error);
       }
     }
-    
+
     if (isActive) {
       setTimeout(poll, interval);
     }
   };
-  
+
   // Start polling
   poll();
-  
+
   // Return cleanup function
   return () => {
     isActive = false;

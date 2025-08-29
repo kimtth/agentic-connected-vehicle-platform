@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
     Box, Paper, Typography, Grid, Button, TextField, Switch,
-    FormControlLabel, Divider, Chip, LinearProgress, IconButton, Tooltip
+    FormControlLabel, Divider, Chip, LinearProgress, IconButton, Tooltip,
+    Select, MenuItem, FormControl, InputLabel
 } from '@mui/material';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -12,16 +13,23 @@ import SubtitlesIcon from '@mui/icons-material/Subtitles';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CloseIcon from '@mui/icons-material/Close';
 import { fetchSpeechToken, fetchSpeechIceToken } from '../api/services';
+import {
+    speakText as speakAvatarText,
+    buildAvatarPipeline
+} from '../services/speechStreamService';
 
-const QUICK_REPLIES = [
-    'Let me check that.',
-    'One moment please.',
-    'Analyzing your request.',
-    'Working on it now.'
+const LANGUAGE_OPTIONS = [
+    { code: 'en-US', label: 'English', voice: 'en-US-AvaMultilingualNeural' },
+    { code: 'ko-KR', label: 'Korean', voice: 'en-US-AvaMultilingualNeural' },
+    { code: 'ja-JP', label: 'Japanese', voice: 'en-US-AvaMultilingualNeural' }
 ];
 
 const VoiceControl = ({ vehicleId }) => {
-    // --- Token issuing only ---
+    const recognizerRef = useRef(null);
+    const synthesizerRef = useRef(null);
+    const peerConnectionRef = useRef(null);
+    const pipelineRef = useRef(null); // bundle { avatarSynthesizer, peerConnection, recognizer, speakText, stop }
+
     const speechTokenRef = useRef(null);
     const speechIceTokenRef = useRef(null);
     const tokenFetchedAtRef = useRef(0);
@@ -30,25 +38,51 @@ const VoiceControl = ({ vehicleId }) => {
     const [tokenError, setTokenError] = useState(null);
     const [loadingTokens, setLoadingTokens] = useState(false);
 
-    // --- Minimal placeholder UI states kept for layout ---
-    const [sessionActive] = useState(false);
-    const [avatarConnecting] = useState(false);
-    const [avatarStreamReady] = useState(false);
+    // --- UI states ---
+    const [sessionActive, setSessionActive] = useState(false);
+    const [avatarConnecting, setAvatarConnecting] = useState(false);
+    const [avatarStreamReady, setAvatarStreamReady] = useState(false);
     const [avatarMuted, setAvatarMuted] = useState(true);
     const [message, setMessage] = useState('Hello! I am your in-vehicle assistant.');
     const [showSubtitles, setShowSubtitles] = useState(true);
     const [transcript, setTranscript] = useState([]);
-    const [subtitleText] = useState('');
+    const [subtitleText, setSubtitleText] = useState('');
+    const [isRecognizing, setIsRecognizing] = useState(false);
+    const [selectedLanguage, setSelectedLanguage] = useState('en-US');
+    const [avatarMeta, setAvatarMeta] = useState({ character: 'meg', style: 'formal', voice: 'en-US-AvaMultilingualNeural' });
 
-    // --- Token helpers (retained) ---
+    const videoRef = useRef(null);
+    const audioRef = useRef(null);
+
+    // --- Load Speech SDK (now only for cleanup) ---
+    useEffect(() => {
+        return () => {
+            try { pipelineRef.current?.stop(); } catch {}
+            pipelineRef.current = null;
+            peerConnectionRef.current = null;
+            synthesizerRef.current = null;
+            recognizerRef.current = null;
+        };
+    }, []);
+
+    // --- Token helpers (simplified) ---
     const ensureSpeechToken = useCallback(async (force = false) => {
         const now = Date.now();
-        if (!force && speechTokenRef.current && tokenFetchedAtRef.current && (now - tokenFetchedAtRef.current) < 8 * 60 * 1000) {
+        if (
+            !force &&
+            speechTokenRef.current &&
+            tokenFetchedAtRef.current &&
+            (now - tokenFetchedAtRef.current) < 8 * 60 * 1000
+        ) {
             return speechTokenRef.current;
         }
         try {
             setLoadingTokens(true);
-            const data = await fetchSpeechToken();
+            const data = await fetchSpeechToken(); // expects { token, region }
+            if (!data || !data.token || !data.region) {
+                setTokenError('Invalid speech token response.');
+                return null;
+            }
             speechTokenRef.current = data;
             tokenFetchedAtRef.current = now;
             setRegion(data.region);
@@ -73,20 +107,173 @@ const VoiceControl = ({ vehicleId }) => {
         }
     }, []);
 
-    // Initial token fetch
-    useEffect(() => {
-        ensureSpeechToken();
-        ensureSpeechIceToken();
-    }, [ensureSpeechToken, ensureSpeechIceToken]);
+    const stopSession = useCallback(() => {
+        try { pipelineRef.current?.stop(); } catch {}
+        pipelineRef.current = null;
+        peerConnectionRef.current = null;
+        synthesizerRef.current = null;
+        recognizerRef.current = null;
+        setSessionActive(false);
+        setAvatarConnecting(false);
+        setAvatarStreamReady(false);
+        setSubtitleText('');
+    }, []);
 
-    // --- No-op / stub handlers (logic removed) ---
-    const startSession = useCallback(() => { ensureSpeechToken(true); }, [ensureSpeechToken]);
-    const stopSession = useCallback(() => { /* logic removed */ }, []);
-    const handleSpeak = useCallback(() => { ensureSpeechToken(true); }, [ensureSpeechToken]);
-    const doRecognizeOnce = useCallback(() => { /* logic removed */ }, []);
+    const startSession = useCallback(async () => {
+        if (sessionActive || avatarConnecting) return;
+        setAvatarConnecting(true);
+
+        const tokenData = await ensureSpeechToken(true);
+        const iceTokenData = await ensureSpeechIceToken(true);
+        if (!tokenData || !iceTokenData) {
+            setTokenError('Failed to get necessary tokens for session.');
+            setAvatarConnecting(false);
+            return;
+        }
+
+        try {
+            const { token: authToken, region } = tokenData;
+            
+            // Handle iceServers array format from fetchSpeechIceToken
+            const iceServer = iceTokenData.iceServers[0];
+            const { urls, username, credential } = iceServer || {};
+            // console.log('Starting session with:', { iceTokenData, iceServer, authToken, region, urls, username, credential });
+            
+            if (!Array.isArray(urls) || urls.length === 0) {
+                setTokenError('ICE token missing valid URLs.');
+                setAvatarConnecting(false);
+                return;
+            }
+
+            const pipeline = await buildAvatarPipeline({
+                token: authToken,
+                region,
+                iceServer: {
+                    urls: urls,
+                    username: username,
+                    credential: credential
+                },
+                voiceName: avatarMeta.voice,
+                character: avatarMeta.character,
+                style: avatarMeta.style,
+                onTrack: (event) => {
+                    if (event.track.kind === 'video' && videoRef.current) {
+                        videoRef.current.srcObject = event.streams[0];
+                        videoRef.current.play().catch(()=>{});
+                        setAvatarStreamReady(true);
+                    }
+                    if (event.track.kind === 'audio' && audioRef.current) {
+                        audioRef.current.srcObject = event.streams[0];
+                        audioRef.current.play().catch(()=>{});
+                    }
+                },
+                onConnectionState: (state) => {
+                    if (state === 'failed' || state === 'disconnected') stopSession();
+                }
+            });
+
+            pipelineRef.current = pipeline;
+            synthesizerRef.current = pipeline.avatarSynthesizer;
+            peerConnectionRef.current = pipeline.peerConnection;
+            recognizerRef.current = pipeline.recognizer || recognizerRef.current;
+
+            if (synthesizerRef.current) {
+                synthesizerRef.current.wordBoundary = (_s, e) => {
+                    if (showSubtitles) setSubtitleText(e.text);
+                };
+                synthesizerRef.current.synthesisCompleted = () => setSubtitleText('');
+            }
+
+            if (recognizerRef.current) {
+                recognizerRef.current.recognizing = (_s, e) => {
+                    setTranscript(prev => {
+                        const copy = [...prev];
+                        if (copy.length && copy[copy.length - 1].startsWith('RECOGNIZING:')) {
+                            copy[copy.length - 1] = `RECOGNIZING: ${e.result?.text || ''}`;
+                        } else {
+                            copy.push(`RECOGNIZING: ${e.result?.text || ''}`);
+                        }
+                        return copy;
+                    });
+                };
+                recognizerRef.current.recognized = (_s, e) => {
+                    const recognizedText = e.result.text;
+                    setTranscript(prev => [...prev, `RECOGNIZED: ${recognizedText}`]);
+                    setIsRecognizing(false);
+                    
+                    // Set recognized text to message field and auto-send
+                    if (recognizedText && recognizedText.trim()) {
+                        setMessage(recognizedText);
+                        // Auto-send after a brief delay to allow UI update
+                        setTimeout(() => {
+                            if (synthesizerRef.current) {
+                                speakAvatarText(synthesizerRef.current, recognizedText, {
+                                    onStart: () => setTranscript(p => [...p, `SPEAKING: ${recognizedText}`])
+                                });
+                            }
+                        }, 100);
+                    }
+                };
+                recognizerRef.current.canceled = (_s, e) => {
+                    setTranscript(prev => [...prev, `CANCELED: Reason=${e.reason}`]);
+                    setIsRecognizing(false);
+                };
+            }
+
+            setSessionActive(true);
+        } catch (err) {
+            console.error('[VoiceControl] Start session failed', err);
+            setTokenError(err?.message || 'Avatar failed to start.');
+            stopSession();
+        } finally {
+            setAvatarConnecting(false);
+        }
+    }, [sessionActive, avatarConnecting, ensureSpeechToken, ensureSpeechIceToken, stopSession, showSubtitles, avatarMeta]);
+
+    const handleSpeak = useCallback(async () => {
+        if (!sessionActive && !avatarConnecting) {
+            await startSession();
+        }
+        // Defer until synthesizer exists
+        const trySpeak = () => {
+            if (synthesizerRef.current) {
+                speakAvatarText(synthesizerRef.current, message, {
+                    onStart: () => setTranscript(p => [...p, `SPEAKING: ${message}`])
+                });
+            } else {
+                setTimeout(trySpeak, 50);
+            }
+        };
+        trySpeak();
+    }, [sessionActive, avatarConnecting, startSession, message]);
+
+    const doRecognizeOnce = useCallback(() => {
+        if (!recognizerRef.current) {
+            alert('Session not started or recognizer not ready.');
+            return;
+        }
+        setIsRecognizing(true);
+        setMessage(''); // Clear message field before starting recognition
+        setTranscript(prev => [...prev, 'RECOGNIZING...']);
+        recognizerRef.current.recognizeOnceAsync(
+            () => {},
+            err => {
+                setTranscript(prev => [...prev, `ERROR: ${err}`]);
+                setIsRecognizing(false);
+            }
+        );
+    }, []);
+
     const toggleContinuousRecognition = useCallback(() => { /* logic removed */ }, []);
     const unmuteAvatar = useCallback(() => setAvatarMuted(false), []);
-    const requestAI = useCallback(() => { /* logic removed */ }, []);
+
+    // Update avatar voice when language changes
+    useEffect(() => {
+        const langOption = LANGUAGE_OPTIONS.find(lang => lang.code === selectedLanguage);
+        if (langOption) {
+            setAvatarMeta(prev => ({ ...prev, voice: langOption.voice }));
+        }
+    }, [selectedLanguage]);
 
     const sessionStatusChip = (
         <Chip
@@ -102,7 +289,7 @@ const VoiceControl = ({ vehicleId }) => {
             <Grid container spacing={3}>
                 <Grid item xs={12} display="flex" alignItems="center" justifyContent="space-between">
                     <Typography variant="h6">
-                        Voice & Avatar Control {vehicleId && <Typography component="span" variant="subtitle2" color="text.secondary"> (Vehicle {vehicleId})</Typography>}
+                        In-Vehicle Assistant — Voice & Avatar {vehicleId && <Typography component="span" variant="subtitle2" color="text.secondary"> (Vehicle {vehicleId})</Typography>}
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                         {sessionStatusChip}
@@ -141,13 +328,30 @@ const VoiceControl = ({ vehicleId }) => {
                             />
                         </Grid>
                         <Grid item xs={12}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Language</InputLabel>
+                                <Select
+                                    value={selectedLanguage}
+                                    label="Language"
+                                    onChange={e => setSelectedLanguage(e.target.value)}
+                                    disabled={sessionActive}
+                                >
+                                    {LANGUAGE_OPTIONS.map(lang => (
+                                        <MenuItem key={lang.code} value={lang.code}>
+                                            {lang.label}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                                 {!sessionActive && (
                                     <Button
                                         variant="contained"
                                         startIcon={<PlayArrowIcon />}
                                         onClick={startSession}
-                                        disabled={loadingTokens}
+                                        disabled={loadingTokens || sessionActive || avatarConnecting}
                                     >
                                         Start
                                     </Button>
@@ -156,7 +360,7 @@ const VoiceControl = ({ vehicleId }) => {
                                     variant="outlined"
                                     startIcon={<RecordVoiceOverIcon />}
                                     onClick={handleSpeak}
-                                    disabled={loadingTokens}
+                                    disabled={loadingTokens || avatarConnecting}
                                 >
                                     {sessionActive ? 'Send' : 'Start & Send'}
                                 </Button>
@@ -164,7 +368,7 @@ const VoiceControl = ({ vehicleId }) => {
                                     variant="outlined"
                                     startIcon={<HearingIcon />}
                                     onClick={doRecognizeOnce}
-                                    disabled
+                                    disabled={!sessionActive || isRecognizing}
                                 >
                                     Recognize Once
                                 </Button>
@@ -181,7 +385,7 @@ const VoiceControl = ({ vehicleId }) => {
                                     color="error"
                                     startIcon={<StopIcon />}
                                     onClick={stopSession}
-                                    disabled
+                                    disabled={!sessionActive && !avatarConnecting}
                                 >
                                     Stop
                                 </Button>
@@ -198,7 +402,7 @@ const VoiceControl = ({ vehicleId }) => {
                     />
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary">
-                            Tokens auto-refresh disabled (manual fetch only). Region: {region || (loadingTokens ? 'Loading...' : '—')}
+                            Tokens auto-refresh every 8 mins. Region: {region || (loadingTokens ? 'Loading...' : '—')}
                             {tokenError && ' | ' + tokenError}
                         </Typography>
                     </Box>
@@ -223,6 +427,7 @@ const VoiceControl = ({ vehicleId }) => {
                     >
                         {/* Avatar video/audio placeholders (logic removed) */}
                         <video
+                            ref={videoRef}
                             style={{
                                 position: 'absolute',
                                 inset: 0,
@@ -235,7 +440,7 @@ const VoiceControl = ({ vehicleId }) => {
                             }}
                             muted
                         />
-                        <audio style={{ display: 'none' }} />
+                        <audio ref={audioRef} style={{ display: 'none' }} />
 
                         {avatarStreamReady && avatarMuted && (
                             <Box sx={{
@@ -257,47 +462,52 @@ const VoiceControl = ({ vehicleId }) => {
                         {!avatarStreamReady && !avatarConnecting && (
                             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 2, textAlign: 'center', zIndex: 2 }}>
                                 <Typography variant="body2" color="text.secondary">
-                                    Avatar logic removed. Token fetch only.
+                                    {avatarConnecting ? 'Connecting to avatar...' : 'Session inactive. Click "Start" to begin.'}
                                 </Typography>
                             </Box>
                         )}
-                        {avatarConnecting && (
-                            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3 }}>
+
+                        {avatarStreamReady && (
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 3
+                                }}
+                            >
                                 <LinearProgress />
                             </Box>
                         )}
-                        {showSubtitles && subtitleText && (
+
+                        {subtitleText && (
                             <Box
+                                component={Paper}
+                                elevation={3}
                                 sx={{
+                                    display: 'inline-block',
+                                    px: 1.5,
+                                    py: 0.5,
+                                    bgcolor: 'rgba(0,0,0,0.55)',
+                                    backdropFilter: 'blur(4px)',
                                     position: 'absolute',
                                     bottom: 8,
                                     left: 0,
                                     right: 0,
                                     textAlign: 'center',
-                                    px: 2,
                                     zIndex: 4
                                 }}
                             >
-                                <Paper
-                                    elevation={3}
-                                    sx={{
-                                        display: 'inline-block',
-                                        px: 1.5,
-                                        py: 0.5,
-                                        bgcolor: 'rgba(0,0,0,0.55)',
-                                        backdropFilter: 'blur(4px)'
-                                    }}
-                                >
-                                    <Typography variant="caption" sx={{ color: '#fff' }}>
-                                        {subtitleText}
-                                    </Typography>
-                                </Paper>
+                                <Typography variant="caption" sx={{ color: '#fff' }}>
+                                    {subtitleText}
+                                </Typography>
                             </Box>
                         )}
                     </Box>
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            Avatar Character: meg | Style: formal | Voice: en-US-AvaMultilingualNeural | Idle
+                            Avatar Character: {avatarMeta.character} | Style: {avatarMeta.style} | Voice: {avatarMeta.voice} | {sessionActive ? 'Active' : 'Idle'}
                         </Typography>
                     </Box>
                 </Grid>
@@ -312,40 +522,31 @@ const VoiceControl = ({ vehicleId }) => {
                             overflowY: 'auto',
                             fontFamily: 'monospace',
                             fontSize: '0.75rem',
-                            lineHeight: 1.4
+                            lineHeight: 1.4,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word'
                         }}
                     >
                         {transcript.length === 0 ? (
                             <Typography variant="caption" color="text.secondary">
-                                (Inactive) No transcriptions – logic removed.
+                                (Inactive) Transcript will appear here.
                             </Typography>
-                        ) : null}
+                        ) : transcript.map((line, index) => (
+                            <div key={index}>{line}</div>
+                        ))}
                     </Paper>
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary">
-                            Last recognized: —
+                            Last recognized: {transcript.findLast(t => t.startsWith('RECOGNIZED:'))?.substring(11) || '—'}
                         </Typography>
                     </Box>
                     <Divider sx={{ my: 2 }} />
-                    <Typography variant="subtitle2" gutterBottom>Quick Replies</Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {QUICK_REPLIES.map(q => (
-                            <Chip
-                                key={q}
-                                label={q}
-                                size="small"
-                                onClick={() => requestAI(q)}
-                                disabled
-                                variant="outlined"
-                            />
-                        ))}
-                    </Box>
                 </Grid>
 
                 <Grid item xs={12}>
                     <Divider sx={{ mb: 2 }} />
                     <Typography variant="caption" color="text.secondary">
-                        Azure Speech token issuing demo (fetch speech + ICE tokens only). All other functionality removed.
+                        Azure Speech with Avatar demo. Implements session management, STT (recognize once), and TTS with avatar video.
                     </Typography>
                 </Grid>
             </Grid>

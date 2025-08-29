@@ -6,7 +6,6 @@ import {
   List, ListItem, Divider, Tooltip, IconButton
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import { askAgent } from '../api/apiClient';  // Changed from '../api/agent' to '../api/apiClient'
 import { styled } from '@mui/system';
 import ReactMarkdown from 'react-markdown';
@@ -125,6 +124,7 @@ const AgentChat = ({ vehicleId }) => {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
+  const [chatAreaHeight, setChatAreaHeight] = useState(0); // dynamic chat history height
   const messagesEndRef = useRef(null);
   
   // Generate a session ID if we don't have one
@@ -179,6 +179,17 @@ const AgentChat = ({ vehicleId }) => {
     };
   }, []);
 
+  // NEW: dynamically size chat history area
+  useEffect(() => {
+    const OFFSET = 280; // header + agent selector + description + input area padding
+    const calcHeight = () => {
+      setChatAreaHeight(Math.max(320, window.innerHeight - OFFSET));
+    };
+    calcHeight();
+    window.addEventListener('resize', calcHeight);
+    return () => window.removeEventListener('resize', calcHeight);
+  }, []);
+
   const handleAgentChange = (event) => {
     const selectedType = event.target.value;
     const agent = AVAILABLE_AGENTS.find(a => a.type === selectedType);
@@ -196,20 +207,6 @@ const AgentChat = ({ vehicleId }) => {
     }
   };
   
-  const useSampleQuery = () => {
-    if (selectedAgent && selectedAgent.placeholderText) {
-      // Extract an example from the placeholder text by removing 'E.g., ' prefix and selecting the first example
-      const placeholderText = selectedAgent.placeholderText;
-      const exampleMatch = placeholderText.match(/'([^']+)'/);
-      if (exampleMatch && exampleMatch[1]) {
-        setQuery(exampleMatch[1]);
-      } else {
-        // Fallback to the whole placeholder text
-        setQuery(placeholderText);
-      }
-    }
-  };
-
   const submitQuery = async (textParam) => {
     const textToSend = (typeof textParam === 'string' ? textParam : query).trim();
     if (!textToSend) return;
@@ -220,13 +217,24 @@ const AgentChat = ({ vehicleId }) => {
       text: textToSend,
       timestamp: new Date().toISOString()
     };
+
     setChatHistory(prev => [...prev, userMessage]);
     
     setLoading(true);
     
     try {
+      // Include last 10 messages (including this new user message) in the query so backend has recent context
+      // const combinedHistory = [...chatHistory, userMessage];
+      // const lastItems = combinedHistory.slice(-10);
+      // const historyText = lastItems
+      //   .map(m => {
+      //     const who = m.type === 'user' ? 'User' : m.type === 'agent' ? `Agent(${m.agentType || selectedAgent.type})` : m.type;
+      //     return `[${new Date(m.timestamp).toISOString()}] ${who}: ${m.text}`;
+      //   })
+      //   .join('\n');
+
       const requestPayload = {
-        query: textToSend,
+        query: `${textToSend}`,
         context: {
           agentType: selectedAgent.type,
           vehicleId: vehicleId,
@@ -439,15 +447,15 @@ const AgentChat = ({ vehicleId }) => {
 
   return (
     <Box sx={{ 
-      width: '100%', // was '100%' - make full viewport width
+      width: '100%', // full viewport width
       height: 'calc(100vh - 120px)', 
       display: 'flex', 
       flexDirection: 'column',
-      mx: 'auto', // was 'auto' - prevent centering constraints
-      overflow: 'hidden', // prevent window scrollbar
-      '&::-webkit-scrollbar': { display: 'none' }, // Hide scrollbar for Chrome, Safari and Opera
-      msOverflowStyle: 'none', // Hide scrollbar for IE and Edge
-      scrollbarWidth: 'none', // Hide scrollbar for Firefox
+      mx: 'auto',
+      overflow: 'hidden',
+      '&::-webkit-scrollbar': { display: 'none' },
+      msOverflowStyle: 'none',
+      scrollbarWidth: 'none',
     }}>
       <Typography variant="h5" component="h1" gutterBottom>
         Connected Vehicle Agent Chat
@@ -485,36 +493,16 @@ const AgentChat = ({ vehicleId }) => {
         </Tooltip>
       </Box>
       
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-          {selectedAgent.description}
-        </Typography>
-        <Tooltip title="Use sample query">
-          <span>
-            <IconButton 
-              color="primary" 
-              onClick={useSampleQuery}
-              disabled={loading}
-            >
-              <LightbulbIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
-      
-      {/* Main content area with chat on left and quick actions on right - Optimized for large screens */}
-      <Box sx={{ display: 'flex', gap: 3, flexGrow: 1, minHeight: 0 }}>
-        {/* Left side - Chat area */}
-        <Box sx={{ flex: '1 1 65%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {/* Chat message display area */}
+      <Box sx={{ display: 'flex', gap: 3, flexGrow: 1, minHeight: 0, flexDirection: { xs: 'column', md: 'row' } }}>
+        {/* Left side - Chat area (responsive ~60% on md+) */}
+        <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 60%' }, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <Paper
             elevation={3}
             sx={{
               mb: 2,
-              flexGrow: 1,
+              height: chatAreaHeight,
               overflowY: 'auto',
-              backgroundColor: 'background.paper', // white surface
-              minHeight: { xs: 400, lg: 600, xl: 700 }
+              backgroundColor: 'background.paper'
             }}
           >
             <List>
@@ -551,7 +539,6 @@ const AgentChat = ({ vehicleId }) => {
                             {message.type === 'agent' ? message.agentTitle : 'System Message'}
                           </Typography>
                         )}
-                        {/* Render agent messages as Markdown; others as plain text */}
                         {message.type === 'agent' ? (
                           <MarkdownText>{message.text}</MarkdownText>
                         ) : (
@@ -585,12 +572,11 @@ const AgentChat = ({ vehicleId }) => {
             </List>
           </Paper>
           
-          {/* Input area */}
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
               fullWidth
               multiline
-              maxRows={4}
+              maxRows={2}
               placeholder={selectedAgent.placeholderText}
               variant="outlined"
               value={query}
@@ -615,10 +601,10 @@ const AgentChat = ({ vehicleId }) => {
           </Box>
         </Box>
 
-        {/* Right side - Quick Actions Panel - Optimized for large screens */}
-        <Box sx={{ flex: '0 0 35%', minWidth: { xs: 300, lg: 400, xl: 500 } }}>
+        {/* Right side - Quick Actions Panel (responsive ~40% on md+, stacks below on xs) */}
+        <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 40%' }, minWidth: { xs: '100%', md: 360 } }}>
           <QuickActionsPanel sx={{ 
-            height: '100%', 
+            height: { xs: 'auto', md: '100%' }, 
             overflow: 'hidden', 
             display: 'flex', 
             flexDirection: 'column',
@@ -635,7 +621,8 @@ const AgentChat = ({ vehicleId }) => {
                   </Typography>
                   <Box sx={{ 
                     display: 'grid', 
-                    gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr', xl: '1fr 1fr 1fr' },
+                    // UPDATED: cap at 2 columns max
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
                     gap: 1 
                   }}>
                     {group.actions.map((action, index) => (

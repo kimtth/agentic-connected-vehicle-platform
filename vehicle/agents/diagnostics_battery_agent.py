@@ -4,8 +4,8 @@ Diagnostics & Battery Agent for the Connected Car Platform.
 This agent oversees vehicle diagnostics, battery status, and system health reports.
 """
 
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List, Annotated
+from datetime import datetime, timedelta, timezone
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -44,7 +44,7 @@ class BatteryData(CamelModel):
 class BatteryStatusData(CamelModel):
     battery: BatteryData
     vehicle_id: str
-    vehicle_type: str
+    vehicle_type: Optional[str] = None
 
 
 class SystemHealthReport(CamelModel):
@@ -97,11 +97,31 @@ class DiagnosticsBatteryPlugin:
     def __init__(self):
         self.cosmos_client = get_cosmos_client()
 
+    # Helper to safely parse ISO timestamps and normalize tz handling
+    def _coerce_datetime(self, iso_str: str) -> Optional[datetime]:
+        if not iso_str:
+            return None
+        try:
+            # Replace trailing Z with +00:00 for fromisoformat
+            ds = iso_str.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(ds)
+            # Make both sides offset-aware in UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt
+        except Exception:
+            return None
+
     @kernel_function(description="Run diagnostics on vehicle systems")
     async def _handle_diagnostics(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to run diagnostics on"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to run diagnostics for.",
@@ -165,18 +185,18 @@ class DiagnosticsBatteryPlugin:
                 if sorted_services:
                     last_service = sorted_services[0]
                     last_service_date = last_service.get("startDate", "")
-
                     try:
-                        service_date = datetime.fromisoformat(
-                            last_service_date.replace("Z", "+00:00")
-                        )
-                        months_since = (datetime.now() - service_date).days // 30
-
-                        if months_since > 6:
-                            issues.append(
-                                f"Regular maintenance due (last service: {months_since} months ago)"
-                            )
-                    except (ValueError, TypeError) as e:
+                        service_date = self._coerce_datetime(last_service_date)
+                        if service_date:
+                            now_utc = datetime.now(timezone.utc)
+                            months_since = (now_utc - service_date).days // 30
+                            if months_since > 6:
+                                issues.append(
+                                    f"Regular maintenance due (last service: {months_since} months ago)"
+                                )
+                        else:
+                            logger.debug(f"Unrecognized service date format: {last_service_date}")
+                    except Exception as e:
                         logger.warning(f"Could not parse service date: {e}")
 
             # Determine overall status
@@ -207,9 +227,12 @@ class DiagnosticsBatteryPlugin:
 
     @kernel_function(description="Check battery status and health")
     async def _handle_battery_status(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to check battery status for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check battery status for.",
@@ -392,9 +415,12 @@ class DiagnosticsBatteryPlugin:
 
     @kernel_function(description="Check system health and status")
     async def _handle_system_health(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to check system health for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check system health for.",
@@ -508,9 +534,12 @@ class DiagnosticsBatteryPlugin:
 
     @kernel_function(description="Check vehicle maintenance schedule")
     async def _handle_maintenance_check(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to check maintenance for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check maintenance for.",
@@ -530,6 +559,7 @@ class DiagnosticsBatteryPlugin:
                     success=False,
                 )
             services = await self.cosmos_client.list_services(vid)
+            service_dicts = [ensure_dict(s) for s in services] if services else []
 
             # Get vehicle status to check mileage
             today = datetime.now()
@@ -578,10 +608,10 @@ class DiagnosticsBatteryPlugin:
 
             # Process each maintenance item
             for item in maintenance_items:
-                # Find relevant past services
+                # Find relevant past services (converted to dicts above)
                 matching_services = [
                     s
-                    for s in services
+                    for s in service_dicts
                     if s.get("serviceCode", "").lower().replace("_", " ")
                     == item["type"].lower()
                 ]
@@ -602,24 +632,16 @@ class DiagnosticsBatteryPlugin:
                     # Get last service details
                     last_service = sorted_services[0]
                     try:
-                        service_date = datetime.fromisoformat(
-                            last_service.get("startDate", "").replace("Z", "+00:00")
-                        )
+                        service_date = self._coerce_datetime(last_service.get("startDate", ""))
                         service_mileage = last_service.get("mileage", 0)
-
-                        # Record last service date
+                        if not service_date:
+                            raise ValueError("Unrecognized date format")
                         item["last_service"] = service_date.strftime("%Y-%m-%d")
-
-                        # Calculate when next service is due
-                        next_date = service_date + timedelta(
-                            days=30 * item["interval_months"]
-                        )
+                        next_date = service_date + timedelta(days=30 * item["interval_months"])
                         next_mileage = service_mileage + item["interval_miles"]
                         item["next_due_mileage"] = next_mileage
-
-                        # Determine status
-                        months_since = (today - service_date).days // 30
-
+                        now_utc = datetime.now(timezone.utc)
+                        months_since = (now_utc - service_date).days // 30
                         if months_since >= item["interval_months"]:
                             item["status"] = "Overdue"
                             item["next_due"] = "Immediately"
@@ -629,15 +651,15 @@ class DiagnosticsBatteryPlugin:
                         else:
                             item["status"] = "OK"
                             item["next_due"] = next_date.strftime("%Y-%m-%d")
-
-                    except (ValueError, TypeError) as e:
+                    except Exception as e:
                         logger.warning(f"Could not parse service date: {e}")
 
-            # Build the response
+            # Format the response
             attention_items = [
-                item for item in maintenance_items if item["status"] != "OK"
+                item
+                for item in maintenance_items
+                if item.get("status") in ["Overdue", "Due Soon"]
             ]
-
             if attention_items:
                 items_text = "\n".join(
                     [
@@ -657,9 +679,7 @@ class DiagnosticsBatteryPlugin:
                 )
                 response_text = f"Maintenance check: The following items require attention:\n\n{items_text}"
             else:
-                response_text = (
-                    "Maintenance check: All maintenance items are up to date."
-                )
+                response_text = "Maintenance check: All maintenance items are up to date."
 
             return self._format_response(
                 response_text,
@@ -676,63 +696,6 @@ class DiagnosticsBatteryPlugin:
                 "I encountered an error while checking maintenance status. Please try again later.",
                 success=False,
             )
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Process a diagnostics or battery related query.
-
-        Args:
-            query: User query about diagnostics or battery
-            context: Additional context for the query
-
-        Returns:
-            Response with diagnostics or battery information
-        """
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get(
-            "vehicle_id"
-        )
-
-        # Simple keyword-based logic for demonstration
-        query_lower = query.lower()
-
-        # Handle diagnostics requests
-        if (
-            "diagnostic" in query_lower
-            or "health" in query_lower
-            or "check" in query_lower
-        ):
-            return await self._handle_diagnostics(vehicle_id, context)
-
-        # Handle battery status requests
-        elif "battery" in query_lower or "charge" in query_lower:
-            return await self._handle_battery_status(vehicle_id, context)
-
-        # Handle system health requests
-        elif "system" in query_lower:
-            return await self._handle_system_health(vehicle_id, context)
-
-        # Handle maintenance check requests
-        elif "maintenance" in query_lower or "service" in query_lower:
-            return await self._handle_maintenance_check(vehicle_id, context)
-
-        # Handle general information requests
-        else:
-            return self._format_response(
-                "I can help you with vehicle diagnostics, battery status, system health reports, "
-                "and maintenance checks. What information would you like to know?",
-                data=self._get_capabilities(),
-            )
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent (camelCase keys)."""
-        return {
-            "diagnostics": "Run comprehensive diagnostics on vehicle systems",
-            "batteryStatus": "Check battery charge level, health, and status",
-            "systemHealth": "Get detailed reports on all vehicle systems",
-            "maintenanceCheck": "Review maintenance schedule and upcoming service needs",
-        }
 
     def _format_response(
         self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True

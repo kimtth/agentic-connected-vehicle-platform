@@ -1,30 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Grid, Typography, Button, IconButton,
-  Card, CardContent, Chip, Alert, Slider, TextField, 
-  Divider, CircularProgress,
+  Card, CardContent, Chip, Alert, Slider, TextField,
+  Divider
 } from '@mui/material';
 import {
   KeyboardArrowUp, KeyboardArrowDown, KeyboardArrowLeft, KeyboardArrowRight,
   Stop, Home, Videocam, VideocamOff, WifiTethering, WifiTetheringOff,
   RotateRight, VolumeUp, VolumeOff
 } from '@mui/icons-material';
-import VideoStreamService from '../services/videoStreamService';
-import RemoteControlService from '../services/remoteControlService';
+import ConstructionIcon from '@mui/icons-material/Construction';
 
 const RemoteDrive = () => {
-  // Connection states
-  const [videoConnected, setVideoConnected] = useState(false);
-  const [controlConnected, setControlConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  // Connection/demo states (now local only)
+  const [videoConnected, setVideoConnected] = useState(true);      // start connected for demo
+  const [controlConnected, setControlConnected] = useState(true);  // start connected for demo
   
-  // Video states
-  const [videoUrl, setVideoUrl] = useState('');
+  // Video states (placeholder demo image)
+  const [videoUrl, setVideoUrl] = useState('https://via.placeholder.com/800x450?text=Demo+Video');
   const [videoError, setVideoError] = useState('');
-  const videoRef = useRef(null);
   
   // Control states
-  const [, setIsMoving] = useState(false);
   const [speed, setSpeed] = useState(50);
   const [servo1, setServo1] = useState(90);
   const [servo2, setServo2] = useState(90);
@@ -35,11 +31,6 @@ const RemoteDrive = () => {
   const [ultrasonic,setUltrasonic] = useState(null);
   const [light,setLight] = useState(null);
   const [power,setPower] = useState(null); // percent
-  
-  // Service instances
-  const videoService = useRef(null);
-  const controlService = useRef(null);
-  const frameUnsubRef = useRef(null);
   
   // Server configuration
   const [videoServerUrl, setVideoServerUrl] = useState('ws://localhost:8000');
@@ -58,159 +49,83 @@ const RemoteDrive = () => {
 
   // Disconnect from servers (moved up to satisfy no-use-before-define)
   const disconnect = useCallback(() => {
-    if (frameUnsubRef.current) {
-      frameUnsubRef.current();
-      frameUnsubRef.current = null;
-    }
-    if (videoService.current) {
-      videoService.current.disconnect();
-      setVideoConnected(false);
-      setVideoUrl('');
-    }
-    if (controlService.current) {
-      controlService.current.disconnect();
-      setControlConnected(false);
-    }
+    setVideoConnected(false);
+    setControlConnected(false);
+    setVideoUrl('');
     setUltrasonic(null);
     setLight(null);
     setPower(null);
-    addLog('Disconnected from servers', 'info');
+    // accessories off
+    setBuzzerOn(false);
+    setLedsOn(false);
+    addLog('Demo: Disconnected');
   }, [addLog]);
 
-  // Initialize services
+  // Random telemetry generator while connected
   useEffect(() => {
-    videoService.current = new VideoStreamService();
-    controlService.current = new RemoteControlService();
-    
-    return () => {
-      if (frameUnsubRef.current) frameUnsubRef.current();
-      disconnect();
-    };
-  }, [disconnect]);
+    if (!controlConnected) return;
+    const id = setInterval(() => {
+      setUltrasonic(Math.floor(10 + Math.random() * 90));
+      setLight({ left: (2 + Math.random()).toFixed(2), right: (2 + Math.random()).toFixed(2) });
+      setPower(p => (p == null || p < 5) ? 100 : p - Math.random() * 0.5); // slow drain
+    }, 1500);
+    return () => clearInterval(id);
+  }, [controlConnected]);
 
-  // Telemetry handler
-  const handleTelemetry = useCallback((t) => {
-    if (!t) return;
-    if (t.type === 'CMD_SONIC') setUltrasonic(t.distance);
-    if (t.type === 'CMD_LIGHT') setLight({ left: t.left, right: t.right });
-    if (t.type === 'CMD_POWER') setPower(t.percent);
-    // Log raw message type
-    if (t.raw) addLog(`Telemetry: ${t.raw}`, 'success');
-  }, [addLog]);
-
-  // Connect to servers
+  // Simplified connect (instant)
   const connect = async () => {
-    setIsConnecting(true);
     setVideoError('');
-    
-    try {
-      // Connect to video stream
-      addLog('Connecting to video stream...', 'info');
-      await videoService.current.connect(videoServerUrl);
-      // Subscribe to frame updates (live refresh)
-      if (frameUnsubRef.current) frameUnsubRef.current();
-      frameUnsubRef.current = videoService.current.onFrame((url) => {
-        setVideoUrl(url);
-      });
-      setVideoConnected(true); // mark connected even if first frame not arrived yet
-      setVideoUrl(videoService.current.getVideoUrl() || '');
-      addLog('Video stream connected', 'success');
-    } catch (error) {
-      setVideoError(error.message);
-      addLog(`Video connection failed: ${error.message}`, 'error');
-    }
-    
-    try {
-      // Connect to control server
-      addLog('Connecting to control server...', 'info');
-      await controlService.current.connect(controlServerUrl);
-      controlService.current.setTelemetryHandler(handleTelemetry);
-      setControlConnected(true);
-      addLog('Control server connected', 'success');
-    } catch (error) {
-      addLog(`Control connection failed: ${error.message}`, 'error');
-    }
-    
-    setIsConnecting(false);
+    setVideoConnected(true);
+    setControlConnected(true);
+    setVideoUrl('https://via.placeholder.com/800x450?text=Demo+Video');
+    addLog('Demo: Connected');
   };
 
-  // Movement controls
-  const sendCommand = useCallback(async (command, params = {}) => {
-    if (!controlConnected) {
-      addLog('Control not connected', 'warning');
-      return;
-    }
-    
-    try {
-      await controlService.current.sendCommand(command, params);
-      addLog(`Command sent: ${command}`, 'info');
-    } catch (error) {
-      addLog(`Command failed: ${error.message}`, 'error');
-    }
-  }, [controlConnected, addLog]);
-
+  // Movement handlers (no backend)
   const handleMove = useCallback((direction) => {
-    setIsMoving(true);
-    const speedValue = Math.round(speed * 15); // Convert percentage to motor value
-    
-    switch(direction) {
-      case 'forward':
-        sendCommand('CMD_MOTOR', { values: [speedValue, speedValue, speedValue, speedValue] });
-        break;
-      case 'backward':
-        sendCommand('CMD_MOTOR', { values: [-speedValue, -speedValue, -speedValue, -speedValue] });
-        break;
-      case 'left':
-        sendCommand('CMD_MOTOR', { values: [-speedValue, -speedValue, speedValue, speedValue] });
-        break;
-      case 'right':
-        sendCommand('CMD_MOTOR', { values: [speedValue, speedValue, -speedValue, -speedValue] });
-        break;
-      default:
-        addLog(`Unknown direction: ${direction}`, 'warning');
-        break;
-    }
-  }, [speed, sendCommand, addLog]);
+    const speedValue = Math.round(speed * 15);
+    addLog(`Move ${direction} @ internalSpeed=${speedValue}`);
+  }, [speed, addLog]);
 
   const handleStop = useCallback(() => {
-    setIsMoving(false);
-    sendCommand('CMD_MOTOR', { values: [0, 0, 0, 0] });
-  }, [sendCommand]);
+    addLog('Stop');
+  }, [addLog]);
 
   const handleServoChange = (servo, value) => {
     if (servo === 1) {
       setServo1(value);
-      sendCommand('CMD_SERVO', { servo: 0, angle: value });
+      addLog(`Servo1 -> ${value}`);
     } else {
       setServo2(value);
-      sendCommand('CMD_SERVO', { servo: 1, angle: value });
+      addLog(`Servo2 -> ${value}`);
     }
   };
 
   const handleHome = useCallback(() => {
     setServo1(90);
     setServo2(90);
-    sendCommand('CMD_SERVO', { servo: 0, angle: 90 });
-    sendCommand('CMD_SERVO', { servo: 1, angle: 90 });
-  }, [sendCommand]);
+    addLog('Camera reset to home');
+  }, [addLog]);
 
   const toggleBuzzer = () => {
-    const newState = !buzzerOn;
-    setBuzzerOn(newState);
-    sendCommand('CMD_BUZZER', { state: newState ? 1 : 0 });
+    setBuzzerOn(b => {
+      const v = !b;
+      addLog(`Buzzer ${v ? 'ON' : 'OFF'}`);
+      return v;
+    });
   };
 
   const toggleLeds = () => {
-    const newState = !ledsOn;
-    setLedsOn(newState);
-    sendCommand('CMD_LED_MOD', { mode: newState ? 1 : 0 });
+    setLedsOn(l => {
+      const v = !l;
+      addLog(`LEDs ${v ? 'ON' : 'OFF'}`);
+      return v;
+    });
   };
 
-  // Keyboard controls
+  // Keyboard controls (always active now)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!controlConnected) return;
-      
       switch(e.key.toLowerCase()) {
         case 'w': handleMove('forward'); break;
         case 's': handleMove('backward'); break;
@@ -218,29 +133,29 @@ const RemoteDrive = () => {
         case 'd': handleMove('right'); break;
         case ' ': handleStop(); e.preventDefault(); break;
         case 'h': handleHome(); break;
-        default: addLog(`Unknown key: ${e.key}`, 'warning'); break;
+        default: break;
       }
     };
-
     const handleKeyUp = (e) => {
-      if (!controlConnected) return;
-      
-      if (['w', 's', 'a', 'd'].includes(e.key.toLowerCase())) {
-        handleStop();
-      }
+      if (['w','s','a','d'].includes(e.key.toLowerCase())) handleStop();
     };
-
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [controlConnected, addLog, handleHome, handleMove, handleStop]);
+  }, [handleMove, handleStop, handleHome]);
 
   return (
     <Box sx={{ p: 3 }}>
+      <Alert
+        icon={<ConstructionIcon fontSize="inherit" />}
+        severity="info"
+        sx={{ mb: 2 }}
+      >
+        Under construction demo mode – all controls are simulated.
+      </Alert>
       <Typography variant="h4" gutterBottom>
         Remote Drive Control
       </Typography>
@@ -260,57 +175,44 @@ const RemoteDrive = () => {
                     size="small"
                     sx={{ mr: 1 }}
                   />
-                  {!videoConnected && (
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={connect}
-                      disabled={isConnecting}
-                      startIcon={isConnecting ? <CircularProgress size={16} /> : <Videocam />}
-                    >
-                      {isConnecting ? 'Connecting...' : 'Connect'}
-                    </Button>
-                  )}
-                  {videoConnected && (
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={disconnect}
-                      startIcon={<VideocamOff />}
-                    >
-                      Disconnect
-                    </Button>
-                  )}
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={connect}
+                    startIcon={<Videocam />}
+                  >
+                    Connect
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={disconnect}
+                    startIcon={<VideocamOff />}
+                    sx={{ ml: 1 }}
+                  >
+                    Disconnect
+                  </Button>
                 </Box>
               </Box>
               
-              <Paper 
-                sx={{ 
-                  position: 'relative',
-                  paddingTop: '56.25%' // 16:9 aspect ratio
-                }}
-              >
-                {videoUrl ? (
+              <Paper sx={{ position: 'relative', paddingTop: '56.25%' }}>
+                {videoConnected ? (
                   <Box
                     component="img"
-                    ref={videoRef}
                     src={videoUrl}
-                    alt="Live video feed"
+                    alt="Demo video feed"
                     sx={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'contain'
+                      position: 'absolute', top: 0, left: 0,
+                      width: '100%', height: '100%',
+                      objectFit: 'cover',
+                      filter: buzzerOn ? 'hue-rotate(45deg)' : 'none'
                     }}
                   />
                 ) : (
                   <Box
                     sx={{
                       position: 'absolute',
-                      top: '50%',
-                      left: '50%',
+                      top: '50%', left: '50%',
                       transform: 'translate(-50%, -50%)',
                       textAlign: 'center'
                     }}
@@ -328,6 +230,61 @@ const RemoteDrive = () => {
                   {videoError}
                 </Alert>
               )}
+            </CardContent>
+          </Card>
+
+          <Card sx={{ mt: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Activity Log
+              </Typography>
+              <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', p: 1 }}>
+                {activityLog.map((log, index) => (
+                  <Box key={index} sx={{ mb: 0.5 }}>
+                    <Typography
+                      variant="caption"
+                      color={
+                        log.type === 'error' ? 'error' :
+                        log.type === 'success' ? 'success.main' :
+                        log.type === 'warning' ? 'warning.main' :
+                        'text.secondary'
+                      }
+                    >
+                      [{log.timestamp}] {log.message}
+                    </Typography>
+                  </Box>
+                ))}
+                {activityLog.length === 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    No activity yet
+                  </Typography>
+                )}
+              </Paper>
+
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Server Configuration
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    label="Video Server URL"
+                    value={videoServerUrl}
+                    onChange={(e) => setVideoServerUrl(e.target.value)}
+                    fullWidth
+                    helperText="WebSocket URL for video stream"
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    label="Control Server URL"
+                    value={controlServerUrl}
+                    onChange={(e) => setControlServerUrl(e.target.value)}
+                    fullWidth
+                    helperText="HTTP URL for remote control"
+                  />
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>
@@ -350,53 +307,40 @@ const RemoteDrive = () => {
 
               {/* Direction Pad */}
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
-                <IconButton
-                  size="large"
+                <IconButton size="large"
                   onMouseDown={() => handleMove('forward')}
                   onMouseUp={handleStop}
                   onMouseLeave={handleStop}
-                  disabled={!controlConnected}
                 >
                   <KeyboardArrowUp sx={{ fontSize: 40 }} />
                 </IconButton>
                 
                 <Box sx={{ display: 'flex', gap: 4 }}>
-                  <IconButton
-                    size="large"
+                  <IconButton size="large"
                     onMouseDown={() => handleMove('left')}
                     onMouseUp={handleStop}
                     onMouseLeave={handleStop}
-                    disabled={!controlConnected}
                   >
                     <KeyboardArrowLeft sx={{ fontSize: 40 }} />
                   </IconButton>
                   
-                  <IconButton
-                    size="large"
-                    onClick={handleStop}
-                    disabled={!controlConnected}
-                    color="error"
-                  >
+                  <IconButton size="large" onClick={handleStop} color="error">
                     <Stop sx={{ fontSize: 40 }} />
                   </IconButton>
                   
-                  <IconButton
-                    size="large"
+                  <IconButton size="large"
                     onMouseDown={() => handleMove('right')}
                     onMouseUp={handleStop}
                     onMouseLeave={handleStop}
-                    disabled={!controlConnected}
                   >
                     <KeyboardArrowRight sx={{ fontSize: 40 }} />
                   </IconButton>
                 </Box>
                 
-                <IconButton
-                  size="large"
+                <IconButton size="large"
                   onMouseDown={() => handleMove('backward')}
                   onMouseUp={handleStop}
                   onMouseLeave={handleStop}
-                  disabled={!controlConnected}
                 >
                   <KeyboardArrowDown sx={{ fontSize: 40 }} />
                 </IconButton>
@@ -414,7 +358,6 @@ const RemoteDrive = () => {
                   onChange={(e, v) => setSpeed(v)}
                   min={0}
                   max={100}
-                  disabled={!controlConnected}
                   marks={[
                     { value: 0, label: '0' },
                     { value: 50, label: '50' },
@@ -440,7 +383,6 @@ const RemoteDrive = () => {
                     onChange={(e, v) => handleServoChange(1, v)}
                     min={0}
                     max={180}
-                    disabled={!controlConnected}
                   />
                 </Box>
                 
@@ -453,7 +395,6 @@ const RemoteDrive = () => {
                     onChange={(e, v) => handleServoChange(2, v)}
                     min={80}
                     max={180}
-                    disabled={!controlConnected}
                   />
                 </Box>
                 
@@ -461,7 +402,6 @@ const RemoteDrive = () => {
                   variant="outlined"
                   startIcon={<Home />}
                   onClick={handleHome}
-                  disabled={!controlConnected}
                   fullWidth
                 >
                   Reset Camera Position
@@ -481,7 +421,6 @@ const RemoteDrive = () => {
                     variant={buzzerOn ? 'contained' : 'outlined'}
                     startIcon={buzzerOn ? <VolumeUp /> : <VolumeOff />}
                     onClick={toggleBuzzer}
-                    disabled={!controlConnected}
                     fullWidth
                   >
                     Buzzer
@@ -491,7 +430,6 @@ const RemoteDrive = () => {
                     variant={ledsOn ? 'contained' : 'outlined'}
                     startIcon={<RotateRight />}
                     onClick={toggleLeds}
-                    disabled={!controlConnected}
                     fullWidth
                   >
                     LEDs
@@ -534,67 +472,6 @@ const RemoteDrive = () => {
                   W/S/A/D - Move | Space - Stop | H - Home
                 </Typography>
               </Box>
-            </CardContent>
-          </Card>
-
-          {/* Activity Log */}
-          <Card sx={{ mt: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Activity Log
-              </Typography>
-              <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', p: 1 }}>
-                {activityLog.map((log, index) => (
-                  <Box key={index} sx={{ mb: 0.5 }}>
-                    <Typography variant="caption" color={
-                      log.type === 'error' ? 'error' : 
-                      log.type === 'success' ? 'success.main' : 
-                      log.type === 'warning' ? 'warning.main' : 
-                      'text.secondary'
-                    }>
-                      [{log.timestamp}] {log.message}
-                    </Typography>
-                  </Box>
-                ))}
-                {activityLog.length === 0 && (
-                  <Typography variant="caption" color="text.secondary">
-                    No activity yet
-                  </Typography>
-                )}
-              </Paper>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Server Configuration */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Server Configuration
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    label="Video Server URL"
-                    value={videoServerUrl}
-                    onChange={(e) => setVideoServerUrl(e.target.value)}
-                    fullWidth
-                    disabled={videoConnected}
-                    helperText="WebSocket URL for video stream"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    label="Control Server URL"
-                    value={controlServerUrl}
-                    onChange={(e) => setControlServerUrl(e.target.value)}
-                    fullWidth
-                    disabled={controlConnected}
-                    helperText="HTTP URL for remote control"
-                  />
-                </Grid>
-              </Grid>
             </CardContent>
           </Card>
         </Grid>

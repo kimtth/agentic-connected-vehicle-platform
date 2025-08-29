@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from utils.agent_tools import validate_command
 from semantic_kernel.functions import kernel_function
@@ -42,19 +42,13 @@ class RemoteAccessPlugin(BasePlugin):
     @kernel_function(description="Handle a door lock/unlock request.")
     async def _handle_door_lock(
         self,
-        vehicle_id: Optional[str] = None,
-        lock: Optional[bool] = None,
-        context: Optional[Dict[str, Any]] = None,
+        vehicle_id: Annotated[str, "Vehicle GUID to lock/unlock"] = "",
+        lock: Annotated[bool, "True to lock, False to unlock"] = True,
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
-        # Validate lock flag
-        if lock is None:
-            return self._format_response(
-                "Please specify whether to lock or unlock the doors.", success=False
-            )
-
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         action = "lock" if lock else "unlock"
-        vid = extract_vehicle_id(vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control.", success=False
@@ -120,14 +114,13 @@ class RemoteAccessPlugin(BasePlugin):
     @kernel_function(description="Handle remote engine start/stop request.")
     async def _handle_engine_control(
         self,
-        vehicle_id: Optional[str] = None,
-        start: bool = True,
-        context: Optional[Dict[str, Any]] = None,
+        vehicle_id: Annotated[str, "Vehicle GUID to start/stop engine"] = "",
+        start: Annotated[bool, "True to start engine, False to stop"] = True,
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
-        """Handle remote engine start/stop request."""
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         action = "start" if start else "stop"
-        vid = extract_vehicle_id(vehicle_id)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control the engine for.",
@@ -180,9 +173,12 @@ class RemoteAccessPlugin(BasePlugin):
 
     @kernel_function(description="Handle horn and lights activation.")
     async def _handle_horn_lights(
-        self, vehicle_id: Optional[str] = None, action: Optional[str] = "locate"
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to activate horn/lights"] = "",
+        action: Annotated[str, "Horn/lights action (e.g., locate)"] = "locate",
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(None, vehicle_id)
+        vid = extract_vehicle_id(None, vehicle_id or None)
 
         if not vid:
             return self._format_response("vehicle_id is required", success=False)
@@ -221,38 +217,6 @@ class RemoteAccessPlugin(BasePlugin):
                 "I encountered an error while activating horn and lights. Please try again.",
                 success=False,
             )
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
-        query_lower = query.lower()
-
-        if "lock" in query_lower:
-            return await self._handle_door_lock(vehicle_id, True, context)
-        elif "unlock" in query_lower:
-            return await self._handle_door_lock(vehicle_id, False, context)
-        elif "start" in query_lower and "engine" in query_lower:
-            return await self._handle_engine_control(vehicle_id, True, context)
-        elif "stop" in query_lower and "engine" in query_lower:
-            return await self._handle_engine_control(vehicle_id, False, context)
-        elif "horn" in query_lower or "locate" in query_lower:
-            return await self._handle_horn_lights(vehicle_id)
-        else:
-            return self._format_response(
-                "I can help you with remote vehicle access including locking/unlocking doors, "
-                "starting/stopping the engine, and activating horn and lights to locate your vehicle. "
-                "What would you like to do?",
-                data=self._get_capabilities(),
-            )
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
-        return {
-            "doorControl": "Lock and unlock vehicle doors",
-            "engineControl": "Remotely start and stop the engine",
-            "locateVehicle": "Activate horn and lights to locate the vehicle",
-        }
 
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None

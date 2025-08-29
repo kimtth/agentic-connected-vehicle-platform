@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Annotated
 
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
@@ -35,9 +35,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Find nearby charging stations")
     async def _handle_charging_stations(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to locate nearby chargers for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you're using to search for charging stations.",
@@ -131,9 +134,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Check charging status and battery")
     async def _handle_charging_status(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to check charging status for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check the charging status for.",
@@ -194,9 +200,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Start vehicle charging")
     async def _handle_start_charging(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to start charging"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to start charging.",
@@ -263,9 +272,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Stop vehicle charging")
     async def _handle_stop_charging(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to stop charging"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to stop charging.",
@@ -331,9 +343,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Get energy usage metrics")
     async def _handle_energy_usage(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to retrieve energy usage for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to check energy usage for.",
@@ -443,9 +458,12 @@ class ChargingEnergyPlugin:
 
     @kernel_function(description="Estimate vehicle range")
     async def _handle_range_estimation(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to estimate range for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to estimate range for.",
@@ -588,70 +606,6 @@ class ChargingEnergyPlugin:
         except Exception as e:
             logger.error(f"Error finding nearest charging station: {str(e)}")
             return None
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Process a charging or energy related query.
-
-        Args:
-            query: User query about charging or energy features
-            context: Additional context for the query
-
-        Returns:
-            Response with charging or energy information or actions
-        """
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
-
-        # Simple keyword-based logic for demonstration
-        query_lower = query.lower()
-
-        # Handle charging station requests
-        if "station" in query_lower or "charging station" in query_lower:
-            return await self._handle_charging_stations(vehicle_id, context)
-
-        # Handle charging status requests
-        elif "status" in query_lower and (
-            "charging" in query_lower or "battery" in query_lower
-        ):
-            return await self._handle_charging_status(vehicle_id, context)
-
-        # Handle start charging requests
-        elif "start" in query_lower and "charging" in query_lower:
-            return await self._handle_start_charging(vehicle_id, context)
-
-        # Handle stop charging requests
-        elif "stop" in query_lower and "charging" in query_lower:
-            return await self._handle_stop_charging(vehicle_id, context)
-
-        # Handle energy usage requests
-        elif "energy" in query_lower and "usage" in query_lower:
-            return await self._handle_energy_usage(vehicle_id, context)
-
-        # Handle range estimation requests
-        elif "range" in query_lower or "how far" in query_lower:
-            return await self._handle_range_estimation(vehicle_id, context)
-
-        # Handle general information requests
-        else:
-            return self._format_response(
-                "I can help you with electric vehicle charging and energy management, "
-                "including finding charging stations, monitoring charging status, "
-                "starting/stopping charging, tracking energy usage, and estimating range. "
-                "What would you like to do?",
-                data=self._get_capabilities(),
-            )
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent (camelCase keys)."""
-        return {
-            "chargingStations": "Find and navigate to nearby charging stations",
-            "chargingStatus": "Check the current charging status and battery level",
-            "chargingControl": "Start or stop vehicle charging",
-            "energyUsage": "Track and analyze energy consumption",
-            "rangeEstimation": "Estimate remaining driving range",
-        }
 
     def _format_response(
         self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True

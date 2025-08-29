@@ -41,7 +41,7 @@ const CarStatus = ({ vehicleId }) => {
   const [, setError] = useState(null);
 
   useEffect(() => {
-    let subscription = null;
+    let subscriptionCleanup = null; // renamed for clarity
     let statusCheckInterval = null;
     let isMounted = true;
     
@@ -58,35 +58,33 @@ const CarStatus = ({ vehicleId }) => {
           }
         }
         
-        // Start the real-time subscription to Cosmos DB Change Feed
-        subscription = await subscribeToVehicleStatus(vehicleId, (newStatus) => {
-          if (isMounted) {
-            setStatus(newStatus);
-            setError(null);
+        // Real-time subscription
+        subscriptionCleanup = await subscribeToVehicleStatus(
+          vehicleId,
+          (newStatus) => {
+            if (isMounted) {
+              setStatus(newStatus);
+              setError(null);
+            }
+          },
+          (err) => {
+            if (isMounted) {
+              setError('Error with real-time connection: ' + err.message);
+              console.error('Subscription error:', err);
+            }
           }
-        }, (err) => {
-          if (isMounted) {
-            setError('Error with real-time connection: ' + err.message);
-            console.error('Subscription error:', err);
-          }
-        });
+        );
 
-        // Add periodic status check with throttling to ensure data freshness
+        // Periodic check (still throttled; fetch layer skips if stream active + cache)
         statusCheckInterval = setInterval(async () => {
           if (!isMounted) return;
-          
           try {
-            // Only make the call if throttling allows it
             if (createVehicleStatusThrottle(vehicleId)) {
               const currentStatus = await fetchVehicleStatus(vehicleId);
-              if (isMounted) {
-                setStatus(currentStatus);
-              }
+              if (isMounted) setStatus(currentStatus);
             }
           } catch (err) {
-            if (isMounted) {
-              console.warn('Periodic status check failed:', err);
-            }
+            if (isMounted) console.warn('Periodic status check failed:', err);
           }
         }, INTERVALS.STATUS_CHECK);
 
@@ -96,26 +94,18 @@ const CarStatus = ({ vehicleId }) => {
           console.error(err);
         }
       } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        if (isMounted) setLoading(false);
       }
     };
 
-    if (vehicleId) {
-      initializeStatus();
-    }
+    if (vehicleId) initializeStatus();
     
-    // Cleanup: close subscription when component unmounts
     return () => {
       isMounted = false;
-      
-      if (subscription) {
-        subscription.unsubscribe();
+      if (subscriptionCleanup) {
+        try { subscriptionCleanup(); } catch {}
       }
-      if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-      }
+      if (statusCheckInterval) clearInterval(statusCheckInterval);
     };
   }, [vehicleId]);
 
