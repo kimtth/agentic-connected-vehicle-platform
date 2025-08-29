@@ -48,8 +48,10 @@ For full API reference, architecture, and examples, see the project documentatio
 ### Vehicle Simulation & Control
 ![Car Simulator](./doc/car_simulator.png)
 
-### Remote Drive Control 
+### In-Vehicle Assistant
+![In-Vehicle Assistant](./doc/in-vehicle-assistant.png)
 
+### Remote Drive Control 
 ![Remote Drive Control](./doc/remote_drive.png)
 
 > UI only: The `gateway.py` module needs to be implemented to connect with the server of [this machine](https://github.com/Freenove/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi). 

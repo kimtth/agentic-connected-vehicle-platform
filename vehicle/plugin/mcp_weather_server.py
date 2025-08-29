@@ -24,7 +24,8 @@ def get_weather(latitude: float, longitude: float) -> Dict[str, Any]:
     Get weather information for a given location.
     """
     try:
-        return generate_weather(latitude, longitude)
+        resp = generate_weather(latitude, longitude)
+        return resp
     except Exception as e:
         logger.error(f"Error retrieving weather information: {e}")
         raise

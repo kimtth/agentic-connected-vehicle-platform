@@ -19,7 +19,8 @@ def get_directions(destination: str, latitude: float, longitude: float) -> Dict[
     Get navigation directions for a given destination and start location.
     """
     try:
-        return generate_directions(destination, latitude, longitude)
+        resp = generate_directions(destination, latitude, longitude)
+        return resp
     except Exception as e:
         logger.error(f"Error retrieving directions: {e}")
         raise

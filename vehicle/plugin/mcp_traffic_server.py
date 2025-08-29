@@ -21,7 +21,8 @@ def get_traffic(route: str, latitude: float, longitude: float) -> Dict[str, Any]
     Get traffic information for a given route or location.
     """
     try:
-        return generate_traffic(route, latitude, longitude)
+        resp = generate_traffic(route, latitude, longitude)
+        return resp
     except Exception as e:
         logger.error(f"Error retrieving traffic info: {e}")
         raise

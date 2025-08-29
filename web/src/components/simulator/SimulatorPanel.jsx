@@ -122,32 +122,20 @@ const SimulatorPanel = ({ vehicleId }) => {
 
   // Enhanced cleanup function
   const cleanup = useCallback(() => {
-    // Clean up subscription
     if (subscription) {
       try {
-        if (typeof subscription.unsubscribe === 'function') {
-          subscription.unsubscribe();
-        } else if (typeof subscription.close === 'function') {
-          subscription.close();
-        }
-        if (isMounted) {
-          addLog('Subscription cleaned up', 'info');
-        }
-      } catch (error) {
-        if (isMounted) {
-          addLog(`Cleanup warning: ${error.message}`, 'warning');
-        }
+        // subscription is now a cleanup function
+        subscription();
+        if (isMounted) addLog('Subscription cleaned up', 'info');
+      } catch (e) {
+        if (isMounted) addLog(`Cleanup warning: ${e.message}`, 'warning');
       }
       setSubscription(null);
     }
-    
-    // Clean up status check interval
     if (statusCheckInterval) {
       clearInterval(statusCheckInterval);
       setStatusCheckInterval(null);
-      if (isMounted) {
-        addLog('Status check interval cleaned up', 'info');
-      }
+      if (isMounted) addLog('Status check interval cleaned up', 'info');
     }
   }, [subscription, statusCheckInterval, addLog, isMounted]);
 
@@ -213,7 +201,7 @@ const SimulatorPanel = ({ vehicleId }) => {
           }
         );
         if (isMounted) {
-          setSubscription(newSubscription);
+          setSubscription(() => newSubscription); // store cleanup fn
           addLog('Real-time connection established', 'success');
         }
       } catch (subscriptionError) {

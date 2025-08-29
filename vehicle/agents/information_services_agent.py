@@ -2,7 +2,7 @@
 Information Services Agent for the Connected Car Platform.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -116,10 +116,17 @@ class InformationServicesPlugin:
         name="get_weather",
     )
     async def _handle_weather(
-        self, location: Optional[str] = None, vehicle_id: Optional[str] = None
+        self,
+        location: Annotated[str, "Override location (city or coords)"] = "",
+        vehicle_id: Annotated[str, "Vehicle GUID for location lookup"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> str:
         if not vehicle_id:
-            vehicle_id = extract_vehicle_id(None, vehicle_id)
+            vehicle_id = extract_vehicle_id(call_context, vehicle_id or None)
+        # Treat empty string as unset
+        if not location:
+            location = None
 
         logger.info(
             f"Getting weather information for location: {location}, vehicle: {vehicle_id}"
@@ -127,23 +134,24 @@ class InformationServicesPlugin:
 
         # If still no vehicle_id, use a default location
         if not location and not vehicle_id:
-            location = "Tokyo, ON"
+            location = "Tokyo"
 
         try:
-            # Determine coordinates (fallback to default Tokyo, ON)
+            # Determine coordinates (fallback to default Tokyo)
             coords = await self._get_vehicle_location(vehicle_id)
-            # TODO: If location is provided, use it to get coordinates
             if not coords:
-                coords = {"latitude": 43.6532, "longitude": -79.3832}
-            latitude = coords.get("latitude", 43.6532)
-            longitude = coords.get("longitude", -79.3832)
+                coords = {"latitude": 35.6895, "longitude": 139.6917}
+            latitude = coords.get("latitude", 35.6895)
+            longitude = coords.get("longitude", 139.6917)
             result = await self._invoke_mcp_tool(
                 "weather",
                 "get_weather",
                 latitude=latitude,
                 longitude=longitude,
             )
-            return json.dumps(result)
+            # ensure result is JSON-serializable
+            serializable = self._ensure_serializable(result)
+            return json.dumps(serializable)
         except Exception as e:
             logger.error(f"Error getting weather: {e}")
             return json.dumps({"error": str(e)})
@@ -153,10 +161,14 @@ class InformationServicesPlugin:
         name="get_traffic",
     )
     async def _handle_traffic(
-        self, route: Optional[str] = None, vehicle_id: Optional[str] = None
+        self,
+        route: Annotated[str, "Route or segment description"] = "",
+        vehicle_id: Annotated[str, "Vehicle GUID for current position"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> str:
         if not vehicle_id:
-            vehicle_id = extract_vehicle_id(None, vehicle_id)
+            vehicle_id = extract_vehicle_id(call_context, vehicle_id or None)
 
         logger.info(
             f"Getting traffic information for route: {route}, vehicle: {vehicle_id}"
@@ -171,7 +183,8 @@ class InformationServicesPlugin:
                 latitude=coords.get("latitude", 0.0),
                 longitude=coords.get("longitude", 0.0),
             )
-            return json.dumps(result)
+            serializable = self._ensure_serializable(result)
+            return json.dumps(serializable)
         except Exception as e:
             logger.error(f"Error getting traffic: {e}")
             return json.dumps({"error": str(e)})
@@ -181,10 +194,14 @@ class InformationServicesPlugin:
         name="find_pois",
     )
     async def _handle_pois(
-        self, category: Optional[str] = None, vehicle_id: Optional[str] = None
+        self,
+        category: Annotated[str, "POI category (e.g., food, gas)"] = "",
+        vehicle_id: Annotated[str, "Vehicle GUID for location lookup"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> str:
         if not vehicle_id:
-            vehicle_id = extract_vehicle_id(None, vehicle_id)
+            vehicle_id = extract_vehicle_id(call_context, vehicle_id or None)
 
         logger.info(f"Finding POIs for category: {category}, vehicle: {vehicle_id}")
 
@@ -197,7 +214,8 @@ class InformationServicesPlugin:
                 latitude=coords.get("latitude", 0.0),
                 longitude=coords.get("longitude", 0.0),
             )
-            return json.dumps(result)
+            serializable = self._ensure_serializable(result)
+            return json.dumps(serializable)
         except Exception as e:
             logger.error(f"Error finding POIs: {e}")
             return json.dumps({"error": str(e)})
@@ -206,10 +224,14 @@ class InformationServicesPlugin:
         description="Get navigation directions to a destination", name="get_directions"
     )
     async def _handle_navigation(
-        self, destination: str, vehicle_id: Optional[str] = None
+        self,
+        destination: Annotated[str, "Destination address or place name"],
+        vehicle_id: Annotated[str, "Vehicle GUID for origin"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> str:
         if not vehicle_id:
-            vehicle_id = extract_vehicle_id(None, vehicle_id)
+            vehicle_id = extract_vehicle_id(call_context, vehicle_id or None)
 
         logger.info(f"Getting navigation to: {destination}, vehicle: {vehicle_id}")
 
@@ -222,10 +244,24 @@ class InformationServicesPlugin:
                 latitude=coords.get("latitude", 0.0),
                 longitude=coords.get("longitude", 0.0),
             )
-            return json.dumps(result)
+            serializable = self._ensure_serializable(result)
+            return json.dumps(serializable)
         except Exception as e:
             logger.error(f"Error getting navigation: {e}")
             return json.dumps({"error": str(e)})
+
+    def _ensure_serializable(self, obj):
+        """Return a JSON-serializable representation of obj."""
+        if hasattr(obj, "model_dump"):
+            try:
+                return obj.model_dump()
+            except Exception:
+                pass
+        if hasattr(obj, "dict"):
+            try:
+                return obj.dict()
+            except Exception:
+                pass
 
     async def _get_vehicle_location(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
         """Get the vehicle's current location from Cosmos DB."""
@@ -265,70 +301,6 @@ class InformationServicesPlugin:
         except Exception as e:
             logger.error(f"Error getting vehicle location: {e}")
             return {}
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
-        q = (query or "").lower()
-
-        try:
-            if "weather" in q:
-                raw = await self._handle_weather(vehicle_id=vehicle_id)
-                data = self._safe_json(raw)
-                return self._format_response(
-                    "Here is the current weather.",
-                    data={"weather": data, "vehicleId": vehicle_id},
-                )
-            elif "traffic" in q:
-                raw = await self._handle_traffic(route=None, vehicle_id=vehicle_id)
-                data = self._safe_json(raw)
-                return self._format_response(
-                    "Here are the current traffic conditions.",
-                    data={"traffic": data, "vehicleId": vehicle_id},
-                )
-            elif "poi" in q or "point of interest" in q or "places" in q:
-                raw = await self._handle_pois(category=None, vehicle_id=vehicle_id)
-                data = self._safe_json(raw)
-                return self._format_response(
-                    "Here are nearby points of interest.",
-                    data={"pois": data, "vehicleId": vehicle_id},
-                )
-            elif "navigation" in q or "directions" in q or "route" in q:
-                destination = (context or {}).get("destination") or "destination"
-                raw = await self._handle_navigation(
-                    destination=destination, vehicle_id=vehicle_id
-                )
-                data = self._safe_json(raw)
-                return self._format_response(
-                    f"Directions to {destination}.",
-                    data={"navigation": data, "vehicleId": vehicle_id},
-                )
-            else:
-                return self._format_response(
-                    "I can provide weather updates, traffic conditions, points of interest, and navigation assistance. What do you need?",
-                    data=self._get_capabilities(),
-                )
-        except Exception as e:
-            logger.error(f"Information services processing error: {e}")
-            return self._format_response(
-                "Information services are temporarily unavailable.", success=False
-            )
-
-    def _safe_json(self, value: Any) -> Any:
-        try:
-            return value if isinstance(value, (dict, list)) else json.loads(value)
-        except Exception:
-            return {"raw": value}
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
-        return {
-            "weather": "Get current weather and forecast information",
-            "traffic": "Check traffic conditions and incidents",
-            "pointsOfInterest": "Find nearby points of interest",
-            "navigation": "Set up and manage navigation to destinations",
-        }
 
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None

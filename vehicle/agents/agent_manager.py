@@ -85,8 +85,8 @@ class AgentManager:
                     "You are a vehicle management coordinator that routes requests to specialized agents. "
                     "Analyze the user's request and context to determine the appropriate agent. "
                     "Provide clear, helpful responses and indicate which plugins were used. "
-                    "Format your response as JSON with the following structure: "
-                    '{"message": "your response", "status": "completed", "plugins_used": ["plugin1", "plugin2"]}'
+                    "Highlight keywords in the response. Be concise. "
+                    "Output with markdown format."
                 ),
                 plugins=[
                     self.remote_access_agent,
@@ -236,21 +236,25 @@ class AgentManager:
             error=error,
         )
 
-    async def _prepare_kernel_arguments(self, enriched_context: Dict[str, Any]) -> KernelArguments:
+    async def _prepare_kernel_arguments(
+        self, enriched_context: Dict[str, Any]
+    ) -> KernelArguments:
         try:
             args = KernelArguments()
             if "vehicleId" in enriched_context:
-                args["vehicleId"] = enriched_context["vehicleId"]
+                args["vehicle_id"] = enriched_context["vehicleId"]
             if "vehicleData" in enriched_context:
-                args["vehicleData"] = enriched_context["vehicleData"]
+                args["vehicle_data"] = enriched_context["vehicleData"]
             if "vehicleStatus" in enriched_context:
-                args["vehicleStatus"] = enriched_context["vehicleStatus"]
+                args["vehicle_status"] = enriched_context["vehicleStatus"]
             if "sessionId" in enriched_context:
-                args["sessionId"] = enriched_context["sessionId"]
+                args["session_id"] = enriched_context["sessionId"]
             if "agentType" in enriched_context:
-                args["agentType"] = enriched_context["agentType"]
+                args["agent_type"] = enriched_context["agentType"]
             if "query" in enriched_context:
                 args["query"] = enriched_context["query"]
+            # renamed to avoid collision with SK internal context
+            args["call_context"] = enriched_context
             logger.debug(f"Prepared kernel arguments with keys: {list(args.keys())}")
             return args
         except Exception as e:
@@ -261,7 +265,7 @@ class AgentManager:
         self, query: str, context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Process a single vehicle request and return structured response (aliased dict)."""
-        session_id = context.get("sessionId", "default")
+        session_id = context.get("session_id", "default")
         async with self._managed_session(session_id):
             try:
                 logger.info(f"Processing request: {query[:100]}...")
@@ -418,9 +422,6 @@ class AgentManager:
             logger.error(f"Error during cleanup: {e}")
 
 
-# singleton
-agent_manager = AgentManager()
-
 # FastAPI scoped dependency factory
 async def get_agent_manager() -> AgentManager:
     """
@@ -437,4 +438,5 @@ async def get_agent_manager() -> AgentManager:
         return manager
     finally:
         # Note: cleanup will happen via context managers in the manager itself
+        pass
         pass

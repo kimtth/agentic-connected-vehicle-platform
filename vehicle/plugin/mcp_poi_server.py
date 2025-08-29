@@ -19,7 +19,8 @@ def find_pois(category: str, latitude: float, longitude: float) -> Dict[str, Any
     Find points of interest for a given category and location.
     """
     try:
-        return generate_pois(category, latitude, longitude)
+        resp = generate_pois(category, latitude, longitude)
+        return resp
     except Exception as e:
         logger.error(f"Error retrieving POIs: {e}")
         raise

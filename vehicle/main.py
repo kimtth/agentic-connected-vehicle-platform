@@ -8,6 +8,8 @@ import asyncio
 import logging
 import uuid
 import json
+from datetime import datetime
+from pydantic import BaseModel
 import uvicorn
 import atexit
 from pathlib import Path
@@ -339,7 +341,7 @@ async def get_vehicle_status(vehicle_id: str):
 
 
 # Stream vehicle status updates
-@app.get("/api/vehicle/{vehicle_id}/status/stream")  # path param renamed
+@app.get("/api/vehicle/{vehicle_id}/status/stream")
 async def stream_vehicle_status(vehicle_id: str):
     """Stream real-time status updates for a vehicle"""
 
@@ -357,7 +359,19 @@ async def stream_vehicle_status(vehicle_id: str):
         try:
             agen = client.subscribe_to_vehicle_status(vehicle_id)
             async for status in agen:
-                yield f"data: {json.dumps(status)}\n\n"
+                try:
+                    if isinstance(status, BaseModel):
+                        payload = status.model_dump(by_alias=True)
+                    else:
+                        payload = status  # assume already JSON-serializable dict
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                except Exception as e:
+                    logger.error(
+                        "Error serializing vehicle status for SSE: %s (type=%s)",
+                        e,
+                        type(status)
+                    )
+                    yield 'data: {"error":"serialization"}\n\n'
         except Exception as e:
             logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
             error_status = {
@@ -366,7 +380,6 @@ async def stream_vehicle_status(vehicle_id: str):
             }
             yield f"data: {json.dumps(error_status)}\n\n"
         finally:
-            # Ensure the async generator is properly closed to release underlying resources
             if agen and hasattr(agen, "aclose"):
                 try:
                     await agen.aclose()
@@ -579,7 +592,7 @@ async def patch_vehicle_status(vehicle_id: str, status_update: dict):
 
 
 # Async background task to process commands
-async def process_command_async(command):
+async def process_command_async(command_data):
     """Process a command asynchronously"""
     try:
         client = get_cosmos_client()
@@ -594,8 +607,8 @@ async def process_command_async(command):
         return
 
     # Extract command details
-    command_id = command["command_id"]
-    vehicle_id = command["vehicle_id"]
+    command_id = command_data.get("command_id", "") or command_data.get("commandId", "")
+    vehicle_id = command_data.get("vehicle_id", "") or command_data.get("vehicleId", "")
     try:
         await client.update_command(
             command_id=command_id,
@@ -618,11 +631,15 @@ async def process_command_async(command):
             f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}"
         )
     try:
+        commandType = command_data.get("command_type", "")
+        if commandType:
+            commandType = command_data.get('commandType', "unknown")
+
         notif = NotificationModel(
             id=str(uuid.uuid4()),
             vehicle_id=vehicle_id,
             type="command_executed",
-            message=f"Command {command.get('command_type','unknown')} executed successfully",
+            message=f"Command {commandType} executed successfully.",
             timestamp=datetime.now(timezone.utc).isoformat(),
             read=False,
             severity="low",

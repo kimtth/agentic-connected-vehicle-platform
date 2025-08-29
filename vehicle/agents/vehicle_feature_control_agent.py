@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, Dict, Optional 
+from typing import Any, Dict, Optional, Annotated
 import uuid
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
@@ -41,11 +41,12 @@ class VehicleFeatureControlPlugin(BasePlugin):
     @kernel_function(description="Control vehicle lights (headlights, interior, etc.)")
     async def _handle_lights_control(
         self,
-        vehicle_id: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        vehicle_id: Annotated[str, "Vehicle GUID whose lights to control"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context with natural language query"] = {},
         **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
+        query = call_context.get("query", "") if call_context else ""
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control lights for.",
@@ -54,7 +55,6 @@ class VehicleFeatureControlPlugin(BasePlugin):
 
         try:
             # Extract light type and action from context
-            query = context.get("query", "") if context else ""
             light_type = "headlights"  # default
             action = "on"  # default
             
@@ -101,11 +101,12 @@ class VehicleFeatureControlPlugin(BasePlugin):
     @kernel_function(description="Control vehicle climate settings")
     async def _handle_climate_control(
         self,
-        vehicle_id: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        vehicle_id: Annotated[str, "Vehicle GUID whose climate to control"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context with desired temp/query"] = {},
         **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
+        query = call_context.get("query", "") if call_context else ""
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control climate for.",
@@ -113,8 +114,6 @@ class VehicleFeatureControlPlugin(BasePlugin):
             )
 
         try:
-            query = context.get("query", "") if context else ""
-            
             # Extract temperature and settings
             temperature = 22  # default
             action = "set_temperature"
@@ -174,11 +173,12 @@ class VehicleFeatureControlPlugin(BasePlugin):
     @kernel_function(description="Control vehicle windows")
     async def _handle_windows_control(
         self,
-        vehicle_id: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        vehicle_id: Annotated[str, "Vehicle GUID whose windows to control"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context with window action"] = {},
         **kwargs
     ) -> Dict[str, Any]:
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
+        query = call_context.get("query", "") if call_context else ""
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you'd like to control windows for.",
@@ -186,8 +186,6 @@ class VehicleFeatureControlPlugin(BasePlugin):
             )
 
         try:
-            query = context.get("query", "") if context else ""
-            
             action = "up" if "up" in query.lower() or "close" in query.lower() else "down"
             window_position = "all"
             
@@ -229,33 +227,6 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 "I encountered an error while controlling the windows. Please try again.",
                 success=False,
             )
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
-        query_lower = query.lower()
-
-        if "light" in query_lower:
-            return await self._handle_lights_control(vehicle_id, context)
-        elif "climate" in query_lower or "temperature" in query_lower or "ac" in query_lower:
-            return await self._handle_climate_control(vehicle_id, context)
-        elif "window" in query_lower:
-            return await self._handle_windows_control(vehicle_id, context)
-        else:
-            return self._format_response(
-                "I can help you control various vehicle features including lights, climate control, and windows. "
-                "What would you like to adjust?",
-                data=self._get_capabilities(),
-            )
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent."""
-        return {
-            "lightsControl": "Control headlights, interior lights, and hazard lights",
-            "climateControl": "Adjust temperature, heating, and air conditioning",
-            "windowsControl": "Open and close vehicle windows",
-        }
 
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None

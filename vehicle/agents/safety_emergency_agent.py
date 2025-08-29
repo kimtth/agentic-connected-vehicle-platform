@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Dict, Any, Optional 
+from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
@@ -38,10 +38,13 @@ class SafetyEmergencyPlugin:
 
     @kernel_function(description="Handle emergency calls")
     async def _handle_emergency_call(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID needing emergency assistance"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
         """Handle an emergency call request."""
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle needs emergency assistance.",
@@ -119,10 +122,13 @@ class SafetyEmergencyPlugin:
 
     @kernel_function(description="Handle collision alerts")
     async def _handle_collision_alert(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID involved in collision"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
         """Handle a collision alert."""
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle was involved in the collision.",
@@ -201,10 +207,13 @@ class SafetyEmergencyPlugin:
 
     @kernel_function(description="Handle theft notifications")
     async def _handle_theft_notification(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID suspected stolen"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
         """Handle a theft notification."""
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle you believe has been stolen.",
@@ -283,10 +292,13 @@ class SafetyEmergencyPlugin:
 
     @kernel_function(description="Handle SOS requests")
     async def _handle_sos(
-        self, vehicle_id: Optional[str], context: Optional[Dict[str, Any]] = None
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID for SOS request"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
     ) -> Dict[str, Any]:
         """Handle an SOS request with immediate emergency response."""
-        vid = extract_vehicle_id(context, vehicle_id)
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
         if not vid:
             return self._format_response(
                 "Please specify which vehicle needs SOS assistance.",
@@ -360,74 +372,6 @@ class SafetyEmergencyPlugin:
                 "Please call emergency services directly at your local emergency number.",
                 success=False,
             )
-
-    async def process(
-        self, query: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Process a safety or emergency related query.
-
-        Args:
-            query: User query about safety or emergency features
-            context: Additional context for the query
-
-        Returns:
-            Response with safety or emergency information or actions
-        """
-        vehicle_id = (context or {}).get("vehicleId") or (context or {}).get("vehicle_id")
-
-        # Simple keyword-based logic for demonstration
-        query_lower = query.lower()
-
-        # Handle emergency call requests
-        if "ecall" in query_lower or "emergency call" in query_lower:
-            return await self._handle_emergency_call(vehicle_id, context)
-
-        # Handle collision alert requests
-        elif (
-            "collision" in query_lower
-            or "crash" in query_lower
-            or "accident" in query_lower
-        ):
-            return await self._handle_collision_alert(vehicle_id, context)
-
-        # Handle theft notification requests
-        elif "theft" in query_lower or "stolen" in query_lower:
-            return await self._handle_theft_notification(vehicle_id, context)
-
-        # Handle SOS requests
-        elif "sos" in query_lower or "help" in query_lower:
-            return await self._handle_sos(vehicle_id, context)
-
-        # Handle speed alert requests
-        elif "speed" in query_lower and "alert" in query_lower:
-            return await self._handle_speed_alert(vehicle_id, context)
-
-        # Handle curfew alert requests
-        elif "curfew" in query_lower:
-            return await self._handle_curfew_alert(vehicle_id, context)
-
-        # Handle battery alert requests
-        elif "battery" in query_lower and "alert" in query_lower:
-            return await self._handle_battery_alert(vehicle_id, context)
-
-        # Handle general information requests
-        else:
-            return self._format_response(
-                "I can help you with safety and emergency features, including emergency calls, "
-                "collision alerts, theft notifications, and SOS assistance. "
-                "What would you like to do?",
-                data=self._get_capabilities(),
-            )
-
-    def _get_capabilities(self) -> Dict[str, str]:
-        """Get the capabilities of this agent (camelCase keys)."""
-        return {
-            "emergencyCall": "Initiate emergency calls to local emergency services",
-            "collisionAlert": "Process collision alerts and notify emergency services",
-            "theftNotification": "Report vehicle theft and track vehicle location",
-            "sos": "Send an SOS signal for immediate assistance",
-        }
 
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
