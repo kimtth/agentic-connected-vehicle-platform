@@ -1,30 +1,32 @@
 from datetime import datetime
 from typing import Any, Optional, List, Dict
-from .base import CamelModel
+from .base import BaseSchemaModel
 
 # Assuming global camelCase alias generation is configured centrally (models.py),
 # so we only specify explicit aliases where names differ.
 
-class ActionResponse(CamelModel):
+class ActionResponse(BaseSchemaModel):
+    message: Optional[str] = ""
     data: Any
+    success: Optional[bool] = True
 
-class AIResponse(CamelModel):
+class AIResponse(BaseSchemaModel):
     response: str
 
-class SpeechTokenResponse(CamelModel):
+class SpeechTokenResponse(BaseSchemaModel):
     token: str
     region: str
 
-class GenericPayloadResponse(CamelModel):
+class GenericPayloadResponse(BaseSchemaModel):
     payload: Dict[str, Any]
 
-class InfoResponse(CamelModel):
+class InfoResponse(BaseSchemaModel):
     status: str
     version: str
     azure_cosmos_enabled: bool
     azure_cosmos_connected: bool
 
-class HealthServices(CamelModel):
+class HealthServices(BaseSchemaModel):
     api: str
     cosmos_db: str
     mcp_weather: str
@@ -32,22 +34,22 @@ class HealthServices(CamelModel):
     mcp_poi: str
     mcp_navigation: str
 
-class HealthResponse(CamelModel):
+class HealthResponse(BaseSchemaModel):
     status: str
     timestamp: datetime
     services: HealthServices
 
-class CommandHistoryItem(CamelModel):
+class CommandHistoryItem(BaseSchemaModel):
     timestamp: str
     command: str
     status: str
     response: Optional[str] = ""
     error: Optional[str] = ""
 
-class CommandSubmitResponse(CamelModel):
+class CommandSubmitResponse(BaseSchemaModel):
     command_id: str
 
-class Notification(CamelModel):
+class Notification(BaseSchemaModel):
     id: str
     vehicle_id: str
     type: str
@@ -55,15 +57,15 @@ class Notification(CamelModel):
     timestamp: datetime
     read: bool = False
 
-class CreateNotificationResponse(CamelModel):
+class CreateNotificationResponse(BaseSchemaModel):
     id: str
     status: str
     data: Any
 
-class MarkNotificationReadResponse(CamelModel):
+class MarkNotificationReadResponse(BaseSchemaModel):
     id: str
     status: str
     data: Any
 
-class GenericDetailResponse(CamelModel):
+class GenericDetailResponse(BaseSchemaModel):
     detail: str

@@ -15,8 +15,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import { fetchSpeechToken, fetchSpeechIceToken } from '../api/services';
 import {
     speakText as speakAvatarText,
-    buildAvatarPipeline
+    buildAvatarPipeline,
+    initSpeechRecognizer
 } from '../services/speechStreamService';
+import { askAI } from '../api/services'; // ADDED
 
 const LANGUAGE_OPTIONS = [
     { code: 'en-US', label: 'English', voice: 'en-US-AvaMultilingualNeural' },
@@ -50,6 +52,8 @@ const VoiceControl = ({ vehicleId }) => {
     const [isRecognizing, setIsRecognizing] = useState(false);
     const [selectedLanguage, setSelectedLanguage] = useState('en-US');
     const [avatarMeta, setAvatarMeta] = useState({ character: 'meg', style: 'formal', voice: 'en-US-AvaMultilingualNeural' });
+    const [avatarEnabled, setAvatarEnabled] = useState(true); // Toggle avatar active/inactive
+    const [continuousListening, setContinuousListening] = useState(false); // Continuous STT mode
 
     const videoRef = useRef(null);
     const audioRef = useRef(null);
@@ -57,7 +61,7 @@ const VoiceControl = ({ vehicleId }) => {
     // --- Load Speech SDK (now only for cleanup) ---
     useEffect(() => {
         return () => {
-            try { pipelineRef.current?.stop(); } catch {}
+            try { pipelineRef.current?.stop(); } catch { }
             pipelineRef.current = null;
             peerConnectionRef.current = null;
             synthesizerRef.current = null;
@@ -65,7 +69,7 @@ const VoiceControl = ({ vehicleId }) => {
         };
     }, []);
 
-    // --- Token helpers (simplified) ---
+    // --- Token helpers ---
     const ensureSpeechToken = useCallback(async (force = false) => {
         const now = Date.now();
         if (
@@ -108,7 +112,18 @@ const VoiceControl = ({ vehicleId }) => {
     }, []);
 
     const stopSession = useCallback(() => {
-        try { pipelineRef.current?.stop(); } catch {}
+        try {
+            if (recognizerRef.current && continuousListening) {
+                console.log('[VoiceControl] Stopping continuous recognition...');
+                try {
+                    recognizerRef.current.stopContinuousRecognitionAsync(
+                        () => console.log('[VoiceControl] Continuous recognition stopped.'),
+                        err => console.warn('[VoiceControl] Failed stopping continuous recognition:', err)
+                    );
+                } catch { }
+            }
+            pipelineRef.current?.stop();
+        } catch { }
         pipelineRef.current = null;
         peerConnectionRef.current = null;
         synthesizerRef.current = null;
@@ -117,7 +132,32 @@ const VoiceControl = ({ vehicleId }) => {
         setAvatarConnecting(false);
         setAvatarStreamReady(false);
         setSubtitleText('');
-    }, []);
+        setAvatarEnabled(false); // reset to enabled on full stop
+        setContinuousListening(false);
+    }, [continuousListening]);
+
+    // Send recognized user speech to AI endpoint and speak AI response
+    const sendToAI = useCallback(async (userText) => {
+        if (!userText || !userText.trim()) return;
+        setTranscript(p => [...p, `AI_REQUEST: ${userText}`]);
+        try {
+            const aiText = await askAI({
+                messages: [{ role: 'user', content: userText }],
+                languageCode: selectedLanguage
+            });
+            const safeText = aiText || '(no response)';
+            setTranscript(p => [...p, `AI: ${safeText}`]);
+            setMessage(safeText);
+            if (synthesizerRef.current && safeText) {
+                speakAvatarText(synthesizerRef.current, safeText, {
+                    onStart: () => setTranscript(p => [...p, `SPEAKING: ${safeText}`])
+                });
+            }
+        } catch (err) {
+            // setTranscript(p => [...p, `AI_ERROR: ${err.message || err}`]);
+            alert('AI request failed: ' + (err.message || err));
+        }
+    }, [selectedLanguage]);
 
     const startSession = useCallback(async () => {
         if (sessionActive || avatarConnecting) return;
@@ -133,12 +173,12 @@ const VoiceControl = ({ vehicleId }) => {
 
         try {
             const { token: authToken, region } = tokenData;
-            
+
             // Handle iceServers array format from fetchSpeechIceToken
             const iceServer = iceTokenData.iceServers[0];
             const { urls, username, credential } = iceServer || {};
             // console.log('Starting session with:', { iceTokenData, iceServer, authToken, region, urls, username, credential });
-            
+
             if (!Array.isArray(urls) || urls.length === 0) {
                 setTokenError('ICE token missing valid URLs.');
                 setAvatarConnecting(false);
@@ -159,12 +199,12 @@ const VoiceControl = ({ vehicleId }) => {
                 onTrack: (event) => {
                     if (event.track.kind === 'video' && videoRef.current) {
                         videoRef.current.srcObject = event.streams[0];
-                        videoRef.current.play().catch(()=>{});
+                        videoRef.current.play().catch(() => { });
                         setAvatarStreamReady(true);
                     }
                     if (event.track.kind === 'audio' && audioRef.current) {
                         audioRef.current.srcObject = event.streams[0];
-                        audioRef.current.play().catch(()=>{});
+                        audioRef.current.play().catch(() => { });
                     }
                 },
                 onConnectionState: (state) => {
@@ -176,6 +216,22 @@ const VoiceControl = ({ vehicleId }) => {
             synthesizerRef.current = pipeline.avatarSynthesizer;
             peerConnectionRef.current = pipeline.peerConnection;
             recognizerRef.current = pipeline.recognizer || recognizerRef.current;
+            if (pipeline.recognizer) {
+                console.log('[VoiceControl] Reusing recognizer from avatar pipeline.');
+            }
+            if (!recognizerRef.current) {
+                console.log('[VoiceControl] No recognizer in pipeline. Creating new SpeechRecognizer...');
+                recognizerRef.current = initSpeechRecognizer({
+                    token: authToken,
+                    region,
+                    language: selectedLanguage
+                });
+                if (recognizerRef.current) {
+                    console.log('[VoiceControl] Created new recognizer instance.');
+                } else {
+                    console.warn('[VoiceControl] Failed to create recognizer instance.');
+                }
+            }
 
             if (synthesizerRef.current) {
                 synthesizerRef.current.wordBoundary = (_s, e) => {
@@ -186,38 +242,54 @@ const VoiceControl = ({ vehicleId }) => {
 
             if (recognizerRef.current) {
                 recognizerRef.current.recognizing = (_s, e) => {
-                    setTranscript(prev => {
-                        const copy = [...prev];
-                        if (copy.length && copy[copy.length - 1].startsWith('RECOGNIZING:')) {
-                            copy[copy.length - 1] = `RECOGNIZING: ${e.result?.text || ''}`;
-                        } else {
-                            copy.push(`RECOGNIZING: ${e.result?.text || ''}`);
-                        }
-                        return copy;
-                    });
+                    // Skip updating transcript on intermediate results to reduce clutter
                 };
                 recognizerRef.current.recognized = (_s, e) => {
                     const recognizedText = e.result.text;
-                    setTranscript(prev => [...prev, `RECOGNIZED: ${recognizedText}`]);
-                    setIsRecognizing(false);
-                    
-                    // Set recognized text to message field and auto-send
-                    if (recognizedText && recognizedText.trim()) {
-                        setMessage(recognizedText);
-                        // Auto-send after a brief delay to allow UI update
-                        setTimeout(() => {
-                            if (synthesizerRef.current) {
-                                speakAvatarText(synthesizerRef.current, recognizedText, {
-                                    onStart: () => setTranscript(p => [...p, `SPEAKING: ${recognizedText}`])
-                                });
-                            }
-                        }, 100);
+                    console.log('[VoiceControl] Recognized text:', recognizedText);
+                    if (recognizedText) {
+                        setTranscript(prev => [...prev, `RECOGNIZED${continuousListening ? ' (cont)' : ''}: ${recognizedText}`]);
+                        // Send to AI
+                        sendToAI(recognizedText);
                     }
+                    if (!continuousListening) setIsRecognizing(false);
+
+                    // Debug: Auto TTS echo - Debugging to test connection to avatar TTS
+                    // if (recognizedText && recognizedText.trim()) {
+                    //     setMessage(recognizedText);
+                    //     setTimeout(() => {
+                    //         if (synthesizerRef.current) {
+                    //             speakAvatarText(synthesizerRef.current, recognizedText, {
+                    //                 onStart: () => setTranscript(p => [...p, `SPEAKING: ${recognizedText}`])
+                    //             });
+                    //         }
+                    //     }, 100);
+                    // }
                 };
                 recognizerRef.current.canceled = (_s, e) => {
-                    setTranscript(prev => [...prev, `CANCELED: Reason=${e.reason}`]);
-                    setIsRecognizing(false);
+                    //setTranscript(prev => [...prev, `CANCELED: Reason=${e.reason}`]);
+                    if (!continuousListening) setIsRecognizing(false);
                 };
+            } else {
+                console.warn('[VoiceControl] Recognizer not available; voice input disabled.');
+            }
+
+            // Auto-start continuous recognition
+            if (recognizerRef.current && !continuousListening) {
+                console.log('[VoiceControl] Starting continuous recognition...');
+                recognizerRef.current.startContinuousRecognitionAsync(
+                    () => {
+                        console.log('[VoiceControl] Continuous recognition started.');
+                        setContinuousListening(true);
+                        setIsRecognizing(true);
+                    },
+                    err => {
+                        console.error('[VoiceControl] Continuous recognition start failed:', err);
+                        setTranscript(p => [...p, `CONTINUOUS RECOGNITION ERROR: ${err}`]);
+                    }
+                );
+            } else if (!recognizerRef.current) {
+                console.warn('[VoiceControl] Cannot start continuous recognition (no recognizer).');
             }
 
             setSessionActive(true);
@@ -228,7 +300,7 @@ const VoiceControl = ({ vehicleId }) => {
         } finally {
             setAvatarConnecting(false);
         }
-    }, [sessionActive, avatarConnecting, ensureSpeechToken, ensureSpeechIceToken, stopSession, showSubtitles, avatarMeta]);
+    }, [sessionActive, avatarConnecting, ensureSpeechToken, ensureSpeechIceToken, stopSession, showSubtitles, avatarMeta, continuousListening, selectedLanguage, sendToAI]);
 
     const handleSpeak = useCallback(async () => {
         if (!sessionActive && !avatarConnecting) {
@@ -248,6 +320,7 @@ const VoiceControl = ({ vehicleId }) => {
     }, [sessionActive, avatarConnecting, startSession, message]);
 
     const doRecognizeOnce = useCallback(() => {
+        if (continuousListening) return; // Ignore in continuous mode
         if (!recognizerRef.current) {
             alert('Session not started or recognizer not ready.');
             return;
@@ -256,13 +329,13 @@ const VoiceControl = ({ vehicleId }) => {
         setMessage(''); // Clear message field before starting recognition
         setTranscript(prev => [...prev, 'RECOGNIZING...']);
         recognizerRef.current.recognizeOnceAsync(
-            () => {},
+            () => { },
             err => {
                 setTranscript(prev => [...prev, `ERROR: ${err}`]);
                 setIsRecognizing(false);
             }
         );
-    }, []);
+    }, [continuousListening]);
 
     const toggleContinuousRecognition = useCallback(() => { /* logic removed */ }, []);
     const unmuteAvatar = useCallback(() => setAvatarMuted(false), []);
@@ -275,6 +348,21 @@ const VoiceControl = ({ vehicleId }) => {
         }
     }, [selectedLanguage]);
 
+    const toggleAvatarEnabled = useCallback(() => {
+        setAvatarEnabled(prev => {
+            const next = !prev;
+            const vStream = videoRef.current?.srcObject;
+            if (vStream) {
+                vStream.getVideoTracks().forEach(t => (t.enabled = next));
+            }
+            const aStream = audioRef.current?.srcObject;
+            if (aStream) {
+                aStream.getAudioTracks().forEach(t => (t.enabled = next));
+            }
+            return next;
+        });
+    }, []);
+
     const sessionStatusChip = (
         <Chip
             size="small"
@@ -283,6 +371,32 @@ const VoiceControl = ({ vehicleId }) => {
             variant={sessionActive ? 'filled' : 'outlined'}
         />
     );
+
+    // Periodic speech token refresh (token valid ~10 min; refresh at 8 min)
+    useEffect(() => {
+        if (!sessionActive) return;
+        const REFRESH_THRESHOLD_MS = 8 * 60 * 1000;
+        const CHECK_INTERVAL_MS = 60 * 1000;
+        const id = setInterval(async () => {
+            try {
+                if (Date.now() - tokenFetchedAtRef.current > REFRESH_THRESHOLD_MS) {
+                    const data = await ensureSpeechToken(true);
+                    if (data?.token) {
+                        if (synthesizerRef.current) {
+                            synthesizerRef.current.authorizationToken = data.token;
+                        }
+                        if (recognizerRef.current) {
+                            recognizerRef.current.authorizationToken = data.token;
+                        }
+                        console.log('[VoiceControl] Refreshed speech token (age exceeded threshold).');
+                    }
+                }
+            } catch (err) {
+                console.warn('[VoiceControl] Token refresh failed:', err);
+            }
+        }, CHECK_INTERVAL_MS);
+        return () => clearInterval(id);
+    }, [sessionActive, ensureSpeechToken]);
 
     return (
         <Paper sx={{ p: 3 }}>
@@ -368,7 +482,7 @@ const VoiceControl = ({ vehicleId }) => {
                                     variant="outlined"
                                     startIcon={<HearingIcon />}
                                     onClick={doRecognizeOnce}
-                                    disabled={!sessionActive || isRecognizing}
+                                    disabled={!sessionActive || isRecognizing || continuousListening} // modified
                                 >
                                     Recognize Once
                                 </Button>
@@ -388,6 +502,14 @@ const VoiceControl = ({ vehicleId }) => {
                                     disabled={!sessionActive && !avatarConnecting}
                                 >
                                     Stop
+                                </Button>
+                                <Button
+                                    variant="outlined"
+                                    color={avatarEnabled ? 'primary' : 'warning'}
+                                    onClick={toggleAvatarEnabled}
+                                    disabled={!sessionActive || avatarConnecting || !avatarStreamReady}
+                                >
+                                    {avatarEnabled ? 'Avatar Active' : 'Avatar Inactive'}
                                 </Button>
                             </Box>
                         </Grid>
@@ -435,7 +557,7 @@ const VoiceControl = ({ vehicleId }) => {
                                 height: '100%',
                                 objectFit: 'cover',
                                 background: '#000',
-                                display: avatarStreamReady ? 'block' : 'none',
+                                display: avatarStreamReady && avatarEnabled ? 'block' : 'none',
                                 zIndex: 1
                             }}
                             muted
@@ -504,10 +626,30 @@ const VoiceControl = ({ vehicleId }) => {
                                 </Typography>
                             </Box>
                         )}
+
+                        {!avatarEnabled && avatarStreamReady && (
+                            <Box sx={{
+                                position: 'absolute',
+                                inset: 0,
+                                zIndex: 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backdropFilter: 'blur(6px)',
+                                bgcolor: 'rgba(0,0,0,0.55)',
+                                color: '#fff',
+                                px: 2,
+                                textAlign: 'center'
+                            }}>
+                                <Typography variant="caption">
+                                    Avatar inactive (video/audio tracks paused). Use the button to reactivate.
+                                </Typography>
+                            </Box>
+                        )}
                     </Box>
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            Avatar Character: {avatarMeta.character} | Style: {avatarMeta.style} | Voice: {avatarMeta.voice} | {sessionActive ? 'Active' : 'Idle'}
+                            Avatar Character: {avatarMeta.character} | Style: {avatarMeta.style} | Voice: {avatarMeta.voice} | {sessionActive ? (avatarEnabled ? 'Active' : 'Paused') : 'Idle'} | STT: {continuousListening ? 'Continuous' : 'Idle'}
                         </Typography>
                     </Box>
                 </Grid>
@@ -537,7 +679,13 @@ const VoiceControl = ({ vehicleId }) => {
                     </Paper>
                     <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary">
-                            Last recognized: {transcript.findLast(t => t.startsWith('RECOGNIZED:'))?.substring(11) || '—'}
+                            {/* UPDATED: handle both standard and (cont) prefixes */}
+                            Last recognized: {
+                                (() => {
+                                    const last = [...transcript].reverse().find(t => t.startsWith('RECOGNIZED'));
+                                    return last ? last.split(':').slice(1).join(':').trim() : '—';
+                                })()
+                            }
                         </Typography>
                     </Box>
                     <Divider sx={{ my: 2 }} />

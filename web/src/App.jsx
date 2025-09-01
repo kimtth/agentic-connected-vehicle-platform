@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
@@ -17,6 +17,7 @@ import AuthButtons from './components/auth/AuthButtons';
 import ProtectedRoute from './auth/ProtectedRoute';
 import ThemeToggle from './components/ThemeToggle';
 import { useIsAuthenticated } from '@azure/msal-react';
+import { unsubscribeAllVehicleStatusStreams } from './api/status';
 
 // Create theme factory function
 const createAppTheme = (mode) => createTheme({
@@ -218,6 +219,7 @@ function App() {
     return localStorage.getItem('themeMode') || 'dark';
   });
   const isAuthenticated = useIsAuthenticated();
+  const location = useLocation();
 
   const theme = createAppTheme(themeMode);
 
@@ -265,6 +267,13 @@ function App() {
       setLoading(false);
     }
   }, [isAuthenticated, loadVehicles]);
+
+  // Unsubscribe SSE streams when leaving simulator
+  useEffect(() => {
+    if (!/\/simulator/i.test(location.pathname)) {
+      unsubscribeAllVehicleStatusStreams();
+    }
+  }, [location.pathname]);
 
   if (loading && vehicles.length === 0) {
     return (

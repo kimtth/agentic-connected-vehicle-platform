@@ -124,22 +124,16 @@ class InformationServicesPlugin:
     ) -> str:
         if not vehicle_id:
             vehicle_id = extract_vehicle_id(call_context, vehicle_id or None)
-        # Treat empty string as unset
-        if not location:
-            location = None
 
         logger.info(
             f"Getting weather information for location: {location}, vehicle: {vehicle_id}"
         )
 
-        # If still no vehicle_id, use a default location
-        if not location and not vehicle_id:
-            location = "Tokyo"
-
         try:
             # Determine coordinates (fallback to default Tokyo)
             coords = await self._get_vehicle_location(vehicle_id)
             if not coords:
+                # If coords is None, use the default location.
                 coords = {"latitude": 35.6895, "longitude": 139.6917}
             latitude = coords.get("latitude", 35.6895)
             longitude = coords.get("longitude", 139.6917)

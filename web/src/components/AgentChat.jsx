@@ -223,20 +223,18 @@ const AgentChat = ({ vehicleId }) => {
     setLoading(true);
     
     try {
-      // Include last 10 messages (including this new user message) in the query so backend has recent context
-      // const combinedHistory = [...chatHistory, userMessage];
-      // const lastItems = combinedHistory.slice(-10);
-      // const historyText = lastItems
-      //   .map(m => {
-      //     const who = m.type === 'user' ? 'User' : m.type === 'agent' ? `Agent(${m.agentType || selectedAgent.type})` : m.type;
-      //     return `[${new Date(m.timestamp).toISOString()}] ${who}: ${m.text}`;
-      //   })
-      //   .join('\n');
+      // Build compact conversation history (last 10 messages including new one)
+      const combined = [...chatHistory, userMessage];
+      const lastItems = combined.slice(-10).map(m => ({
+        role: m.type === 'user' ? 'user' : (m.type === 'agent' ? 'assistant' : m.type),
+        content: m.text
+      }));
 
       const requestPayload = {
         query: `${textToSend}`,
         context: {
           agentType: selectedAgent.type,
+          conversationHistory: lastItems,
           vehicleId: vehicleId,
           timestamp: new Date().toISOString()
         },
@@ -652,3 +650,4 @@ const AgentChat = ({ vehicleId }) => {
 };
 
 export default AgentChat;
+

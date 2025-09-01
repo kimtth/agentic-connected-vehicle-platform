@@ -1,16 +1,16 @@
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 from typing import List, Union, Optional
 from semantic_kernel.contents import ChatMessageContent
 
 
-class AskAIRequest(CamelModel):
+class AskAIRequest(BaseSchemaModel):
     messages: Optional[Union[str, dict, List[Union[str, dict]]]] = None
     system: Optional[str] = None
-    languageCode: Optional[str] = None
+    language_code: Optional[str] = None
     temperature: float = 0.7
     maxTokens: int = 512
 
-    def normalizedMessages(self) -> List[ChatMessageContent]:
+    def normalized_messages(self) -> List[ChatMessageContent]:
         if not self.messages:
             return []
         raw = self.messages if isinstance(self.messages, list) else [self.messages]

@@ -100,7 +100,6 @@ async def ask_agent(
         context = request.context or {}
         context["session_id"] = session_id
 
-        # Handle agent-specific routing based on context
         agent_type = context.get("agent_type")
         if agent_type:
             # Map frontend agent types to backend agent types
@@ -326,4 +325,3 @@ async def recommend_services_endpoint(
             error="Recommendation service temporarily unavailable",
             vehicle_id=request.vehicle_id,
         )
-

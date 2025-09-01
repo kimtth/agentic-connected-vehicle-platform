@@ -1,7 +1,7 @@
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 from typing import Optional, Dict, Any
 
-class VehicleStatus(CamelModel):
+class VehicleStatus(BaseSchemaModel):
     """Canonical vehicle status model (serialized in camelCase)."""
     id: Optional[str] = None
     vehicle_id: str  # Will serialize as vehicleId via CamelModel alias generator

@@ -106,8 +106,8 @@ export const initAutoDetectRecognizer = ({
 }) => {
     const speechConfig = SpeechSDK.SpeechConfig.fromEndpoint(
         new URL(`wss://${region}.stt.speech.microsoft.com/speech/universal/v2`),
-        token
     );
+    speechConfig.authorizationToken = token; // Same as fromAuthorizationToken
     speechConfig.setProperty(
         SpeechSDK.PropertyId.SpeechServiceConnection_LanguageIdMode,
         "Continuous"
@@ -256,11 +256,11 @@ export const startAvatarSession = async ({
         throw new Error("iceServer url(s) required");
     }
 
-    console.log('Creating RTCPeerConnection with ICE config:', {
-        urls,
-        username: iceServer.username,
-        credential: iceServer.credential
-    });
+    // console.log('Creating RTCPeerConnection with ICE config:', {
+    //     urls,
+    //     username: iceServer.username,
+    //     credential: iceServer.credential
+    // });
 
     const pc = new RTCPeerConnection({
         iceServers: [{

@@ -1,7 +1,7 @@
 from typing import Optional
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 
-class Notification(CamelModel):
+class Notification(BaseSchemaModel):
     id: Optional[str] = None
     vehicle_id: Optional[str] = None
     type: Optional[str] = None

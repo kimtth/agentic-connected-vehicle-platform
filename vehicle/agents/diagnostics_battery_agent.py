@@ -13,20 +13,20 @@ from plugin.oai_service import create_chat_service
 from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
 from utils.vehicle_object_utils import find_vehicle, ensure_dict
-from models.base import CamelModel  # NEW: base for camelCase serialization
+from models.base import BaseSchemaModel  # NEW: base for camelCase serialization
 
 logger = get_logger(__name__)
 
 
 # NEW: Data models for structured responses
-class DiagnosticsData(CamelModel):
+class DiagnosticsData(BaseSchemaModel):
     diagnostics: Dict[str, Any]
     issues: List[str]
     status: str
     vehicle_id: str
 
 
-class BatteryData(CamelModel):
+class BatteryData(BaseSchemaModel):
     # electric
     level: Optional[int] = None
     range_km: Optional[int] = None
@@ -41,26 +41,26 @@ class BatteryData(CamelModel):
     vehicle_type: Optional[str] = None
 
 
-class BatteryStatusData(CamelModel):
+class BatteryStatusData(BaseSchemaModel):
     battery: BatteryData
     vehicle_id: str
     vehicle_type: Optional[str] = None
 
 
-class SystemHealthReport(CamelModel):
+class SystemHealthReport(BaseSchemaModel):
     overall_status: str
     components: Dict[str, str]
     issues: List[str]
     recommendations: List[str]
 
 
-class SystemHealthData(CamelModel):
+class SystemHealthData(BaseSchemaModel):
     system_health: SystemHealthReport
     vehicle_id: str
     failed_commands: int
 
 
-class MaintenanceItem(CamelModel):
+class MaintenanceItem(BaseSchemaModel):
     type: str
     interval_miles: Optional[int] = None
     interval_months: Optional[int] = None
@@ -70,7 +70,7 @@ class MaintenanceItem(CamelModel):
     next_due_mileage: Optional[int] = None  # NEW: mileage target for next service
 
 
-class MaintenanceCheckData(CamelModel):
+class MaintenanceCheckData(BaseSchemaModel):
     maintenance_items: List[MaintenanceItem]
     vehicle_id: str
 

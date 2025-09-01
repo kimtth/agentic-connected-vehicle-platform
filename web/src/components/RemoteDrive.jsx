@@ -10,6 +10,7 @@ import {
   RotateRight, VolumeUp, VolumeOff
 } from '@mui/icons-material';
 import ConstructionIcon from '@mui/icons-material/Construction';
+import demoVideo from '../assets/video.mp4'; // Path expects: web/src/assets/video.mp4. Adjust if asset lives elsewhere.
 
 const RemoteDrive = () => {
   // Connection/demo states (now local only)
@@ -17,7 +18,8 @@ const RemoteDrive = () => {
   const [controlConnected, setControlConnected] = useState(true);  // start connected for demo
   
   // Video states (placeholder demo image)
-  const [videoUrl, setVideoUrl] = useState('https://via.placeholder.com/800x450?text=Demo+Video');
+  const videoFallback = demoVideo || '/video.mp4'; // fallback to public root if import fails
+  const [videoUrl, setVideoUrl] = useState(videoFallback);
   const [videoError, setVideoError] = useState('');
   
   // Control states
@@ -26,6 +28,7 @@ const RemoteDrive = () => {
   const [servo2, setServo2] = useState(90);
   const [buzzerOn, setBuzzerOn] = useState(false);
   const [ledsOn, setLedsOn] = useState(false);
+  const [demoLoop, setDemoLoop] = useState(false); // placeholder loop flag
   
   // Telemetry states
   const [ultrasonic,setUltrasonic] = useState(null);
@@ -58,6 +61,7 @@ const RemoteDrive = () => {
     // accessories off
     setBuzzerOn(false);
     setLedsOn(false);
+    setDemoLoop(false);
     addLog('Demo: Disconnected');
   }, [addLog]);
 
@@ -77,7 +81,7 @@ const RemoteDrive = () => {
     setVideoError('');
     setVideoConnected(true);
     setControlConnected(true);
-    setVideoUrl('https://via.placeholder.com/800x450?text=Demo+Video');
+    setVideoUrl(videoFallback);
     addLog('Demo: Connected');
   };
 
@@ -122,6 +126,29 @@ const RemoteDrive = () => {
       return v;
     });
   };
+
+  const toggleDemoLoop = () => {
+    setDemoLoop(v => {
+      const nv = !v;
+      addLog(`Demo loop ${nv ? 'started' : 'stopped'}`);
+      return nv;
+    });
+  };
+
+  // Placeholder servo sweep loop (demo)
+  useEffect(() => {
+    if (!demoLoop) return;
+    let direction = 1;
+    const id = setInterval(() => {
+      setServo1(prev => {
+        let next = prev + direction * 5;
+        if (next >= 180) { next = 180; direction = -1; }
+        if (next <= 0) { next = 0; direction = 1; }
+        return next;
+      });
+    }, 300);
+    return () => clearInterval(id);
+  }, [demoLoop]);
 
   // Keyboard controls (always active now)
   useEffect(() => {
@@ -198,9 +225,13 @@ const RemoteDrive = () => {
               <Paper sx={{ position: 'relative', paddingTop: '56.25%' }}>
                 {videoConnected ? (
                   <Box
-                    component="img"
+                    component="video"
                     src={videoUrl}
-                    alt="Demo video feed"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    onError={() => setVideoError('Failed to load demo video')}
                     sx={{
                       position: 'absolute', top: 0, left: 0,
                       width: '100%', height: '100%',
@@ -238,6 +269,33 @@ const RemoteDrive = () => {
               <Typography variant="h6" gutterBottom>
                 Activity Log
               </Typography>
+              
+              {/* Telemetry moved here */}
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Telemetry
+                </Typography>
+                <Box sx={{ display:'flex', flexWrap:'wrap', gap:1 }}>
+                  <Chip
+                    label={ultrasonic != null ? `Distance: ${ultrasonic}cm` : 'Distance: --'}
+                    color={ultrasonic != null ? 'primary' : 'default'}
+                    size="small"
+                  />
+                  <Chip
+                    label={light ? `Light L:${light.left}V R:${light.right}V` : 'Light: --'}
+                    size="small"
+                  />
+                  <Chip
+                    label={power != null ? `Power: ${power}%` : 'Power: --'}
+                    color={power != null ? (power > 30 ? 'success':'warning') : 'default'}
+                    size="small"
+                  />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  Live telemetry only available when WS gateway passes raw server lines.
+                </Typography>
+              </Box>
+              
               <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', p: 1 }}>
                 {activityLog.map((log, index) => (
                   <Box key={index} sx={{ mb: 0.5 }}>
@@ -406,6 +464,15 @@ const RemoteDrive = () => {
                 >
                   Reset Camera Position
                 </Button>
+                <Button
+                  sx={{ mt: 1 }}
+                  variant={demoLoop ? 'contained' : 'outlined'}
+                  color={demoLoop ? 'success' : 'primary'}
+                  onClick={toggleDemoLoop}
+                  fullWidth
+                >
+                  {demoLoop ? 'Stop Demo Loop' : 'Start Demo Loop'}
+                </Button>
               </Box>
 
               <Divider sx={{ my: 2 }} />
@@ -438,30 +505,6 @@ const RemoteDrive = () => {
               </Box>
 
               <Divider sx={{ my: 2 }} />
-
-              {/* Telemetry Indicators */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" gutterBottom>Telemetry</Typography>
-                <Box sx={{ display:'flex', flexWrap:'wrap', gap:1 }}>
-                  <Chip
-                    label={ultrasonic != null ? `Distance: ${ultrasonic}cm` : 'Distance: --'}
-                    color={ultrasonic != null ? 'primary' : 'default'}
-                    size="small"
-                  />
-                  <Chip
-                    label={light ? `Light L:${light.left}V R:${light.right}V` : 'Light: --'}
-                    size="small"
-                  />
-                  <Chip
-                    label={power != null ? `Power: ${power}%` : 'Power: --'}
-                    color={power != null ? (power > 30 ? 'success':'warning') : 'default'}
-                    size="small"
-                  />
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  Live telemetry only available when WS gateway passes raw server lines.
-                </Typography>
-              </Box>
 
               {/* Keyboard Shortcuts */}
               <Box>
