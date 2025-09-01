@@ -9,6 +9,7 @@ import logging
 import uuid
 import json
 from datetime import datetime
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import atexit
@@ -25,7 +26,7 @@ sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from contextlib import asynccontextmanager
 from models.command import Command
 from models.vehicle_profile import VehicleProfile
@@ -369,7 +370,7 @@ async def stream_vehicle_status(vehicle_id: str):
                     logger.error(
                         "Error serializing vehicle status for SSE: %s (type=%s)",
                         e,
-                        type(status)
+                        type(status),
                     )
                     yield 'data: {"error":"serialization"}\n\n'
         except asyncio.CancelledError:
@@ -688,7 +689,9 @@ async def mark_notification_read(notification_id: str):
 
 
 # Delete a notification (for deleteNotification)
-@app.delete("/api/notifications/{notification_id}", response_model=GenericDetailResponse)
+@app.delete(
+    "/api/notifications/{notification_id}", response_model=GenericDetailResponse
+)
 async def delete_notification(notification_id: str):
     client = get_cosmos_client()
     await client.ensure_connected()
@@ -790,6 +793,36 @@ def _start_mcp_process(func, name: str):
     except Exception as e:
         logger.warning(f"Failed to start {name}: {e}")
 
+# React frontend static files serving setup: Assumes build output is in ./public folder
+directory_path = os.path.dirname(os.path.abspath(__file__))
+# Root of built frontend (contains index.html and a 'static' subfolder)
+build_root = os.path.join(directory_path, "public")
+assets_dir = os.path.join(build_root, "static")
+
+if not os.path.isdir(assets_dir):
+    logger.warning(f"Static assets directory not found: {assets_dir}")
+
+# Mount only the assets subdirectory so requests to /static/js/... resolve correctly
+app.mount("/static", StaticFiles(directory=assets_dir), name="static")
+
+# Root must be defined BEFORE the catch-all to avoid being shadowed
+@app.get("/")
+async def serve_root():
+    index_path = os.path.join(build_root, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    return {"message": "Connected Car Platform API", "frontend": "not built"}
+
+@app.get("/{full_path:path}")
+async def serve_react_app(full_path: str):
+    # Don't intercept API or static asset requests
+    if full_path.startswith("api/") or full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="API or static asset not found")
+    index_path = os.path.join(build_root, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Frontend not built")
+# End of React frontend serving setup
 
 if __name__ == "__main__":
     # Prevent multiple server instances
@@ -801,7 +834,14 @@ if __name__ == "__main__":
 
     # Initialize
     host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", 8000))
+    # Environment mode: "dev"/"development" or "prod"/"production"
+    # Default port: 8000 for dev, 80 for prod (can be overridden with API_PORT)
+    port = int(
+        os.getenv(
+            "API_PORT", 8000 if os.getenv("ENV_TYPE").lower() == "development" else 80
+        )
+    )
+    logger.info(f"Starting. Using port {port}.")
 
     # Check if port is already in use
     _check_port_availability(host, port)
@@ -832,3 +872,5 @@ if __name__ == "__main__":
         raise
     finally:
         _SERVER_INSTANCE_STARTED = False
+
+

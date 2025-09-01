@@ -20,7 +20,8 @@ const retryRequest = async (fn, retries = 3, delay = 1000) => {
       if (error.code === 'USER_NOT_AUTHENTICATED') throw error; // Don't retry auth errors
       
       console.log(`Command API retry attempt ${i + 1}/${retries} after ${delay}ms`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const wait = delay;
+      await new Promise(resolve => setTimeout(resolve, wait));
       delay *= 1.5; // Exponential backoff
     }
   }

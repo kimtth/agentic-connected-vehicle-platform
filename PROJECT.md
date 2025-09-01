@@ -471,6 +471,7 @@ Validation steps:
     ```bash
     cd vehicle
     poetry install
+    # Copy example env files and edit values before running
     cp .env.sample .env
     # Run tests (optional)
     poetry run pytest
@@ -481,6 +482,9 @@ Validation steps:
 4. **Frontend Setup**
    ```bash
    cd web
+   # Copy example env files and edit values before running
+   cp .env.example .env.development
+   cp .env.example .env.production
 
    # Install yarn
    npm install -g yarn
