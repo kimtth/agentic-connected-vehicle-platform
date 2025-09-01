@@ -320,3 +320,7 @@ poetry.lock
 /.vscode
 memo.md
 /doc/azure-avatar-demo-main
+.env.production
+.env.development
+/vehicle/public
+/infra/params.prod.json

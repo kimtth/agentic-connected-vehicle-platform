@@ -216,7 +216,7 @@ function App() {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [loading, setLoading] = useState(false); // was true
   const [themeMode, setThemeMode] = useState(() => {
-    return localStorage.getItem('themeMode') || 'dark';
+    return localStorage.getItem('themeMode') || 'light';
   });
   const isAuthenticated = useIsAuthenticated();
   const location = useLocation();

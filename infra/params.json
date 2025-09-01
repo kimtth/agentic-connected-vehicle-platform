@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "acvp" },
+    "appServicePlanSku": {
+      "value": {
+        "name": "P1v3",
+        "tier": "PremiumV3",
+        "size": "P1v3",
+        "capacity": 1
+      }
+    },
+
+    "cosmosMode": { "value": "existing" },
+    "cosmosDbAccountResourceId": {
+      "value": "/subscriptions/<subscription-id>/resourceGroups/<existing-cosmos-rg>/providers/Microsoft.DocumentDB/databaseAccounts/<cosmos-account-name>"
+    },
+    "cosmosPrivateLinkGroupId": { "value": "Sql" },
+
+    "addressSpace": { "value": "10.20.0.0/16" },
+    "subnetIntegrationName": { "value": "webapp-int" },
+    "subnetIntegrationPrefix": { "value": "10.20.1.0/24" },
+    "subnetPrivateEndpointName": { "value": "pep" },
+    "subnetPrivateEndpointPrefix": { "value": "10.20.2.0/24" },
+    "deployPrivateDnsZone": { "value": true },
+
+    "azureOpenAiEndpoint": { "value": "https://your-endpoint-name.openai.azure.com/" },
+    "azureOpenAiDeploymentName": { "value": "gpt-5" },
+    "azureOpenAiApiVersion": { "value": "2025-01-01-preview" },
+    "azureOpenAiApiKey": { "value": "<replace-with-azure-openai-key>" },
+    "azureSpeechKey": { "value": "<replace-with-speech-key>" },
+
+    "azureTenantId": { "value": "<tenant-guid>" },
+    "azureClientId": { "value": "<app-client-id-or-app-id-uri>" },
+    "webAppPublicNetworkAccess": { "value": "Enabled" }
+  }
+}

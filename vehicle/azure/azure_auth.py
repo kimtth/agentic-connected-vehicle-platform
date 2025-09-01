@@ -58,7 +58,7 @@ class AzureADMiddleware(BaseHTTPMiddleware):
         )
 
         if os.getenv('ENV_TYPE') == 'development':
-            # In development, disable auth for all paths.
+            # Dev: In development, disable auth for all paths.
             self.exclude_prefixes = ("/",)
 
         self.signin_redirect_url = os.getenv("SIGNIN_REDIRECT_URL", "/")

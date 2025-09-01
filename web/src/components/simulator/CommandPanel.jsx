@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { 
-  Paper, Typography, Grid, Button, TextField, Box 
+  Paper, Typography, Grid, Button, Box 
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { 
@@ -70,7 +70,6 @@ const ScrollableContent = styled(Box)(({ theme }) => ({
 }));
 
 const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
-  const [customCommand, setCustomCommand] = useState('');
   const [isSending, setIsSending] = useState(false);
   const selectedCategory = 'vehicle_features';
 
@@ -85,20 +84,6 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       await onSendCommand(command);
     } finally {
       setIsSending(false);
-    }
-  };
-
-  const handleCustomCommand = async () => {
-    if (customCommand.trim()) {
-      setIsSending(true);
-      try {
-        await onSendCommand(customCommand, true);
-        setCustomCommand('');
-      } finally {
-        setIsSending(false);
-      }
-    } else {
-      alert('Please enter a command');
     }
   };
 

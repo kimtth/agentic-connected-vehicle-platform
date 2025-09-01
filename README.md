@@ -26,13 +26,34 @@ An AI-driven car management system: control, diagnostics, and insights via agent
 - Do not manually recase dict keys—always return model instances.
 
 ## 🚀 Quick Start
+
 ```bash
+# Authenticate with Azure (if needed for cloud services)
 az login
-cd vehicle
+
+# --- Frontend (web) ---
+cd web
+# Copy example env files and edit values before running
+cp .env.example .env.development
+cp .env.example .env.production
+yarn install
+
+# --- Backend / Vehicle service ---
+cd ../vehicle
+# Copy backend env and edit values
+cp .env.sample .env
 poetry install
-cp .env.sample .env # fill with your values
+
+# --- Run services (use two terminals) ---
+# Terminal A: start frontend
+cd ../web
+yarn start
+
+# Terminal B: start backend
+cd ../vehicle
 python main.py
 ```
+
 
 Note: MCP services use deterministic sample data in plugin/sample_data.py.
 

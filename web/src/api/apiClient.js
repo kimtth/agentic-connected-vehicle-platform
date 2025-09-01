@@ -9,8 +9,8 @@ import { msalInstance, acquireApiToken, getAuthorizationHeader } from '../auth/m
 // Support both env var names for base URL
 // Prefer explicit env; otherwise default to backend (avoid relying on a proxy that may not exist)
 const explicitBase =
-  process.env.REACT_APP_API_BASE_URL ||
-  '';
+  process.env.NODE_ENV === 'development'
+    ? process.env.REACT_APP_API_DEV_BASE_URL: '';
 
 function normalizeBase(url) {
   return url ? url.replace(/\/+$/, '') : url;
