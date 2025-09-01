@@ -39,6 +39,26 @@ class RemoteAccessPlugin(BasePlugin):
         # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
+    async def _apply_status_update(self, vehicle_id: str, patch: Dict[str, Any]):
+        try:
+            current = await self.cosmos_client.get_vehicle_status(vehicle_id) or {}
+            if not isinstance(current, dict):
+                try:
+                    current = current.model_dump()
+                except Exception:
+                    current = {}
+            current.update(patch)
+            if hasattr(self.cosmos_client, "update_vehicle_status"):
+                await self.cosmos_client.update_vehicle_status(vehicle_id, current)
+            elif hasattr(self.cosmos_client, "set_vehicle_status"):
+                await self.cosmos_client.set_vehicle_status(vehicle_id, current)
+            else:
+                container = getattr(self.cosmos_client, "status_container", None)
+                if container:
+                    await container.upsert_item({"id": vehicle_id, "vehicle_id": vehicle_id, **current})
+        except Exception as e:
+            logger.debug(f"Status update skipped ({vehicle_id}): {e}")
+
     @kernel_function(description="Handle a door lock/unlock request.")
     async def _handle_door_lock(
         self,
@@ -95,6 +115,14 @@ class RemoteAccessPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "doorsLocked": lock,
+                    "doorsUpdatedAt": datetime.datetime.now().isoformat(),
+                    "lastDoorCommandId": command_id,
+                },
+            )
             return self._format_response(
                 f"I've {action}ed your vehicle doors.",
                 data={
@@ -155,8 +183,17 @@ class RemoteAccessPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "engineRunning": start,
+                    "engineUpdatedAt": datetime.datetime.now().isoformat(),
+                    "lastEngineCommandId": command_id,
+                },
+            )
+            verb = "stopped" if action == "stop" else f"{action}ed"
             return self._format_response(
-                f"I've {action}ed your vehicle engine remotely.",
+                f"I've {verb} your vehicle engine remotely.",
                 data={
                     "action": f"engine_{action}",
                     "vehicleId": vid,
@@ -202,6 +239,17 @@ class RemoteAccessPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "locateMode": {
+                        "active": True,
+                        "durationSec": 10,
+                        "activatedAt": datetime.datetime.now().isoformat(),
+                        "commandId": command_id,
+                    }
+                },
+            )
             return self._format_response(
                 "I've activated the horn and lights to help you locate your vehicle.",
                 data={

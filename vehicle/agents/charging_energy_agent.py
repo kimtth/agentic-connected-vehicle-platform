@@ -33,6 +33,31 @@ class ChargingEnergyPlugin:
         # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
+    async def _apply_status_update(self, vehicle_id: str, patch: Dict[str, Any]):
+        """Merge patch into vehicle status and persist."""
+        try:
+            current = await self.cosmos_client.get_vehicle_status(vehicle_id) or {}
+            if isinstance(current, dict):
+                current_status = current
+            else:
+                try:
+                    current_status = current.model_dump()
+                except Exception:
+                    current_status = {}
+            current_status.update(patch)
+            # Prefer explicit API if available
+            if hasattr(self.cosmos_client, "update_vehicle_status"):
+                await self.cosmos_client.update_vehicle_status(vehicle_id, current_status)
+            elif hasattr(self.cosmos_client, "set_vehicle_status"):
+                await self.cosmos_client.set_vehicle_status(vehicle_id, current_status)
+            else:
+                container = getattr(self.cosmos_client, "status_container", None)
+                if container:
+                    doc = {"id": vehicle_id, "vehicle_id": vehicle_id, **current_status}
+                    await container.upsert_item(doc)
+        except Exception as e:
+            logger.debug(f"Status update skipped ({vehicle_id}): {e}")
+
     @kernel_function(description="Find nearby charging stations")
     async def _handle_charging_stations(
         self,
@@ -241,6 +266,14 @@ class ChargingEnergyPlugin:
             result = await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             if result:
+                await self._apply_status_update(
+                    vid,
+                    {
+                        "charging": True,
+                        "lastChargeCommandId": command_obj.command_id,
+                        "chargeStartedAt": datetime.datetime.now().isoformat(),
+                    },
+                )
                 return self._format_response(
                     f"I've started charging your vehicle. The current battery level is "
                     f"{battery_level}% and the estimated time to full charge is "
@@ -313,6 +346,14 @@ class ChargingEnergyPlugin:
             result = await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
             if result:
+                await self._apply_status_update(
+                    vid,
+                    {
+                        "charging": False,
+                        "lastChargeCommandId": command_obj.command_id,
+                        "chargeStoppedAt": datetime.datetime.now().isoformat(),
+                    },
+                )
                 return self._format_response(
                     f"I've stopped charging your vehicle. The final battery level is "
                     f"{battery_level}%.",

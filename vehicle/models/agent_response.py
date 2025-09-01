@@ -1,15 +1,15 @@
 from typing import List, Optional, Any, Literal
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 
 
-class ParsedAgentMessage(CamelModel):
+class ParsedAgentMessage(BaseSchemaModel):
     message: str
     status: Literal["completed", "error", "pending", "unknown"] = "completed"
     plugins_used: List[str] = []
     data: Optional[Any] = None
 
 
-class AgentResponse(CamelModel):
+class AgentResponse(BaseSchemaModel):
     response: str
     success: bool
     plugins_used: List[str] = []
@@ -18,7 +18,7 @@ class AgentResponse(CamelModel):
     error: Optional[str] = None
 
 
-class AgentServiceResponse(CamelModel):
+class AgentServiceResponse(BaseSchemaModel):
     response: str
     success: bool
     session_id: str
@@ -30,7 +30,7 @@ class AgentServiceResponse(CamelModel):
     vehicle_id: Optional[str] = None
 
 
-class StreamingChunk(CamelModel):
+class StreamingChunk(BaseSchemaModel):
     response: str
     complete: bool
     plugins_used: List[str] = []

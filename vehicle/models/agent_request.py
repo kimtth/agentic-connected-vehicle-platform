@@ -1,60 +1,60 @@
 from typing import Any, Optional, Dict, List
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 
 
-class AgentQueryRequest(CamelModel):
+class AgentQueryRequest(BaseSchemaModel):
     query: str
     context: Optional[Dict[str, Any]]
     session_id: Optional[str]
     stream: Optional[bool]
 
 
-class AnalysisRequest(CamelModel):
+class AnalysisRequest(BaseSchemaModel):
     vehicle_id: str
     time_period: Optional[str] = "7d"
     metrics: Optional[List[str]] = None
 
 
-class ServiceRecommendationRequest(CamelModel):
+class ServiceRecommendationRequest(BaseSchemaModel):
     vehicle_id: str
     mileage: Optional[int] = None
     last_service_date: Optional[str] = None
     last_service_date: Optional[str] = None
 
 
-class EmergencyCallRequest(CamelModel):
+class EmergencyCallRequest(BaseSchemaModel):
     emergency_type: Optional[str] = "general"  # general, medical, fire, police
 
 
-class CollisionReportRequest(CamelModel):
+class CollisionReportRequest(BaseSchemaModel):
     severity: str = "unknown"  # minor, major, severe, unknown
     location: Optional[Dict[str, float]] = None
 
 
-class TheftReportRequest(CamelModel):
+class TheftReportRequest(BaseSchemaModel):
     description: Optional[str] = None
     last_seen_location: Optional[Dict[str, float]] = None
 
 
-class DoorControlRequest(CamelModel):
+class DoorControlRequest(BaseSchemaModel):
     action: str  # lock, unlock
 
 
-class EngineControlRequest(CamelModel):
+class EngineControlRequest(BaseSchemaModel):
     action: str  # start, stop
 
 
-class LightsControlRequest(CamelModel):
+class LightsControlRequest(BaseSchemaModel):
     light_type: str = "headlights"  # headlights, interior_lights, hazard_lights
     action: str = "on"  # on, off
 
 
-class ClimateControlRequest(CamelModel):
+class ClimateControlRequest(BaseSchemaModel):
     temperature: Optional[int] = 22
     action: str = "set_temperature"  # heating, cooling, set_temperature
     auto: bool = True
 
 
-class WindowsControlRequest(CamelModel):
+class WindowsControlRequest(BaseSchemaModel):
     action: str = "up"  # up, down
     windows: str = "all"  # all, driver, passenger

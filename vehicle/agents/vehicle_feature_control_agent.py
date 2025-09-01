@@ -38,6 +38,26 @@ class VehicleFeatureControlPlugin(BasePlugin):
         # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
+    async def _apply_status_update(self, vehicle_id: str, patch: Dict[str, Any]):
+        try:
+            current = await self.cosmos_client.get_vehicle_status(vehicle_id) or {}
+            if not isinstance(current, dict):
+                try:
+                    current = current.model_dump()
+                except Exception:
+                    current = {}
+            current.update(patch)
+            if hasattr(self.cosmos_client, "update_vehicle_status"):
+                await self.cosmos_client.update_vehicle_status(vehicle_id, current)
+            elif hasattr(self.cosmos_client, "set_vehicle_status"):
+                await self.cosmos_client.set_vehicle_status(vehicle_id, current)
+            else:
+                container = getattr(self.cosmos_client, "status_container", None)
+                if container:
+                    await container.upsert_item({"id": vehicle_id, "vehicle_id": vehicle_id, **current})
+        except Exception as e:
+            logger.debug(f"Status update skipped ({vehicle_id}): {e}")
+
     @kernel_function(description="Control vehicle lights (headlights, interior, etc.)")
     async def _handle_lights_control(
         self,
@@ -81,6 +101,16 @@ class VehicleFeatureControlPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "lights": {
+                        "type": light_type,
+                        "state": action,
+                        "updatedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 f"I've turned {action} the {light_type.replace('_', ' ')} for your vehicle.",
                 data={
@@ -152,6 +182,17 @@ class VehicleFeatureControlPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "climate": {
+                        "mode": action,
+                        "temperatureC": temperature,
+                        "auto": True,
+                        "updatedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 f"I've set the climate control to {temperature}°C with {action} mode.",
                 data={
@@ -208,6 +249,16 @@ class VehicleFeatureControlPlugin(BasePlugin):
             )
             await self.cosmos_client.create_command(command_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "windows": {
+                        "target": window_position,
+                        "state": action,
+                        "updatedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             window_text = f"{window_position} windows" if window_position != "all" else "all windows"
             action_text = "rolled up" if action == "up" else "rolled down"
 
@@ -227,6 +278,34 @@ class VehicleFeatureControlPlugin(BasePlugin):
                 "I encountered an error while controlling the windows. Please try again.",
                 success=False,
             )
+
+    @kernel_function(description="Get current vehicle feature status")
+    async def _handle_feature_status(
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID to get feature status for"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
+    ) -> Dict[str, Any]:
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
+        if not vid:
+            return self._format_response("Please specify which vehicle to check.", success=False)
+        try:
+            await self.cosmos_client.ensure_connected()
+            status = await self.cosmos_client.get_vehicle_status(vid) or {}
+            features = {
+                "lights": status.get("lights"),
+                "climate": status.get("climate"),
+                "windows": status.get("windows"),
+                "doorsLocked": status.get("doorsLocked"),
+                "engineRunning": status.get("engineRunning"),
+            }
+            return self._format_response(
+                "Feature status retrieved.",
+                data={"vehicleId": vid, "features": features},
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving feature status: {e}")
+            return self._format_response("Unable to retrieve feature status.", success=False)
 
     def _format_response(
         self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None

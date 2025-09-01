@@ -262,6 +262,14 @@ export const subscribeToVehicleStatus = (vehicleId, onStatusUpdate, onError) => 
   return streamVehicleStatus(vehicleId, onStatusUpdate, onError);
 };
 
+// ---- Added global unsubscribe helper ----
+export const unsubscribeAllVehicleStatusStreams = () => {
+  activeStatusStreams.forEach(rec => {
+    try { rec.eventSource && rec.eventSource.close(); } catch {}
+  });
+  activeStatusStreams.clear();
+};
+
 /**
  * Update climate settings for a vehicle
  * @param {string} vehicleId 

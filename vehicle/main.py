@@ -363,7 +363,7 @@ async def stream_vehicle_status(vehicle_id: str):
                     if isinstance(status, BaseModel):
                         payload = status.model_dump(by_alias=True)
                     else:
-                        payload = status  # assume already JSON-serializable dict
+                        payload = status
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 except Exception as e:
                     logger.error(
@@ -372,6 +372,9 @@ async def stream_vehicle_status(vehicle_id: str):
                         type(status)
                     )
                     yield 'data: {"error":"serialization"}\n\n'
+        except asyncio.CancelledError:
+            # Normal client disconnect; suppress error noise
+            logger.debug("SSE client disconnected for vehicle %s", vehicle_id)
         except Exception as e:
             logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
             error_status = {
@@ -395,7 +398,7 @@ async def stream_vehicle_status(vehicle_id: str):
     response.headers["Access-Control-Allow-Headers"] = "Cache-Control"
     response.headers["Cache-Control"] = "no-cache"
     response.headers["Connection"] = "keep-alive"
-
+    response.headers["X-Accel-Buffering"] = "no"  # prevent proxy buffering for SSE
     return response
 
 
@@ -465,12 +468,11 @@ async def get_vehicle(vehicle_id: str):
 async def add_service(vehicle_id: str, service: Service):
     """Add a service record to a vehicle"""
     client = get_cosmos_client()
-    # Ensure Cosmos DB is connected
     await client.ensure_connected()
     service_data = service.model_dump()
-    service_data["vehicle_id"] = vehicle_id
-    service_data["id"] = str(uuid.uuid4())  # Generate unique ID for the service
-
+    # FIX: use camelCase partition key field expected by Cosmos (vehicleId), not snake_case
+    service_data["vehicleId"] = vehicle_id
+    service_data["id"] = str(uuid.uuid4())
     return await client.create_service(service_data)
 
 
@@ -631,9 +633,11 @@ async def process_command_async(command_data):
             f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}"
         )
     try:
-        commandType = command_data.get("command_type", "")
-        if commandType:
-            commandType = command_data.get('commandType', "unknown")
+        commandType = (
+            command_data.get("commandType")
+            or command_data.get("command_type")
+            or "unknown"
+        )
 
         notif = NotificationModel(
             id=str(uuid.uuid4()),
@@ -647,9 +651,7 @@ async def process_command_async(command_data):
             action_required=False,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
-        # Persist using the model's serialization (aligns with other uses in the codebase)
         await client.create_notification(notif.model_dump())
-
     except Exception as cosmos_error:
         logger.warning(
             f"Failed to create notification in Cosmos DB: {str(cosmos_error)}"
@@ -669,30 +671,30 @@ async def create_notification(notification: dict):
 
 # Mark a notification as read (for markNotificationRead)
 @app.put(
-    "/api/notifications/{NotificationId}/read",
+    "/api/notifications/{notification_id}/read",
     response_model=MarkNotificationReadResponse,
 )
-async def mark_notification_read(NotificationId: str):
+async def mark_notification_read(notification_id: str):
     client = get_cosmos_client()
     await client.ensure_connected()
-    updated = await client.mark_notification_read(NotificationId)
+    updated = await client.mark_notification_read(notification_id)
     if not updated:
         raise HTTPException(
-            status_code=404, detail=f"Notification {NotificationId} not found"
+            status_code=404, detail=f"Notification {notification_id} not found"
         )
     return MarkNotificationReadResponse(
-        id=NotificationId, status="marked_as_read", data=updated
+        id=notification_id, status="marked_as_read", data=updated
     )
 
 
 # Delete a notification (for deleteNotification)
-@app.delete("/api/notifications/{NotificationId}", response_model=GenericDetailResponse)
-async def delete_notification(NotificationId: str):
+@app.delete("/api/notifications/{notification_id}", response_model=GenericDetailResponse)
+async def delete_notification(notification_id: str):
     client = get_cosmos_client()
     await client.ensure_connected()
-    await client.delete_notification(NotificationId)
+    await client.delete_notification(notification_id)
     return GenericDetailResponse(
-        detail=f"Notification {NotificationId} deleted successfully"
+        detail=f"Notification {notification_id} deleted successfully"
     )
 
 

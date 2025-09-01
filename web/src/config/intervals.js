@@ -8,11 +8,7 @@ export const STATUS_UPDATE_INTERVALS = {
   // Real-time subscription polling fallback
   // Used by: status.js (setupPolling function)
   REALTIME_POLLING: 30000, // Increased from 15s to 30s
-  
-  // Periodic status checks for freshness
-  // Used by: CarStatus.js
-  STATUS_CHECK: 60000, // Increased from 30s to 60s
-  
+
   // Dashboard status refresh
   // Used by: Dashboard.js (main dashboard page)
   DASHBOARD_REFRESH: 45000, // Increased from 20s to 45s

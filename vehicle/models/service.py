@@ -1,7 +1,7 @@
 from typing import Optional
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 
-class Service(CamelModel):
+class Service(BaseSchemaModel):
     id: Optional[str] = None
     vehicle_id: str
     service_code: Optional[str] = None

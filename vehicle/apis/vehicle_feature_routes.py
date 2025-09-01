@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from utils.logging_config import get_logger
 from models.api_responses import ActionResponse
 from models.agent_request import LightsControlRequest, ClimateControlRequest, WindowsControlRequest
 from agents.agent_manager import AgentManager
+from agents.vehicle_feature_control_agent import VehicleFeatureControlPlugin
 
 logger = get_logger(__name__)
 router = APIRouter(
@@ -20,6 +21,7 @@ def _get_agent_manager() -> AgentManager:
 async def control_lights(
     vehicle_id: str,
     request: LightsControlRequest,
+    direct_api_call: bool = Query(True, alias="direct_api_call"),
     agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle lights (headlights, interior, hazard)"""
@@ -29,6 +31,18 @@ async def control_lights(
             "query": f"turn {request.action} {request.light_type}",
             "session_id": f"lights_{vehicle_id}"
         }
+        
+        if direct_api_call:
+            plugin = VehicleFeatureControlPlugin()
+            plugin_resp = await plugin._handle_lights_control(
+                vehicle_id=vehicle_id,
+                call_context=context,
+            )
+            return ActionResponse(
+                message=plugin_resp.get("message"),
+                data=plugin_resp.get("data"),
+                success=plugin_resp.get("success", True),
+            )
         
         response = await agent_manager.process_request(
             f"turn {request.action} the {request.light_type}",
@@ -51,6 +65,7 @@ async def control_lights(
 async def control_climate(
     vehicle_id: str,
     request: ClimateControlRequest,
+    direct_api_call: bool = Query(True, alias="direct_api_call"),
     agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle climate settings"""
@@ -60,6 +75,18 @@ async def control_climate(
             "query": f"set climate to {request.temperature} degrees {request.action}",
             "session_id": f"climate_{vehicle_id}"
         }
+        
+        if direct_api_call:
+            plugin = VehicleFeatureControlPlugin()
+            plugin_resp = await plugin._handle_climate_control(
+                vehicle_id=vehicle_id,
+                call_context=context,
+            )
+            return ActionResponse(
+                message=plugin_resp.get("message"),
+                data=plugin_resp.get("data"),
+                success=plugin_resp.get("success", True),
+            )
         
         response = await agent_manager.process_request(
             f"set the climate control to {request.temperature} degrees with {request.action}",
@@ -82,6 +109,7 @@ async def control_climate(
 async def control_windows(
     vehicle_id: str,
     request: WindowsControlRequest,
+    direct_api_call: bool = Query(True, alias="direct_api_call"),
     agent_manager=Depends(_get_agent_manager)
 ):
     """Control vehicle windows"""
@@ -91,6 +119,18 @@ async def control_windows(
             "query": f"roll {request.action} {request.windows} windows",
             "session_id": f"windows_{vehicle_id}"
         }
+        
+        if direct_api_call:
+            plugin = VehicleFeatureControlPlugin()
+            plugin_resp = await plugin._handle_windows_control(
+                vehicle_id=vehicle_id,
+                call_context=context,
+            )
+            return ActionResponse(
+                message=plugin_resp.get("message"),
+                data=plugin_resp.get("data"),
+                success=plugin_resp.get("success", True),
+            )
         
         response = await agent_manager.process_request(
             f"roll {request.action} the {request.windows} windows",
@@ -112,6 +152,7 @@ async def control_windows(
 @router.get("/status", response_model=ActionResponse)
 async def get_feature_status(
     vehicle_id: str,
+    direct_api_call: bool = Query(True, alias="direct_api_call"),
     agent_manager=Depends(_get_agent_manager)
 ):
     """Get current status of vehicle features"""
@@ -120,6 +161,18 @@ async def get_feature_status(
             "vehicle_id": vehicle_id,
             "session_id": f"status_{vehicle_id}"
         }
+        
+        if direct_api_call:
+            plugin = VehicleFeatureControlPlugin()
+            plugin_resp = await plugin._handle_feature_status(
+                vehicle_id=vehicle_id,
+                call_context=context,
+            )
+            return ActionResponse(
+                message=plugin_resp.get("message"),
+                data=plugin_resp.get("data"),
+                success=plugin_resp.get("success", True),
+            )
         
         response = await agent_manager.process_request(
             "show me the current status of vehicle features",
@@ -133,3 +186,4 @@ async def get_feature_status(
     except Exception as e:
         logger.error(f"Error getting feature status for vehicle {vehicle_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+

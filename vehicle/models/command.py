@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 
-class Command(CamelModel):
+class Command(BaseSchemaModel):
     id: Optional[str] = None
     command_id: Optional[str] = None
     vehicle_id: str

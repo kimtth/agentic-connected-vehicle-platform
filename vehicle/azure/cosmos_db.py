@@ -640,9 +640,6 @@ class CosmosDBClient:
         """
         if self._closing:
             return
-        if not await self.ensure_connected() or not self.status_container or self._closing:
-            logger.warning("No Cosmos DB connection. Cannot subscribe to vehicle status.")
-            return
         try:
             latest_status = await self.get_vehicle_status(vehicle_id)
             last_timestamp_epoch = 0
@@ -661,7 +658,7 @@ class CosmosDBClient:
 
             while True:
                 if self._closing or not self.connected:
-                    break  # new exit condition
+                    break
                 try:
                     if not self.connected or not self.status_container:
                         if self._closing or not await self.ensure_connected():
@@ -689,6 +686,10 @@ class CosmosDBClient:
                             last_timestamp_epoch, item.get("_ts", 0)
                         )
                     await asyncio.sleep(1.0 if had_updates else 5.0)
+                except asyncio.CancelledError:
+                    # Break promptly on cancellation (client SSE disconnect)
+                    logger.debug(f"Status subscription cancelled for {vehicle_id}")
+                    break
                 except Exception as e:
                     if self._closing:
                         break
@@ -698,6 +699,9 @@ class CosmosDBClient:
                     logger.error(f"Error in status polling iteration: {str(e)}")
                     await asyncio.sleep(10.0)
                     continue
+        except asyncio.CancelledError:
+            logger.debug(f"Subscription outer cancelled for {vehicle_id}")
+            return
         except Exception as e:
             logger.error(f"Error in vehicle status subscription: {str(e)}")
             return

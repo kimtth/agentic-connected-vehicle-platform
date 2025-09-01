@@ -1,7 +1,7 @@
-from models.base import CamelModel
+from models.base import BaseSchemaModel
 from typing import Optional, Dict, Any
 
-class VehicleProfile(CamelModel):
+class VehicleProfile(BaseSchemaModel):
     """Model for vehicle profile data"""
     id: Optional[str] = None
     vehicle_id: str

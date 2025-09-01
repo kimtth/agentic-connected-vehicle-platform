@@ -33,7 +33,7 @@ def to_snake(string: str) -> str:
     return prefix + s.lower()
 
 
-class CamelModel(BaseModel):
+class BaseSchemaModel(BaseModel):
     # Inbound + schema: alias_generator defines how field aliases (camelCase) are produced.
     # Inbound: populate_by_name=True lets clients send either snake_case or camelCase.
     # (Outbound shape is enforced below in model_dump / model_dump_json.)

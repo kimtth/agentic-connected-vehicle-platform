@@ -36,6 +36,26 @@ class SafetyEmergencyPlugin:
         # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
 
+    async def _apply_status_update(self, vehicle_id: str, patch: Dict[str, Any]):
+        try:
+            current = await self.cosmos_client.get_vehicle_status(vehicle_id) or {}
+            if not isinstance(current, dict):
+                try:
+                    current = current.model_dump()
+                except Exception:
+                    current = {}
+            current.update(patch)
+            if hasattr(self.cosmos_client, "update_vehicle_status"):
+                await self.cosmos_client.update_vehicle_status(vehicle_id, current)
+            elif hasattr(self.cosmos_client, "set_vehicle_status"):
+                await self.cosmos_client.set_vehicle_status(vehicle_id, current)
+            else:
+                container = getattr(self.cosmos_client, "status_container", None)
+                if container:
+                    await container.upsert_item({"id": vehicle_id, "vehicle_id": vehicle_id, **current})
+        except Exception as e:
+            logger.debug(f"Status update skipped ({vehicle_id}): {e}")
+
     @kernel_function(description="Handle emergency calls")
     async def _handle_emergency_call(
         self,
@@ -99,6 +119,16 @@ class SafetyEmergencyPlugin:
             )
             await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "emergency": {
+                        "callActive": True,
+                        "type": "manual",
+                        "updatedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 "Emergency call has been initiated. Help is on the way. "
                 "Stay on the line and follow any instructions from emergency services.",
@@ -184,6 +214,16 @@ class SafetyEmergencyPlugin:
             )
             await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "collision": {
+                        "detected": True,
+                        "severity": "high",
+                        "updatedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 "I've detected a collision and notified emergency services. "
                 "Are you okay? Do you need any immediate assistance?",
@@ -269,6 +309,15 @@ class SafetyEmergencyPlugin:
             )
             await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "theft": {
+                        "reported": True,
+                        "reportedAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 "I've recorded your vehicle theft report and notified the authorities. "
                 "The vehicle's location is being tracked, and you'll receive updates on the situation.",
@@ -352,6 +401,15 @@ class SafetyEmergencyPlugin:
             )
             await self.cosmos_client.create_notification(notification_obj.model_dump(by_alias=True))
 
+            await self._apply_status_update(
+                vid,
+                {
+                    "sos": {
+                        "active": True,
+                        "triggeredAt": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
             return self._format_response(
                 "SOS request has been activated. Emergency services have been contacted and "
                 "are being dispatched to your location. Please stay calm and wait for assistance.",

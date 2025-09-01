@@ -123,33 +123,6 @@ export const deleteService = async (vehicleId, serviceId) => {
   }
 };
 
-
-export const askAIAndSpeak = async (input, languageCode) => {
-  if (!input) return '';
-
-  let messages;
-  if (Array.isArray(input)) {
-    // Already formatted as conversation messages
-    messages = input.filter(msg => msg.content && msg.content.trim());
-  } else if (typeof input === 'string') {
-    messages = [{ role: 'user', content: input }];
-  } else if (typeof input === 'object' && input.content) {
-    messages = [input];
-  } else {
-    return '';
-  }
-
-  try {
-    const payload = { messages, ...(languageCode && { languageCode }) };
-    const { data } = await api.post('/api/speech/ask_ai', payload);
-    return data?.response || '';
-  } catch (error) {
-    console.error('AI request failed:', error);
-    throw error;
-  }
-};
-
-
 export const fetchSpeechToken = async () => {
   const { data } = await api.get('/api/speech/token');
   if (!data || typeof data !== 'object') throw new Error('Invalid token response');
@@ -185,4 +158,22 @@ export const fetchSpeechIceToken = async () => {
       }
     ]
   };
+};
+
+export const askAI = async ({ messages, languageCode, system, temperature = 0.7, maxTokens = 512 }) => {
+  try {
+    const payload = {
+      messages,
+      languageCode,
+      system,
+      temperature,
+      maxTokens
+    };
+    const { data } = await api.post('/api/speech/ask_ai', payload);
+    return data?.response;
+  } catch (err) {
+    // Surface meaningful error message
+    const detail = err?.response?.data?.detail || err.message || 'AI request failed';
+    throw new Error(detail);
+  }
 };

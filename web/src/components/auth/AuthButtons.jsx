@@ -45,7 +45,7 @@ const AuthButtons = ({ asSpan = false }) => {
         <Button
           size="small"
           variant="outlined"
-          sx={{ color: 'rgba(231, 246, 247, 0.22)' }}
+          sx={{ color: 'rgba(255, 255, 255, 0.22)' }}
           {...interactiveA11y}
           onClick={() => instance.logoutRedirect()}
         >
@@ -56,7 +56,7 @@ const AuthButtons = ({ asSpan = false }) => {
         <Button
           size="small"
           variant="contained"
-          sx={{ color: 'rgba(231, 246, 247, 0.22)' }}
+          sx={{ color: 'rgba(255, 255, 255, 0.22)' }}
           {...interactiveA11y}
           onClick={handleSignIn}
           disabled={!isClientIdConfigured()}
