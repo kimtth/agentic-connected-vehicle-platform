@@ -33,6 +33,10 @@
 
     "azureTenantId": { "value": "<tenant-guid>" },
     "azureClientId": { "value": "<app-client-id-or-app-id-uri>" },
-    "webAppPublicNetworkAccess": { "value": "Enabled" }
+    "webAppPublicNetworkAccess": { "value": "Enabled" },
+    "enableCosmosPrivateEndpoint": { "value": true },
+    "debugUserPrincipalId": {
+      "value": ""
+    }
   }
 }

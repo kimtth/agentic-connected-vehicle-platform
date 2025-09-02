@@ -4,7 +4,7 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$resourceGroup = '<RESOURCE_GROUP_NAME>'
+$resourceGroup = '<your-resource-group-name>'
 $templateFile  = 'deploy.bicep'
 $paramsFile    = 'params.json'
 

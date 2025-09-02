@@ -8,7 +8,6 @@ import asyncio
 import logging
 import uuid
 import json
-from datetime import datetime
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -124,10 +123,44 @@ async def lifespan(app):
     # Connect
     try:
         if hasattr(client, "connect"):
-            await client.connect()
-            logger.info("Cosmos DB connected")
+            logger.info("Attempting Cosmos DB connection...")
+            
+            # Log environment variables for debugging (without sensitive values)
+            logger.info("Environment diagnostic information:")
+            logger.info(f"COSMOS_DB_ENDPOINT configured: {bool(os.getenv('COSMOS_DB_ENDPOINT'))}")
+            logger.info(f"COSMOS_DB_KEY configured: {bool(os.getenv('COSMOS_DB_KEY'))}")
+            logger.info(f"COSMOS_DB_USE_AAD: {os.getenv('COSMOS_DB_USE_AAD', 'false')}")
+            logger.info(f"COSMOS_DB_DATABASE: {os.getenv('COSMOS_DB_DATABASE', 'VehiclePlatformDB')}")
+            
+            # Log Azure environment variables
+            azure_vars = ["WEBSITE_SITE_NAME", "WEBSITE_INSTANCE_ID", "MSI_ENDPOINT", "IDENTITY_ENDPOINT", "AZURE_CLIENT_ID"]
+            for var in azure_vars:
+                logger.info(f"{var}: {bool(os.getenv(var))}")
+            
+            connected = await client.connect()
+            if connected:
+                logger.info("Cosmos DB connected successfully")
+            else:
+                logger.warning("Cosmos DB connection failed")
+                # Log more details about the failure
+                if hasattr(client, 'connection_error') and client.connection_error:
+                    logger.error(f"Connection error details: {client.connection_error}")
+                # Also check if client has any other diagnostic info
+                if hasattr(client, 'endpoint'):
+                    logger.error(f"Client endpoint: {client.endpoint}")
+                if hasattr(client, 'use_aad_auth'):
+                    logger.error(f"Client AAD auth: {client.use_aad_auth}")
     except Exception as e:
-        logger.error(f"Cosmos DB connection failed: {e}")
+        logger.error(f"Cosmos DB connection failed with exception: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception details: {repr(e)}")
+        
+        # Log full traceback for debugging
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        
+        # Don't fail startup, but log the issue
+        logger.error("App will continue but Cosmos DB operations may fail")
 
     # Best-effort router loading (keeps app running even if optional routers are missing)
     for name, modpath in [
@@ -422,13 +455,13 @@ async def get_notifications(vehicle_id: str = None):  # renamed query param
 # Add a vehicle profile
 @app.post("/api/vehicle", response_model=VehicleProfile)
 async def add_vehicle(profile: VehicleProfile):
-    """Add a new vehicle profile"""
+    """Add a new vehicle profile (returns camelCase keys)."""
     client = get_cosmos_client()
     cosmos_connected = await client.ensure_connected()
     if not cosmos_connected:
         raise HTTPException(status_code=503, detail="Database service unavailable")
-
-    return await client.create_vehicle(profile.model_dump())
+    # Ensure camelCase externally
+    return await client.create_vehicle(profile.model_dump(by_alias=True))
 
 
 # List all vehicles
@@ -793,6 +826,7 @@ def _start_mcp_process(func, name: str):
     except Exception as e:
         logger.warning(f"Failed to start {name}: {e}")
 
+
 # React frontend static files serving setup: Assumes build output is in ./public folder
 directory_path = os.path.dirname(os.path.abspath(__file__))
 # Root of built frontend (contains index.html and a 'static' subfolder)
@@ -832,15 +866,10 @@ if __name__ == "__main__":
 
     _SERVER_INSTANCE_STARTED = True
 
-    # Initialize
     host = os.getenv("API_HOST", "0.0.0.0")
-    # Environment mode: "dev"/"development" or "prod"/"production"
-    # Default port: 8000 for dev, 80 for prod (can be overridden with API_PORT)
-    port = int(
-        os.getenv(
-            "API_PORT", 8000 if os.getenv("ENV_TYPE").lower() == "development" else 80
-        )
-    )
+    # Safe ENV_TYPE handling (default to development)
+    env_type = os.getenv("ENV_TYPE", "development").lower()
+    port = int(os.getenv("API_PORT", 8000 if env_type.startswith("dev") else 80))
     logger.info(f"Starting. Using port {port}.")
 
     # Check if port is already in use
@@ -863,7 +892,7 @@ if __name__ == "__main__":
             app,
             host=host,
             port=port,
-            # reload=False,  # Explicitly disable auto-reload
+            reload=False,  # explicit for clarity
             workers=1,  # Single worker process
             log_level=log_level.lower(),
         )
@@ -872,5 +901,6 @@ if __name__ == "__main__":
         raise
     finally:
         _SERVER_INSTANCE_STARTED = False
+
 
 

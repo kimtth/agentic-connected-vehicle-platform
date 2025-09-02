@@ -1,0 +1,1 @@
+az webapp deploy --resource-group <your-resource-group> --name <your-webapp-name> --src-path .

@@ -8,21 +8,27 @@ import { msalInstance, acquireApiToken, getAuthorizationHeader } from '../auth/m
 
 // Support both env var names for base URL
 // Prefer explicit env; otherwise default to backend (avoid relying on a proxy that may not exist)
-const explicitBase =
-  process.env.NODE_ENV === 'development'
-    ? process.env.REACT_APP_API_DEV_BASE_URL: '';
-
 function normalizeBase(url) {
   return url ? url.replace(/\/+$/, '') : url;
 }
 
-const baseURL = normalizeBase(
-  explicitBase ||
-    (process.env.NODE_ENV === 'development'
-      ? 'http://localhost:8000'
-      : 'http://localhost:8000')
-);
+// Resolution order:
+//  - Development: REACT_APP_API_DEV_BASE_URL or http://localhost:8000
+//  - Production:  '' (same-origin)
+function resolveBaseURL() {
+  const isDev = process.env.NODE_ENV === 'development';
 
+  if (isDev) {
+    return normalizeBase(
+      process.env.REACT_APP_API_DEV_BASE_URL || 'http://localhost:8000'
+    );
+  }
+
+  // Production
+  return '';
+}
+
+const baseURL = resolveBaseURL();
 // Create axios instance
 export const api = axios.create({
   baseURL,

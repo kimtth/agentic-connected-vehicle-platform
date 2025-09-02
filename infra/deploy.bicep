@@ -93,6 +93,13 @@ param azureClientId string
 ])
 param webAppPublicNetworkAccess string = 'Enabled'
 
+@description('Deploy Private Endpoint to Cosmos (set false while testing or until correct Cosmos ID supplied)')
+param enableCosmosPrivateEndpoint bool = true
+
+// User ID: Get your principal User Id (Object ID) from Entra ID (formerly Azure AD) - for troubleshooting purposes
+@description('Optional user (object) Id to grant Cosmos DB Data Contributor (for troubleshooting). Leave blank to skip.')
+param debugUserPrincipalId string = ''
+
 // Variables
 var cosmosApiVersion = '2025-05-01-preview'
 var privateDnsZoneName = 'privatelink.documents.azure.com'
@@ -101,8 +108,8 @@ var privateDnsZoneName = 'privatelink.documents.azure.com'
 var uniqueSuffix = toLower(substring(uniqueString(resourceGroup().id, namePrefix), 0, 6))
 
 // Effective resource names (DNS zone unchanged intentionally)
-var planName = '${appServicePlanName}-${uniqueSuffix}'
-var webAppName = '${appServiceName}-${uniqueSuffix}'
+var appPlanNameEffective = '${appServicePlanName}-${uniqueSuffix}'
+var webAppNameEffective = '${appServiceName}-${uniqueSuffix}'
 var vnetNameEffective = '${vnetName}-${uniqueSuffix}'
 var privateEndpointNameEffective = '${privateEndpointName}-${uniqueSuffix}'
 // Cosmos account: avoid extra dash in case of stricter naming rules
@@ -131,8 +138,17 @@ resource cosmosNew 'Microsoft.DocumentDB/databaseAccounts@2025-05-01-preview' = 
   }
 }
 
+// === Added helper for Cosmos account name & existing reference ===
+var cosmosAccountName = cosmosMode == 'new' ? cosmosNew.name : last(split(cosmosDbAccountResourceId, '/'))
+
+// Resolve the full resource id for the Cosmos account depending on mode
+var cosmosAccountId = cosmosMode == 'new' ? cosmosNew.id : cosmosDbAccountResourceId
+
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2025-05-01-preview' existing = {
+  name: cosmosAccountName
+}
+
 // Unified Cosmos variables
-var cosmosAccountId = cosmosMode == 'existing' ? cosmosDbAccountResourceId : cosmosNew.id
 var cosmosEndpoint = reference(cosmosAccountId, cosmosApiVersion).documentEndpoint
 var cosmosPrimaryKey = listKeys(cosmosAccountId, cosmosApiVersion).primaryMasterKey
 
@@ -195,7 +211,7 @@ resource privateDnsVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
 }
 
 // Private Endpoint for Cosmos
-resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = if (enableCosmosPrivateEndpoint) {
   name: privateEndpointNameEffective
   location: location
   properties: {
@@ -218,7 +234,7 @@ resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
 }
 
 // Associate Private DNS zone to PE (creates A record) if enabled
-resource peDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = if (deployPrivateDnsZone) {
+resource peDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = if (deployPrivateDnsZone && enableCosmosPrivateEndpoint) {
   name: 'default'
   parent: privateEndpoint
   properties: {
@@ -238,7 +254,7 @@ resource peDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups
 
 // App Service Plan
 resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
-  name: planName
+  name: appPlanNameEffective
   location: location
   sku: {
     name: appServicePlanSku.name
@@ -247,15 +263,18 @@ resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
     capacity: appServicePlanSku.capacity
   }
   properties: {
-    reserved: true // Linux
+    reserved: true // If Linux app service plan <code>true</code>, <code>false</code> otherwise.
   }
 }
 
 // Web App (public by default)
 resource webApp 'Microsoft.Web/sites@2024-11-01' = {
-  name: webAppName
+  name: webAppNameEffective
   location: location
   kind: 'app,linux'
+  identity: {          // Added identity for Cosmos RBAC
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
@@ -303,6 +322,10 @@ resource webApp 'Microsoft.Web/sites@2024-11-01' = {
         }
 
         // === Cosmos DB (existing primary key already present; add alias & containers) ===
+        {
+          name: 'COSMOS_DB_ENDPOINT'
+          value: cosmosEndpoint
+        }
         {
           name: 'COSMOS_DB_KEY'
           value: cosmosPrimaryKey
@@ -366,13 +389,40 @@ resource webApp 'Microsoft.Web/sites@2024-11-01' = {
       vnetRouteAllEnabled: true
     }
   }
-  dependsOn: [
+  dependsOn: enableCosmosPrivateEndpoint ? [
     privateEndpoint
-  ]
+  ] : []
+}
+
+// Cosmos DB Data-plane built-in role reference
+resource cosmosDataContributorRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2024-12-01-preview' existing = {
+  name: '00000000-0000-0000-0000-000000000002' // Built-in Data Contributor
+  parent: cosmosAccount
+}
+
+// Assign Data Contributor to a debug user (only if principal supplied)
+resource userToCosmosAccountScope 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-12-01-preview' = if (!empty(debugUserPrincipalId)) {
+  name: guid('cosmosdb-userid', cosmosDataContributorRole.id, debugUserPrincipalId)
+  parent: cosmosAccount
+  properties: {
+    roleDefinitionId: cosmosDataContributorRole.id
+    principalId: debugUserPrincipalId
+    scope: '/' // account-level
+  }
+}
+
+// Assign Data Contributor to the Web App managed identity
+resource webAppToCosmosAccountScope 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-12-01-preview' = {
+  name: guid('cosmosdb-webapp', cosmosDataContributorRole.id, webApp.name)
+  parent: cosmosAccount
+  properties: {
+    roleDefinitionId: cosmosDataContributorRole.id
+    principalId: webApp.identity.principalId
+    scope: '/'
+  }
 }
 
 // Outputs
 output webAppName string = webApp.name
 output webAppDefaultHost string = webApp.properties.defaultHostName
 output cosmosEndpointOut string = cosmosEndpoint
-output privateEndpointIp string = deployPrivateDnsZone ? privateEndpoint.properties.customDnsConfigs[0].ipAddresses[0] : ''

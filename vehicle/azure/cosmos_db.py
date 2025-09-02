@@ -18,7 +18,11 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos import PartitionKey, ConsistencyLevel
 from azure.core.exceptions import AzureError
-from azure.identity.aio import DefaultAzureCredential, AzureDeveloperCliCredential
+from azure.identity.aio import (
+    DefaultAzureCredential,
+    ManagedIdentityCredential,
+    AzureDeveloperCliCredential,
+)
 from dotenv import load_dotenv
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
@@ -36,6 +40,7 @@ logger = get_logger(__name__)
 # Global registry for tracking client instances
 _client_registry = weakref.WeakSet()
 
+
 async def _cleanup_all_clients():
     """Cleanup all registered clients on shutdown"""
     for client in list(_client_registry):
@@ -43,6 +48,7 @@ async def _cleanup_all_clients():
             await client.close()
         except Exception as e:
             logger.debug(f"Error during global cleanup: {str(e)}")
+
 
 def _safe_atexit_cleanup():
     """Safe cleanup function for atexit that handles missing event loop"""
@@ -68,27 +74,32 @@ def _safe_atexit_cleanup():
         # Silently ignore cleanup errors during shutdown
         pass
 
+
 # Register cleanup function with improved error handling
 atexit.register(_safe_atexit_cleanup)
 
+
 class CosmosDBClient:
     """Azure Cosmos DB client implementation for Connected Car Platform"""
+
     # Partition key strategy: use only /vehicleId (camelCase). No legacy snake_case duplication.
 
     def __init__(self):
         """Initialize the client with environment variables (only once)"""
         # Prevent multiple initialization of the same instance
-        if hasattr(self, '_initialized') and self._initialized:
+        if hasattr(self, "_initialized") and self._initialized:
             return
-            
+
         logger.info("Initializing Cosmos DB client configuration")
-        
+
         # Set Azure logging to WARNING level to reduce noise
         azure_logger = logging.getLogger("azure")
         azure_logger.setLevel(logging.WARNING)
-        
+
         # Explicitly set HTTP logging policy to ERROR
-        http_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
+        http_logger = logging.getLogger(
+            "azure.core.pipeline.policies.http_logging_policy"
+        )
         http_logger.setLevel(logging.ERROR)
 
         # Also silence aiohttp client session warnings
@@ -96,7 +107,7 @@ class CosmosDBClient:
         aiohttp_logger.setLevel(logging.WARNING)
 
         load_dotenv(override=True)
-        
+
         # Core configuration - Handle both old and new endpoint formats for backward compatibility
         self.endpoint = os.getenv("COSMOS_DB_ENDPOINT")
         if self.endpoint:
@@ -106,11 +117,11 @@ class CosmosDBClient:
             # Ensure endpoint ends with /
             elif not self.endpoint.endswith("/"):
                 self.endpoint = self.endpoint + "/"
-        
+
         self.key = os.getenv("COSMOS_DB_KEY")
         self.use_aad_auth = os.getenv("COSMOS_DB_USE_AAD", "false").lower() == "true"
         self.database_name = os.getenv("COSMOS_DB_DATABASE", "VehiclePlatformDB")
-        
+
         # Container names with validation
         self.vehicles_container_name = os.getenv(
             "COSMOS_DB_CONTAINER_VEHICLES", "vehicles"
@@ -130,11 +141,11 @@ class CosmosDBClient:
 
         # Connection configuration
         self.connection_config = {
-            'consistency_level': ConsistencyLevel.Session,
-            'max_retry_attempts': int(os.getenv("COSMOS_DB_MAX_RETRY_ATTEMPTS", "5")),
-            'retry_base_delay': int(os.getenv("COSMOS_DB_RETRY_DELAY", "1")),
+            "consistency_level": ConsistencyLevel.Session,
+            "max_retry_attempts": int(os.getenv("COSMOS_DB_MAX_RETRY_ATTEMPTS", "5")),
+            "retry_base_delay": int(os.getenv("COSMOS_DB_RETRY_DELAY", "1")),
         }
-        
+
         # Client instances
         self.client = None
         self.database = None
@@ -143,83 +154,91 @@ class CosmosDBClient:
         self.commands_container = None
         self.notifications_container = None
         self.status_container = None
-        
+
         # Session/credential handle for proper cleanup
         self._credential = None
-        
+
         # Connection state management
         self.is_connecting = False
         self.connected = False
         self.connection_error = None
         self.last_connection_attempt = None
         self.connection_retry_delay = 10  # Increased from 5 seconds
-        
+
         # Health check configuration
         self.health_check_interval = 30  # seconds
         self.last_health_check = None
-        
+
         # Session management
         self._cleanup_scheduled = False
         self._connection_lock = asyncio.Lock()
-        
+
         # Register this instance for global cleanup
         _client_registry.add(self)
-        
+
         # Validate configuration
         self._validate_configuration()
-        
+
         # Mark as initialized
         self._initialized = True
-        
+
         logger.info("Cosmos DB client configuration completed")
-        
+
         self._closing = False  # new: track shutdown state
-        
+
     def _parse_preferred_locations(self):
         """Parse preferred locations from environment variable"""
         locations_str = os.getenv("COSMOS_DB_PREFERRED_LOCATIONS", "")
         if locations_str:
             return [loc.strip() for loc in locations_str.split(",") if loc.strip()]
         return None
-        
+
     def _validate_configuration(self):
         """Validate Cosmos DB configuration - Updated for backward compatibility"""
         if not self.endpoint:
-            logger.warning("COSMOS_DB_ENDPOINT not configured - Cosmos DB will be disabled")
+            logger.warning(
+                "COSMOS_DB_ENDPOINT not configured - Cosmos DB will be disabled"
+            )
             return False
-            
+
         if not self.use_aad_auth and not self.key:
             logger.warning("No authentication method configured for Cosmos DB")
             return False
-            
+
         if not self.database_name:
             logger.error("COSMOS_DB_DATABASE name is required")
             return False
-            
+
         # Validate endpoint format - Support both old and new formats
-        if not self.endpoint.startswith("https://") or not ".documents.azure.com" in self.endpoint:
+        if (
+            not self.endpoint.startswith("https://")
+            or not ".documents.azure.com" in self.endpoint
+        ):
             logger.warning(f"Cosmos DB endpoint format may be invalid: {self.endpoint}")
-            
+
         return True
-        
+
     async def connect(self):
         """Connect to Cosmos DB with retry logic and proper error handling"""
         if not self.endpoint or not self.database_name:
             logger.warning("Cosmos DB configuration incomplete - skipping connection")
             return False
-            
+
         async with self._connection_lock:
             if self.is_connecting:
                 logger.debug("Connection attempt already in progress")
                 return self.connected
-                
+
             if self.connected and self._is_connection_healthy():
                 logger.debug("Already connected and healthy")
                 return True
-                
+
             # Check if we should retry based on last attempt
-            if (self.last_connection_attempt and 
-                datetime.now() - self.last_connection_attempt < timedelta(seconds=self.connection_retry_delay)):
+            if (
+                self.last_connection_attempt
+                and datetime.now() - self.last_connection_attempt
+                < timedelta(seconds=self.connection_retry_delay)
+            ):
                 logger.debug("Too soon to retry connection")
                 return self.connected
 
@@ -230,40 +249,32 @@ class CosmosDBClient:
             try:
                 # Clean up any existing client first
                 await self._cleanup_client()
-                
-                # Determine authentication method with fallback
-                if self.use_aad_auth:
+
+                # Determine authentication method - prioritize managed identity in Azure
+                if self._is_azure_environment() or self.use_aad_auth:
                     success = await self._connect_with_aad()
                 elif self.key:
-                    try:
-                        success = await self._connect_with_master_key()
-                    except (AzureError, Exception) as e:
-                        # Check if the error suggests AAD is required
-                        error_str = str(e).lower()
-                        if any(phrase in error_str for phrase in ["local authorization", "authentication", "forbidden"]):
-                            logger.warning("Master key auth failed, attempting AAD fallback")
-                            self.use_aad_auth = True
-                            success = await self._connect_with_aad()
-                        else:
-                            raise
+                    success = await self._connect_with_master_key()
                 else:
                     logger.error("No valid authentication method available")
                     return False
-                
+
                 if success:
                     # Ensure containers exist
                     await self._ensure_containers_exist()
-                    
+
                     # Verify connection with a simple operation
                     await self._verify_connection()
-                    
+
                     self.connected = True
                     self.connection_error = None
-                    logger.info(f"Successfully connected to Cosmos DB: {self.database_name}")
+                    logger.info(
+                        f"Successfully connected to Cosmos DB: {self.database_name}"
+                    )
                     return True
                 else:
                     return False
-                    
+
             except Exception as e:
                 self.connection_error = str(e)
                 self.connected = False
@@ -273,46 +284,107 @@ class CosmosDBClient:
                 return False
             finally:
                 self.is_connecting = False
-            
+
+    def _is_azure_environment(self) -> bool:
+        """Check if running in an Azure environment that supports managed identity"""
+        # Check for Azure App Service environment variables
+        azure_env_vars = [
+            "WEBSITE_SITE_NAME",  # Azure App Service
+            "WEBSITE_INSTANCE_ID",  # Azure App Service
+            "MSI_ENDPOINT",  # Managed Service Identity endpoint
+            "IDENTITY_ENDPOINT",  # Managed Identity endpoint (newer)
+            "AZURE_CLIENT_ID",  # Sometimes set in Azure environments
+        ]
+        found_vars = {var: os.getenv(var) for var in azure_env_vars if os.getenv(var)}
+        is_azure = len(found_vars) > 0
+        
+        logger.info(f"Azure environment check: {is_azure}")
+        logger.info(f"Found Azure environment variables: {found_vars}")
+        
+        return is_azure
+
     async def _connect_with_aad(self):
-        """Connect using Azure AD authentication with proper configuration"""
+        """Connect using Azure AD authentication - simplified to match working test pattern"""
         try:
             logger.info("Connecting to Cosmos DB with Azure AD authentication")
-            # Create AzureCredential
-            # TODO: Temporary solution to avoid Azure Auth Error in Local
-            if os.getenv("ENV_TYPE") == "development":
-                self._credential = AzureDeveloperCliCredential(tenant_id=os.getenv("AZURE_TENANT_ID"))
+            logger.info(f"Endpoint: {self.endpoint}")
+            logger.info(f"Database: {self.database_name}")
+
+            # Use the same simple pattern as the working test code
+            if self._is_azure_environment():
+                logger.info("Using ManagedIdentityCredential for Azure environment")
+                # Try with no client_id first (system-assigned identity)
+                try:
+                    self._credential = ManagedIdentityCredential()
+                    logger.info("Created ManagedIdentityCredential (system-assigned)")
+                except Exception as e:
+                    logger.error(f"Failed to create ManagedIdentityCredential: {e}")
+                    # Try with client_id if available
+                    client_id = os.getenv("AZURE_CLIENT_ID")
+                    if client_id:
+                        logger.info(f"Trying ManagedIdentityCredential with client_id: {client_id}")
+                        self._credential = ManagedIdentityCredential(client_id=client_id)
+                    else:
+                        raise
             else:
-                self._credential = DefaultAzureCredential()
-            # Create client with minimal configuration
+                # Fall back to Azure CLI credential for local development
+                logger.info("Using AzureDeveloperCliCredential for local development")
+                tenant_id = os.getenv("AZURE_TENANT_ID")
+                logger.info(f"Tenant ID: {tenant_id}")
+                self._credential = AzureDeveloperCliCredential(tenant_id=tenant_id)
+
+            # Create Cosmos client with same pattern as the working test
+            logger.info("Creating CosmosClient...")
             self.client = CosmosClient(self.endpoint, credential=self._credential)
-            # Test connection
+            logger.info("CosmosClient created successfully")
+            
+            logger.info("Getting database client...")
             self.database = self.client.get_database_client(self.database_name)
+            logger.info("Database client created successfully")
+
+            # Test connection
+            logger.info("Testing database connection...")
             await self.database.read()
+            logger.info("Database read test successful")
+
+            # Initialize containers if connected
+            logger.info("Initializing containers...")
             self._initialize_containers()
+            logger.info("Containers initialized successfully")
+
+            logger.info("Successfully connected to Cosmos DB with AAD")
             return True
+
         except Exception as e:
             logger.error(f"AAD authentication failed: {str(e)}")
-            # Clean up on failure with proper session cleanup
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception details: {repr(e)}")
+            
+            # Log additional context for debugging
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
             await self._cleanup_client()
             raise
-        
+
     async def _connect_with_master_key(self):
         """Connect using master key authentication with proper configuration"""
         try:
             logger.info("Connecting to Cosmos DB with master key authentication")
-            
-            # Create client with minimal configuration (following working pattern)
+
+            # Create client with minimal configuration
             self.client = CosmosClient(self.endpoint, credential=self.key)
-            
+
             # Test connection
             self.database = self.client.get_database_client(self.database_name)
             await self.database.read()
-            
+
             self._initialize_containers()
+            logger.info("Successfully connected to Cosmos DB with master key")
             return True
         except AzureError as e:
-            if "authorization is disabled" in str(e).lower():
+            error_msg = str(e).lower()
+            if "authorization is disabled" in error_msg or "forbidden" in error_msg:
                 logger.warning("Master key auth disabled. Falling back to AAD auth.")
                 self.use_aad_auth = True
                 return await self._connect_with_aad()
@@ -324,14 +396,24 @@ class CosmosDBClient:
             logger.error(f"Master key authentication failed: {str(e)}")
             await self._cleanup_client()
             raise
-    
+
     def _initialize_containers(self):
         """Initialize container clients with proper configuration"""
-        self.vehicles_container = self.database.get_container_client(self.vehicles_container_name)
-        self.services_container = self.database.get_container_client(self.services_container_name)
-        self.commands_container = self.database.get_container_client(self.commands_container_name)
-        self.notifications_container = self.database.get_container_client(self.notifications_container_name)
-        self.status_container = self.database.get_container_client(self.status_container_name)
+        self.vehicles_container = self.database.get_container_client(
+            self.vehicles_container_name
+        )
+        self.services_container = self.database.get_container_client(
+            self.services_container_name
+        )
+        self.commands_container = self.database.get_container_client(
+            self.commands_container_name
+        )
+        self.notifications_container = self.database.get_container_client(
+            self.notifications_container_name
+        )
+        self.status_container = self.database.get_container_client(
+            self.status_container_name
+        )
 
     async def _ensure_containers_exist(self):
         """Ensure required containers exist (camelCase /vehicleId only)."""
@@ -343,8 +425,8 @@ class CosmosDBClient:
                     "indexingMode": "consistent",
                     "automatic": True,
                     "includedPaths": [{"path": "/*"}],
-                    "excludedPaths": [{"path": "/\"_etag\"/?"}]
-                }
+                    "excludedPaths": [{"path": '/"_etag"/?'}],
+                },
             },
             self.services_container_name: {
                 "partition_key": "/vehicleId",
@@ -353,8 +435,8 @@ class CosmosDBClient:
                     "indexingMode": "consistent",
                     "automatic": True,
                     "includedPaths": [{"path": "/*"}],
-                    "excludedPaths": [{"path": "/\"_etag\"/?"}]
-                }
+                    "excludedPaths": [{"path": '/"_etag"/?'}],
+                },
             },
             self.commands_container_name: {
                 "partition_key": "/vehicleId",
@@ -366,10 +448,10 @@ class CosmosDBClient:
                         {"path": "/vehicleId/?"},
                         {"path": "/commandId/?"},
                         {"path": "/status/?"},
-                        {"path": "/_ts/?"}
+                        {"path": "/_ts/?"},
                     ],
-                    "excludedPaths": [{"path": "/*"}]
-                }
+                    "excludedPaths": [{"path": "/*"}],
+                },
             },
             self.notifications_container_name: {
                 "partition_key": "/vehicleId",
@@ -380,10 +462,10 @@ class CosmosDBClient:
                     "includedPaths": [
                         {"path": "/vehicleId/?"},
                         {"path": "/type/?"},
-                        {"path": "/_ts/?"}
+                        {"path": "/_ts/?"},
                     ],
-                    "excludedPaths": [{"path": "/*"}]
-                }
+                    "excludedPaths": [{"path": "/*"}],
+                },
             },
             self.status_container_name: {
                 "partition_key": "/vehicleId",
@@ -391,32 +473,33 @@ class CosmosDBClient:
                 "indexing_policy": {
                     "indexingMode": "consistent",
                     "automatic": True,
-                    "includedPaths": [
-                        {"path": "/vehicleId/?"},
-                        {"path": "/_ts/?"}
-                    ],
+                    "includedPaths": [{"path": "/vehicleId/?"}, {"path": "/_ts/?"}],
                     "excludedPaths": [{"path": "/*"}],
                 },
             },
         }
-        
+
         for container_name, config in container_configs.items():
             try:
                 container = self.database.get_container_client(container_name)
                 props = await container.read()
                 # props['partitionKey']['paths'] might be ['/vehicle_id'] (legacy) or ['/vehicleId'] (new).
                 # We accept either and continue—write path stores both fields to remain queryable.
-                logger.debug(f"Container {container_name} exists (pk paths={props.get('partitionKey', {}).get('paths')})")
+                logger.debug(
+                    f"Container {container_name} exists (pk paths={props.get('partitionKey', {}).get('paths')})"
+                )
             except CosmosResourceNotFoundError:
                 # Container missing: create with new camelCase partition key.
                 # This does not impact legacy containers already present.
                 try:
-                    logger.info(f"Creating Cosmos DB container: {container_name} (pk {config['partition_key']})")
+                    logger.info(
+                        f"Creating Cosmos DB container: {container_name} (pk {config['partition_key']})"
+                    )
                     await self.database.create_container(
                         id=container_name,
                         partition_key=PartitionKey(path=config["partition_key"]),
                         default_ttl=config["default_ttl"],
-                        indexing_policy=config["indexing_policy"]
+                        indexing_policy=config["indexing_policy"],
                     )
                     logger.info(f"Successfully created container: {container_name}")
                 except Exception as e:
@@ -440,13 +523,18 @@ class CosmosDBClient:
         """Check if connection is healthy based on last health check"""
         if not self.last_health_check:
             return False
-        return datetime.now() - self.last_health_check < timedelta(seconds=self.health_check_interval)
+        return datetime.now() - self.last_health_check < timedelta(
+            seconds=self.health_check_interval
+        )
 
     def _is_transport_closed_error(self, err: Exception) -> bool:
         """Return True when the underlying HTTP transport is already closed."""
         try:
             msg = str(err).lower()
-            return "http transport has already been closed" in msg or "transport has already been closed" in msg
+            return (
+                "http transport has already been closed" in msg
+                or "transport has already been closed" in msg
+            )
         except Exception:
             return False
 
@@ -460,17 +548,17 @@ class CosmosDBClient:
             return False
         if self.connected and self._is_connection_healthy():
             return True
-            
+
         if not self.is_connecting:
             return await self.connect()
-            
+
         # Wait for existing connection attempt with timeout
         max_wait = 30  # seconds
         wait_time = 0
         while self.is_connecting and wait_time < max_wait:
             await asyncio.sleep(1)
             wait_time += 1
-            
+
         return self.connected
 
     async def close(self):
@@ -480,13 +568,13 @@ class CosmosDBClient:
             # Use the connection lock to prevent concurrent operations
             async with self._connection_lock:
                 await self._cleanup_client()
-                
+
             # Remove from registry
             try:
                 _client_registry.discard(self)
             except Exception:
                 pass  # Registry cleanup is not critical
-                
+
             # logger.info("Cosmos DB connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing Cosmos DB connection: {str(e)}")
@@ -494,7 +582,7 @@ class CosmosDBClient:
     async def _cleanup_client(self):
         """Clean up client resources properly with enhanced session management"""
         cleanup_tasks = []
-        
+
         # Clean up containers first
         self.vehicles_container = None
         self.services_container = None
@@ -502,7 +590,7 @@ class CosmosDBClient:
         self.notifications_container = None
         self.status_container = None
         self.database = None
-        
+
         # Clean up the main client
         if self.client:
             try:
@@ -529,10 +617,10 @@ class CosmosDBClient:
                 await asyncio.gather(*cleanup_tasks, return_exceptions=True)
             except Exception as e:
                 logger.debug(f"Error during cleanup execution: {str(e)}")
-        
+
         # Reset connection state
         self.connected = False
-        
+
     async def _safe_close_client(self, client):
         """Safely close a client with timeout and error handling"""
         try:
@@ -549,14 +637,14 @@ class CosmosDBClient:
         """Async context manager entry"""
         await self.ensure_connected()
         return self
-        
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         await self.close()
-        
+
     def __del__(self):
         """Destructor to ensure cleanup"""
-        if hasattr(self, 'client') and self.client is not None:
+        if hasattr(self, "client") and self.client is not None:
             # Schedule cleanup if event loop is running
             try:
                 loop = asyncio.get_event_loop()
@@ -606,7 +694,9 @@ class CosmosDBClient:
             return []
         """List recent status entries for a vehicle."""
         if not await self.ensure_connected() or not self.status_container:
-            logger.warning("No Cosmos DB connection. Cannot list vehicle status history.")
+            logger.warning(
+                "No Cosmos DB connection. Cannot list vehicle status history."
+            )
             return []
         try:
             query = "SELECT TOP @limit * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
@@ -694,7 +784,9 @@ class CosmosDBClient:
                     if self._closing:
                         break
                     if self._is_transport_closed_error(e):
-                        logger.info("Stopping status polling: underlying HTTP transport closed")
+                        logger.info(
+                            "Stopping status polling: underlying HTTP transport closed"
+                        )
                         break
                     logger.error(f"Error in status polling iteration: {str(e)}")
                     await asyncio.sleep(10.0)
@@ -735,7 +827,9 @@ class CosmosDBClient:
             # Ensure partition key
             body["vehicleId"] = vehicle_id
             body["id"] = str(uuid.uuid4())
-            body["timestamp"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            body["timestamp"] = (
+                datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
             created = await self.status_container.create_item(body=body)
             if "timestamp" not in created and "_ts" in created:
                 created["timestamp"] = (
@@ -817,7 +911,11 @@ class CosmosDBClient:
             logger.warning("No Cosmos DB connection. Cannot create service.")
             return Service(**service_data)
         try:
-            service = service_data if isinstance(service_data, Service) else Service(**service_data)
+            service = (
+                service_data
+                if isinstance(service_data, Service)
+                else Service(**service_data)
+            )
             doc = service.model_dump(by_alias=True, exclude_none=True)
             if "id" not in doc:
                 doc["id"] = str(uuid.uuid4())
@@ -858,7 +956,11 @@ class CosmosDBClient:
             logger.warning("No Cosmos DB connection. Cannot create command.")
             return Command(**command_data)
         try:
-            command = command_data if isinstance(command_data, Command) else Command(**command_data)
+            command = (
+                command_data
+                if isinstance(command_data, Command)
+                else Command(**command_data)
+            )
             doc = command.model_dump(by_alias=True, exclude_none=True)
             if "id" not in doc:
                 doc["id"] = str(uuid.uuid4())
@@ -870,15 +972,15 @@ class CosmosDBClient:
             logger.error(f"Error creating command: {e}")
             return Command(**command_data)
 
-    async def update_command(self, command_id: str, updated_data: Dict[str, Any]) -> Optional[Command]:
+    async def update_command(
+        self, command_id: str, updated_data: Dict[str, Any]
+    ) -> Optional[Command]:
         """Update an existing command"""
         if not await self.ensure_connected() or not self.commands_container:
             logger.warning("No Cosmos DB connection. Cannot update command.")
             return None
         try:
-            query = (
-                "SELECT * FROM c WHERE c.commandId = @id OR c.command_id = @id OR c.id = @id"
-            )
+            query = "SELECT * FROM c WHERE c.commandId = @id OR c.command_id = @id OR c.id = @id"
             params = [{"name": "@id", "value": command_id}]
             items = self.commands_container.query_items(query=query, parameters=params)
             existing = None
@@ -910,7 +1012,9 @@ class CosmosDBClient:
             return []
         try:
             if vehicle_id:
-                query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
+                query = (
+                    "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
+                )
                 params = [{"name": "@vehicleId", "value": vehicle_id}]
                 items = self.commands_container.query_items(
                     query=query, parameters=params, partition_key=vehicle_id
@@ -926,7 +1030,9 @@ class CosmosDBClient:
             logger.error(f"Error listing commands: {e}")
             return []
 
-    async def create_notification(self, notification_data: Dict[str, Any]) -> Notification:
+    async def create_notification(
+        self, notification_data: Dict[str, Any]
+    ) -> Notification:
         """Create a new notification"""
         if not await self.ensure_connected() or not self.notifications_container:
             logger.warning("No Cosmos DB connection. Cannot create notification.")
@@ -947,7 +1053,9 @@ class CosmosDBClient:
             except Exception as e:
                 # If HTTP transport closed, try reconnect once and retry
                 if self._is_transport_closed_error(e):
-                    logger.warning("HTTP transport closed during create_notification, attempting reconnect and retry")
+                    logger.warning(
+                        "HTTP transport closed during create_notification, attempting reconnect and retry"
+                    )
                     try:
                         # Cleanup any stale client resources and reconnect
                         await self._cleanup_client()
@@ -955,9 +1063,13 @@ class CosmosDBClient:
                         # ensure containers are initialized after reconnect
                         if not self.notifications_container:
                             self._initialize_containers()
-                        created = await self.notifications_container.create_item(body=doc)
+                        created = await self.notifications_container.create_item(
+                            body=doc
+                        )
                     except Exception as retry_exc:
-                        logger.error(f"Retry create_notification also failed: {retry_exc}")
+                        logger.error(
+                            f"Retry create_notification also failed: {retry_exc}"
+                        )
                         raise
                 else:
                     raise
@@ -973,7 +1085,9 @@ class CosmosDBClient:
             return []
         try:
             if vehicle_id:
-                query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
+                query = (
+                    "SELECT * FROM c WHERE c.vehicleId = @vehicleId ORDER BY c._ts DESC"
+                )
                 params = [{"name": "@vehicleId", "value": vehicle_id}]
                 items = self.notifications_container.query_items(
                     query=query, parameters=params, partition_key=vehicle_id
@@ -989,7 +1103,9 @@ class CosmosDBClient:
             logger.error(f"Error listing notifications: {e}")
             return []
 
-    async def mark_notification_read(self, notificationId: str) -> Optional[Notification]:
+    async def mark_notification_read(
+        self, notificationId: str
+    ) -> Optional[Notification]:
         if self._closing:
             return None
         if not await self.ensure_connected() or not self.notifications_container:
@@ -998,7 +1114,9 @@ class CosmosDBClient:
         try:
             query = "SELECT TOP 1 * FROM c WHERE c.id = @id"
             params = [{"name": "@id", "value": notificationId}]
-            items = self.notifications_container.query_items(query=query, parameters=params)
+            items = self.notifications_container.query_items(
+                query=query, parameters=params
+            )
             async for item in items:
                 item["read"] = True
                 model = Notification(**item)
@@ -1021,9 +1139,13 @@ class CosmosDBClient:
         try:
             query = "SELECT TOP 1 c.id, c.vehicleId FROM c WHERE c.id = @id"
             params = [{"name": "@id", "value": notificationId}]
-            items = self.notifications_container.query_items(query=query, parameters=params)
+            items = self.notifications_container.query_items(
+                query=query, parameters=params
+            )
             async for item in items:
-                await self.notifications_container.delete_item(item=notificationId, partition_key=item.get("vehicleId"))
+                await self.notifications_container.delete_item(
+                    item=notificationId, partition_key=item.get("vehicleId")
+                )
                 return True
             logger.warning(f"Notification {notificationId} not found")
             return False

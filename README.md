@@ -54,8 +54,36 @@ cd ../vehicle
 python main.py
 ```
 
+## Deployment
 
-Note: MCP services use deterministic sample data in plugin/sample_data.py.
+```bash
+# (Optional) Create Azure Resource Group in your subscription
+az group create --name <resource-group-name> --location <location-name>
+
+# (Optional) Create Azure OpenAI and Speech Service.
+# Be sure to edit values in params.json before deployment.
+
+# Deploy Azure infrastructure
+cd infra
+powershell ./run_infra_deploy.ps1
+cd ..
+
+# Deploy your FastAPI web app to Azure App Service
+# (this script should internally call `az webapp deploy`)
+# If you encounter any issues, use the Visual Studio Code Azure extension to deploy your web app to Azure.
+run_webapp_deploy.cmd
+
+# Set the startup command in your Azure Web App configuration:
+az webapp config set --resource-group <resource-group-name> --name <app-name> --startup-file "python main.py"
+
+# Azure Portal: Add your webapp URL to Entra ID > Authentification > Single-page application > Redirect URIs
+
+# Assing Data Contributor role to Cosmos DB: Webapp > Identity > System assigned > On
+az cosmosdb sql role assignment create --account-name <cosmos-db-account-name> --resource-group <resource-group-name> --scope / --principal-id <web-app-principal-id> --role-definition-id 00000000-0000-0000-0000-000000000002
+```
+
+Note: 
+MCP services use deterministic sample data in plugin/sample_data.py.
 
 ## 📖 Documentation
 For full API reference, architecture, and examples, see the project documentation.
