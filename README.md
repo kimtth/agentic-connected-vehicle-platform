@@ -1,6 +1,8 @@
 # 🚗 Agentic Connected Vehicle Platform
 
-An AI-driven car management system: control, diagnostics, and insights via agents.
+An AI agent-driven car management system: control, diagnostics, and insights via agents.
+
+> **Important:** The code in this repository was developed during a hackathon and implemented within a limited timeline. It is intended for demonstration purposes only.
 
 ## ✨ Features
 - 🗣️ Natural-language agent interface  
@@ -152,7 +154,7 @@ VS Code REST Client
 
 Note: This endpoint is for development only. Do not expose it in production.
 
-## 🔐 Azure AD Authentication (Access Tokens)
+## 🔐 Entra ID (formerly Azure AD) Authentication — App Registration & Access Token
 Set your backend env (vehicle/.env):
 ```env
 AZURE_TENANT_ID=<tenant-guid>
@@ -161,9 +163,9 @@ AZURE_AUTH_REQUIRED=true
 ```
 Frontend requests the scope (note: scope = audience + "/access_as_user"):
 ```env
-REACT_APP_AZURE_CLIENT_ID=<raw spa client guid>   # NOT the api:// Application ID URI
+REACT_APP_AZURE_CLIENT_ID=<client-guid>   # NOT the api:// Application ID URI
 REACT_APP_AZURE_TENANT_ID=<tenant-guid>
-REACT_APP_AZURE_SCOPE=api://<your-app-client-id>/access_as_user
+REACT_APP_AZURE_SCOPE=api://<client-guid>/access_as_user
 ```
 
 ## 📜 License
