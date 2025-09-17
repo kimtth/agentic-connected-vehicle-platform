@@ -162,24 +162,6 @@ async def lifespan(app):
         # Don't fail startup, but log the issue
         logger.error("App will continue but Cosmos DB operations may fail")
 
-    # Best-effort router loading (keeps app running even if optional routers are missing)
-    for name, modpath in [
-        ("Agents", "apis.agent_routes"),
-        ("Vehicle Features", "apis.vehicle_feature_routes"),
-        ("Remote Access", "apis.remote_access_routes"),
-        ("Speech", "apis.speech_routes"),
-        ("Emergency & Safety", "apis.emergency_routes"),
-        ("Dev Seed", "apis.seed_routes"),  # Dev: Test data
-    ]:
-        try:
-            module = import_module(modpath)
-            app.include_router(module.router, prefix="/api", tags=[name])
-            logger.info(f"Loaded router: {name}")
-        except Exception as e:
-            # Improved diagnostics: include full traceback at debug level
-            logger.warning(f"Router not available ({name}): {e}")
-            logger.debug("Full import traceback for router '%s'", name, exc_info=True)
-
     yield
     logger.info("Shutting down the application...")
     try:
@@ -216,6 +198,29 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Load routers early so they precede the catch-all /{full_path:path} route
+def _load_optional_routers():
+    if getattr(app.state, "routers_loaded", False):
+        return
+    for name, modpath in [
+        ("Agents", "apis.agent_routes"),
+        ("Vehicle Features", "apis.vehicle_feature_routes"),
+        ("Remote Access", "apis.remote_access_routes"),
+        ("Speech", "apis.speech_routes"),
+        ("Emergency & Safety", "apis.emergency_routes"),
+        ("Development Seeding", "apis.seed_routes"),
+    ]:
+        try:
+            module = import_module(modpath)
+            app.include_router(module.router, prefix="/api", tags=[name])
+            logger.info(f"Loaded router: {name}")
+        except Exception as e:
+            logger.warning(f"Router not available ({name}): {e}")
+            logger.debug("Full import traceback for router '%s'", name, exc_info=True)
+    app.state.routers_loaded = True
+
+_load_optional_routers()
 
 
 def _cosmos_status():

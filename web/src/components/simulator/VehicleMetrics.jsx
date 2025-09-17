@@ -1,7 +1,8 @@
 import { Paper, Typography, Grid, Box, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { 
-  Thermostat, SpeedOutlined, BatteryChargingFullOutlined, Timeline 
+  Thermostat, SpeedOutlined, BatteryChargingFullOutlined, Timeline,
+  AccessTime, Map
 } from '@mui/icons-material';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -33,6 +34,8 @@ const num = (v) => {
   return (v === undefined || v === null) ? null : (typeof v === 'number' ? v : (isNaN(Number(v)) ? null : Number(v)));
 };
 
+const RANGE_KM_PER_PERCENT = 5; // simple derived metric assumption
+
 const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
   const engineTempValue = num(vehicleStatus?.engineTemp);
   const speedValue = num(vehicleStatus?.speed);
@@ -40,6 +43,7 @@ const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
   const odometerValue = num(vehicleStatus?.odometer);
   const cabinTempValue = num(vehicleStatus?.temperature); 
   const oilRemainingValue = num(vehicleStatus?.oilRemaining); 
+  const timestamp = vehicleStatus?.timestamp;
 
   const engineColor = engineTempValue == null
     ? 'primary.main'
@@ -85,6 +89,18 @@ const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
       value: odometerValue != null ? `${odometerValue} km` : 'N/A',
       icon: <Timeline fontSize="large" />,
       color: 'primary.main'
+    },
+    {
+      label: 'Range Estimate',
+      value: batteryValue != null ? `${Math.round(batteryValue * RANGE_KM_PER_PERCENT)} km` : 'N/A',
+      icon: <Map fontSize="large" />,
+      color: 'primary.main'
+    },
+    {
+      label: 'Last Update',
+      value: timestamp ? new Date(timestamp).toLocaleTimeString() : 'N/A',
+      icon: <AccessTime fontSize="large" />,
+      color: 'primary.main'
     }
   ];
 
@@ -129,4 +145,3 @@ const VehicleMetrics = ({ vehicleStatus, loading = false }) => {
 };
 
 export default VehicleMetrics;
- 
