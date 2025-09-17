@@ -6,7 +6,7 @@ import {
   List, ListItem, Divider, Tooltip, IconButton
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { askAgent } from '../api/apiClient';  // Changed from '../api/agent' to '../api/apiClient'
+import { askAgent } from '../api/apiClient';  
 import { styled } from '@mui/system';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

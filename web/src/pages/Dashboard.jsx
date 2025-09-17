@@ -32,6 +32,7 @@ import {
   AcUnit,
   Refresh as RefreshIcon
 } from '@mui/icons-material';
+import { RecordVoiceOver } from '@mui/icons-material'; // added
 import { useNavigate } from 'react-router-dom';
 import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
@@ -235,8 +236,8 @@ const Dashboard = ({ selectedVehicle }) => {
               Quick Actions
             </Typography>
             <Grid container spacing={3} sx={{ mt: 1 }}>
-              <Grid item xs={12} md={4}>
-                <Card>
+              <Grid item xs={12} md={3}>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <CardActionArea
                     component="div"
                     role="button"
@@ -244,7 +245,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     onClick={() => navigate('/agent-chat')}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/agent-chat'); } }}
                   >
-                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
                       <SupportAgent sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
                         Agent Chat
@@ -265,8 +266,8 @@ const Dashboard = ({ selectedVehicle }) => {
                 </Card>
               </Grid>
 
-              <Grid item xs={12} md={4}>
-                <Card>
+              <Grid item xs={12} md={3}>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <CardActionArea
                     component="div"
                     role="button"
@@ -274,7 +275,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     onClick={() => navigate('/simulator')}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/simulator'); } }}
                   >
-                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
                       <CarIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
                         Car Simulator
@@ -295,8 +296,8 @@ const Dashboard = ({ selectedVehicle }) => {
                 </Card>
               </Grid>
 
-              <Grid item xs={12} md={4}>
-                <Card>
+              <Grid item xs={12} md={3}>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <CardActionArea
                     component="div"
                     role="button"
@@ -304,7 +305,7 @@ const Dashboard = ({ selectedVehicle }) => {
                     onClick={() => navigate('/services')}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/services'); } }}
                   >
-                    <CardContent sx={{ textAlign: 'center', p: 3 }}>
+                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
                       <ServiceIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
                       <Typography variant="h6" component="div" gutterBottom>
                         Service Status
@@ -319,6 +320,36 @@ const Dashboard = ({ selectedVehicle }) => {
                         startIcon={<ServiceIcon />}
                       >
                         View Services
+                      </Button>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <CardActionArea
+                    component="div"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`); } }}
+                  >
+                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
+                      <RecordVoiceOver sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                      <Typography variant="h6" component="div" gutterBottom>
+                        Voice Control
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Use real-time speech & avatar assistant
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        sx={{ mt: 2 }}
+                        startIcon={<RecordVoiceOver />}
+                      >
+                        Launch
                       </Button>
                     </CardContent>
                   </CardActionArea>

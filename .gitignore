@@ -324,3 +324,6 @@ memo.md
 .env.development
 /vehicle/public
 /infra/params.prod.json
+/vehicle/.vscode
+/web/.vscode
+/vehicle/.vscode

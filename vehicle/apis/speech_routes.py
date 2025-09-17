@@ -95,7 +95,7 @@ async def ask_ai(req: AskAIRequest):
 
                 Do not add highlight entries — this text will be used for text-to-speech.
 
-                The response should be simple and not longer than 90 characters.
+                The response should be simple and concise.
                 """
         )
         if language_code:

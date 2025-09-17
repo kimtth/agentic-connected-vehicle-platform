@@ -309,9 +309,10 @@ class CosmosDBClient:
             logger.info("Connecting to Cosmos DB with Azure AD authentication")
             logger.info(f"Endpoint: {self.endpoint}")
             logger.info(f"Database: {self.database_name}")
+            env_type = os.getenv("ENV_TYPE")
 
             # Use the same simple pattern as the working test code
-            if self._is_azure_environment():
+            if self._is_azure_environment() and env_type != "development":
                 logger.info("Using ManagedIdentityCredential for Azure environment")
                 # Try with no client_id first (system-assigned identity)
                 try:
