@@ -434,11 +434,17 @@ const VoiceControl = ({ vehicleId }) => {
                         <Grid item xs={12}>
                             <TextField
                                 multiline
-                                minRows={8}
+                                minRows={10}
+                                maxRows={12} 
                                 fullWidth
                                 label="Message / Prompt"
                                 value={message}
                                 onChange={e => setMessage(e.target.value)}
+                                sx={{
+                                    '& .MuiInputBase-root': {
+                                        overflowY: 'auto' // added vertical scroll
+                                    }
+                                }}
                             />
                         </Grid>
                         <Grid item xs={12}>

@@ -95,7 +95,8 @@ async def ask_ai(req: AskAIRequest):
 
                 Do not add highlight entries — this text will be used for text-to-speech.
 
-                The response should be simple and concise.
+                The response should be simple and concise. The response should be in the form of a single paragraph.
+                If you don't know the answer, just say you don't know. Do not make up an answer.
                 """
         )
         if language_code:

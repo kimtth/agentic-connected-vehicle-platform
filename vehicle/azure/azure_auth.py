@@ -1,8 +1,9 @@
 """
 Minimal Azure AD authentication middleware:
-- Validates incoming Bearer JWT (if present / required)
+- Only /api* routes are authenticated; all other paths skip auth entirely
+- Validates incoming Bearer JWT (if present / required) for /api routes
 - Attaches decoded token to request.state.user
-- Skips auth gracefully if not configured (unless AZURE_AUTH_REQUIRED=true)
+- NEVER redirects - only returns JSON 401 for /api paths when auth fails
 """
 
 import os
@@ -13,7 +14,7 @@ from fastapi import Request, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,24 +45,27 @@ class AzureADMiddleware(BaseHTTPMiddleware):
             self.audiences = []
             
         self.exclude_exact = {
-            # "/" removed so root path is authenticated
+            "/",
             "/health",
-            "/api/info"
+            "/api/info",
             "/api/health",
+            "/api/debug/cosmos",
             "/openapi.json",
             "/favicon.ico",
         }
+
         self.exclude_prefixes = (
             "/docs",
+            "/static",
             "/redoc",
             "/api/dev/seed"     # includes /api/dev/seed, /bulk, /status, etc.
         )
 
         if os.getenv('ENV_TYPE') == 'development':
-            # Dev: In development, disable auth for all paths.
+            # Dev: disable auth for all paths
             self.exclude_prefixes = ("/",)
 
-        self.signin_redirect_url = os.getenv("SIGNIN_REDIRECT_URL", "/")
+        # Remove signin_redirect_url since we never redirect
         if not self.tenant_id:
             logger.warning("AzureADMiddleware: incomplete configuration; auth will be optional.")
 
@@ -81,66 +85,64 @@ class AzureADMiddleware(BaseHTTPMiddleware):
             or request.cookies.get("access_token")
             or request.cookies.get("auth_token")
             or request.cookies.get("token")
-            or os.getenv("DEV_BEARER_TOKEN")
         )
         if raw:
             return f"Bearer {raw.strip()}"
         return None
 
     async def dispatch(self, request: Request, call_next):
-        # Normalize and check exclusions safely
         path = request.url.path or "/"
         if path != "/" and path.endswith("/"):
             path = path.rstrip("/")
 
-        # 1) Bypass CORS preflight early
+        # All non-/api paths skip auth unconditionally (prevents 307 loops)
+        if not path.startswith("/api"):
+            return await call_next(request)
+
+        # 1) CORS preflight
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # 2) Bypass excluded paths/prefixes
-        if (path in self.exclude_exact) or any(path.startswith(p) for p in self.exclude_prefixes):
+        # Exact-path bypass (e.g. /api/health, /api/info, etc.)
+        if path in self.exclude_exact:
             return await call_next(request)
 
-        # If not configured properly
+        # Allow specific /api dev seed prefixes
+        if any(path.startswith(p) for p in self.exclude_prefixes if p.startswith("/api/")):
+            return await call_next(request)
+
+        # Config check
         if not (self.tenant_id and self.issuer_v2 and self.jwks_uri):
             if self.auth_required:
-                # Return JSONResponse to avoid exception bubbling in other middlewares
                 return JSONResponse(status_code=500, content={"detail": "Azure AD auth not configured"})
             return await call_next(request)
 
-        # Broaden header search (some proxies / libs might rename / downcase)
+        # Header / fallback token retrieval
         auth_header = (
             request.headers.get("Authorization")
             or request.headers.get("authorization")
             or request.headers.get("X-Authorization")
-            or request.headers.get("X-Auth-Token")  # direct header (before fallback)
-        )
-        if not auth_header:
-            # Existing fallback (query, cookies, env, etc.)
-            auth_header = self._attempt_token_retrieval(request)
+            or request.headers.get("X-Auth-Token")
+        ) or self._attempt_token_retrieval(request)
 
         if self.auth_debug:
             logger.debug(
-                "AzureADMiddleware: path=%s auth_present=%s incoming_headers=%s",
-                request.url.path,
+                "AzureADMiddleware: path=%s auth_present=%s",
+                path,
                 bool(auth_header),
-                {k: v for k, v in request.headers.items() if k.lower() in ("authorization","x-authorization","x-auth-token")}
             )
 
         if not auth_header:
             if self.auth_required:
-                # API paths should return JSON 401, not redirect (for CORS compatibility)
-                if path.startswith("/api"):
-                    return JSONResponse(
-                        status_code=401, 
-                        content={"detail": "Authorization required"},
-                        headers={"WWW-Authenticate": "Bearer"}
-                    )
-                # Non-API paths can redirect to login
-                return RedirectResponse(url=self.signin_redirect_url, status_code=307)
+                # ONLY JSON 401 for /api - never redirect
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Authorization required"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             return await call_next(request)
 
-        # Parse Bearer token
+        # Parse Bearer
         try:
             scheme, token = auth_header.split(" ", 1)
             if scheme.lower() != "bearer":
@@ -156,7 +158,6 @@ class AzureADMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
             return await call_next(request)
 
-        # Attach user to request
         request.state.user = decoded
         return await call_next(request)
 
@@ -194,7 +195,7 @@ class AzureADMiddleware(BaseHTTPMiddleware):
                 except Exception as e:
                     if self.auth_debug:
                         logger.debug("AzureADMiddleware: token validation error for audience %s: %s", audience, e)
-                    break
+                    continue  # allow trying remaining audiences
             
             return None
             

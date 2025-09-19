@@ -23,9 +23,13 @@ import multiprocessing
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    StreamingResponse,
+    PlainTextResponse,
+)  # added
 from contextlib import asynccontextmanager
 from models.command import Command
 from models.vehicle_profile import VehicleProfile
@@ -54,7 +58,9 @@ from plugin.mcp_poi_server import start_poi_server
 from plugin.mcp_navigation_server import start_navigation_server
 
 # Load environment variables first
-load_dotenv(override=True)
+env_type = os.getenv("ENV_TYPE", "").lower()
+if env_type.startswith("dev") or env_type in ("local",):
+    load_dotenv(override=True)
 
 # Configure logging with single instance check
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -124,41 +130,52 @@ async def lifespan(app):
     try:
         if hasattr(client, "connect"):
             logger.info("Attempting Cosmos DB connection...")
-            
+
             # Log environment variables for debugging (without sensitive values)
             logger.info("Environment diagnostic information:")
-            logger.info(f"COSMOS_DB_ENDPOINT configured: {bool(os.getenv('COSMOS_DB_ENDPOINT'))}")
+            logger.info(
+                f"COSMOS_DB_ENDPOINT configured: {bool(os.getenv('COSMOS_DB_ENDPOINT'))}"
+            )
             logger.info(f"COSMOS_DB_KEY configured: {bool(os.getenv('COSMOS_DB_KEY'))}")
             logger.info(f"COSMOS_DB_USE_AAD: {os.getenv('COSMOS_DB_USE_AAD', 'false')}")
-            logger.info(f"COSMOS_DB_DATABASE: {os.getenv('COSMOS_DB_DATABASE', 'VehiclePlatformDB')}")
-            
+            logger.info(
+                f"COSMOS_DB_DATABASE: {os.getenv('COSMOS_DB_DATABASE', 'VehiclePlatformDB')}"
+            )
+
             # Log Azure environment variables
-            azure_vars = ["WEBSITE_SITE_NAME", "WEBSITE_INSTANCE_ID", "MSI_ENDPOINT", "IDENTITY_ENDPOINT", "AZURE_CLIENT_ID"]
+            azure_vars = [
+                "WEBSITE_SITE_NAME",
+                "WEBSITE_INSTANCE_ID",
+                "MSI_ENDPOINT",
+                "IDENTITY_ENDPOINT",
+                "AZURE_CLIENT_ID",
+            ]
             for var in azure_vars:
                 logger.info(f"{var}: {bool(os.getenv(var))}")
-            
+
             connected = await client.connect()
             if connected:
                 logger.info("Cosmos DB connected successfully")
             else:
                 logger.warning("Cosmos DB connection failed")
                 # Log more details about the failure
-                if hasattr(client, 'connection_error') and client.connection_error:
+                if hasattr(client, "connection_error") and client.connection_error:
                     logger.error(f"Connection error details: {client.connection_error}")
                 # Also check if client has any other diagnostic info
-                if hasattr(client, 'endpoint'):
+                if hasattr(client, "endpoint"):
                     logger.error(f"Client endpoint: {client.endpoint}")
-                if hasattr(client, 'use_aad_auth'):
+                if hasattr(client, "use_aad_auth"):
                     logger.error(f"Client AAD auth: {client.use_aad_auth}")
     except Exception as e:
         logger.error(f"Cosmos DB connection failed with exception: {e}")
         logger.error(f"Exception type: {type(e).__name__}")
         logger.error(f"Exception details: {repr(e)}")
-        
+
         # Log full traceback for debugging
         import traceback
+
         logger.error(f"Full traceback: {traceback.format_exc()}")
-        
+
         # Don't fail startup, but log the issue
         logger.error("App will continue but Cosmos DB operations may fail")
 
@@ -199,6 +216,7 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+
 # Load routers early so they precede the catch-all /{full_path:path} route
 def _load_optional_routers():
     if getattr(app.state, "routers_loaded", False):
@@ -219,6 +237,7 @@ def _load_optional_routers():
             logger.warning(f"Router not available ({name}): {e}")
             logger.debug("Full import traceback for router '%s'", name, exc_info=True)
     app.state.routers_loaded = True
+
 
 _load_optional_routers()
 
@@ -739,6 +758,38 @@ async def delete_notification(notification_id: str):
     )
 
 
+@app.get("/api/debug/cosmos")
+async def cosmos_debug():
+    client = get_cosmos_client()
+    return {
+        "endpoint": getattr(client, "endpoint", None),
+        "database": getattr(client, "database_name", None),
+        "connected": getattr(client, "connected", None),
+        "is_connecting": getattr(client, "is_connecting", None),
+        "connection_error": getattr(client, "connection_error", None),
+        "last_health_check": str(getattr(client, "last_health_check", None)),
+        "azure_env_detected": (
+            client._is_azure_environment()
+            if hasattr(client, "_is_azure_environment")
+            else None
+        ),
+    }
+
+
+@app.post("/api/mcp/restart")
+async def restart_mcp():
+    if os.getenv("ENABLE_MCP", "true").lower() != "true":
+        raise HTTPException(status_code=400, detail="MCP disabled")
+    _stop_mcp_processes()
+    MCP_PROCESSES.clear()
+    # Restart
+    _start_mcp_process(start_weather_server, "mcp_weather")
+    _start_mcp_process(start_navigation_server, "mcp_navigation")
+    _start_mcp_process(start_traffic_server, "mcp_traffic")
+    _start_mcp_process(start_poi_server, "mcp_poi")
+    return {"status": "restarted", "services": _collect_mcp_status()}
+
+
 def _is_port_open(host: str, port: int, timeout: float = 0.25) -> bool:
     """Check if a TCP port is accepting connections."""
     try:
@@ -844,13 +895,28 @@ if not os.path.isdir(assets_dir):
 # Mount only the assets subdirectory so requests to /static/js/... resolve correctly
 app.mount("/static", StaticFiles(directory=assets_dir), name="static")
 
-# Root must be defined BEFORE the catch-all to avoid being shadowed
+
+@app.middleware("http")
+async def robots_wildcard(request, call_next):
+    # Serve any root-level robots*.txt (e.g. /robots.txt, /robots933456.txt, /robots-any.txt)
+    path = request.url.path
+    if (
+        path.startswith("/robots")
+        and path.endswith(".txt")
+        and "/" not in path[1:].replace(path.split("/")[-1], "")  # ensure root-level
+    ):
+        return PlainTextResponse("User-agent: *\nDisallow:\n", status_code=200)
+    return await call_next(request)
+
+
+# Root must be defined BEFORE the catch-all
 @app.get("/")
 async def serve_root():
     index_path = os.path.join(build_root, "index.html")
     if os.path.isfile(index_path):
         return FileResponse(index_path)
     return {"message": "Connected Car Platform API", "frontend": "not built"}
+
 
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
@@ -861,7 +927,10 @@ async def serve_react_app(full_path: str):
     if os.path.isfile(index_path):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Frontend not built")
+
+
 # End of React frontend serving setup
+
 
 if __name__ == "__main__":
     # Prevent multiple server instances
@@ -873,8 +942,16 @@ if __name__ == "__main__":
 
     host = os.getenv("API_HOST", "0.0.0.0")
     # Safe ENV_TYPE handling (default to development)
-    env_type = os.getenv("ENV_TYPE", "development").lower()
-    port = int(os.getenv("API_PORT", 8000 if env_type.startswith("dev") else 80))
+    env_type = os.getenv("ENV_TYPE", "").lower()
+    logger.info(f"ENV_TYPE: {env_type}")
+    # Azure App Service behavior:
+    # - Externally, App Service always listens on 80 (HTTP) / 443 (HTTPS).
+    # - Internally, your app must bind to the port specified in the PORT env variable.
+    # - If you hardcode a port (e.g., 8000), configure WEBSITES_PORT in App Settings so Azure maps traffic correctly.
+    # Here: prefer PORT (runtime-assigned) and fallback to WEBSITES_PORT if set.
+    dynamic_port = os.getenv("PORT") or os.getenv("WEBSITES_PORT")
+
+    port = int(dynamic_port or 8000)
     logger.info(f"Starting. Using port {port}.")
 
     # Check if port is already in use
@@ -906,6 +983,3 @@ if __name__ == "__main__":
         raise
     finally:
         _SERVER_INSTANCE_STARTED = False
-
-
-

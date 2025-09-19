@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime, timezone
 import uuid, random, logging
 
-from main import get_cosmos_client, _cosmos_status
+from azure.cosmos_db import get_cosmos_client
 from models.seed import (
     SeedResult,
     BulkSeedRequest,
@@ -25,6 +25,19 @@ LAST_SEED_SUMMARY: Optional[BulkSeedSummary] = None
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _cosmos_status():
+    try:
+        client = get_cosmos_client()
+    except Exception:
+        return False, False
+    enabled = bool(
+        getattr(client, "endpoint", None)
+        and (getattr(client, "key", None) or getattr(client, "use_aad_auth", False))
+    )
+    connected = getattr(client, "connected", False) if enabled else False
+    return enabled, connected
 
 
 @router.post("/seed", response_model=SeedResult)

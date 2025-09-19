@@ -238,24 +238,20 @@ class InformationServicesPlugin:
                 latitude=coords.get("latitude", 0.0),
                 longitude=coords.get("longitude", 0.0),
             )
+            # CallToolResult
             serializable = self._ensure_serializable(result)
-            return json.dumps(serializable)
+            return serializable
         except Exception as e:
             logger.error(f"Error getting navigation: {e}")
             return json.dumps({"error": str(e)})
 
-    def _ensure_serializable(self, obj):
+    def _ensure_serializable(self, result):
         """Return a JSON-serializable representation of obj."""
-        if hasattr(obj, "model_dump"):
-            try:
-                return obj.model_dump()
-            except Exception:
-                pass
-        if hasattr(obj, "dict"):
-            try:
-                return obj.dict()
-            except Exception:
-                pass
+        try:
+            json.dumps(result)
+            return result
+        except (TypeError, OverflowError):
+            return str(result)
 
     async def _get_vehicle_location(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
         """Get the vehicle's current location from Cosmos DB."""
@@ -264,31 +260,13 @@ class InformationServicesPlugin:
 
         try:
             # Get vehicle status for location
-            vehicle_status = await self.cosmos_client.get_vehicle_status(vehicle_id)
+            vehicle_info = await self.cosmos_client.get_vehicle(vehicle_id)
 
-            if vehicle_status:
-                # Check for location in status
-                if "location" in vehicle_status:
-                    return vehicle_status["location"]
-
-            # Try to get from vehicle data if not in status
-            vehicles = await self.cosmos_client.list_vehicles()
-            vehicle_obj = find_vehicle(vehicles, vehicle_id)
-            vehicle = {}
-            if vehicle_obj:
-                if hasattr(vehicle_obj, "model_dump"):
-                    try:
-                        vehicle = vehicle_obj.model_dump(by_alias=True)
-                    except:
-                        vehicle = {}
-                elif isinstance(vehicle_obj, dict):
-                    vehicle = vehicle_obj
-
-            if vehicle and "LastLocation" in vehicle:
+            if vehicle_info and "lastLocation" in vehicle_info:
                 # Convert to lowercase keys for consistency
                 return {
-                    "latitude": vehicle["LastLocation"].get("Latitude", 0),
-                    "longitude": vehicle["LastLocation"].get("Longitude", 0),
+                    "latitude": vehicle_info["lastLocation"].get("latitude", 0),
+                    "longitude": vehicle_info["lastLocation"].get("longitude", 0),
                 }
 
             return {}

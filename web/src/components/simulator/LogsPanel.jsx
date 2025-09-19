@@ -16,7 +16,7 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
 const LogsContainer = styled(Box)(({ theme }) => ({
   flex: 1,
   overflowY: 'auto',
-  maxHeight: '400px',
+  height: '100%', 
   marginBottom: theme.spacing(2),
   border: `1px solid ${theme.palette.divider}`,
   borderRadius: theme.shape.borderRadius,

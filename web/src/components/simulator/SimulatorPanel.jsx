@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Typography, Grid, Paper } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CommandPanel from './CommandPanel';
@@ -82,6 +82,10 @@ const SimulatorPanel = ({ vehicleId }) => {
   const [statusCheckInterval, setStatusCheckInterval] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isMounted, setIsMounted] = useState(true);
+
+  // Prevent duplicate "Real-time status update received" spam
+  const lastStatusRef = useRef(null);
+  const lastRealtimeLogTsRef = useRef(0);
 
   // Add log entry
   const addLog = useCallback((message, type) => {
@@ -185,15 +189,33 @@ const SimulatorPanel = ({ vehicleId }) => {
           vehicleId,
           (newStatus) => {
             if (isMounted) {
-              setVehicleStatus({
-                engineTemp: newStatus.engineTemp,
-                temperature: newStatus.temperature,
-                speed: newStatus.speed,
-                battery: newStatus.battery,
-                oilRemaining: newStatus.oilRemaining,
-                odometer: newStatus.odometer,
-              });
-              addLog('Real-time status update received', 'info');
+              const prev = lastStatusRef.current;
+              const fields = ['engineTemp','temperature','speed','battery','oilRemaining','odometer'];
+              const hasChange = !prev || fields.some(k => prev[k] !== newStatus[k]);
+              if (hasChange) {
+                setVehicleStatus({
+                  engineTemp: newStatus.engineTemp,
+                  temperature: newStatus.temperature,
+                  speed: newStatus.speed,
+                  battery: newStatus.battery,
+                  oilRemaining: newStatus.oilRemaining,
+                  odometer: newStatus.odometer,
+                });
+                // cache snapshot
+                lastStatusRef.current = {
+                  engineTemp: newStatus.engineTemp,
+                  temperature: newStatus.temperature,
+                  speed: newStatus.speed,
+                  battery: newStatus.battery,
+                  oilRemaining: newStatus.oilRemaining,
+                  odometer: newStatus.odometer,
+                };
+                const now = Date.now();
+                if (now - lastRealtimeLogTsRef.current > 3000) { // throttle to 1 log / 3s
+                  addLog('Real-time status update received', 'info');
+                  lastRealtimeLogTsRef.current = now;
+                }
+              }
             }
           },
           (error) => {

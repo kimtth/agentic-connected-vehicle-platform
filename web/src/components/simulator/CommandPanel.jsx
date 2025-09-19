@@ -65,8 +65,12 @@ const CustomCommandSection = styled(Box)(({ theme }) => ({
 
 const ScrollableContent = styled(Box)(({ theme }) => ({
   flex: 1,
-  overflowY: 'auto',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
   marginBottom: theme.spacing(1),
+  height: '100%',
+  minHeight: 0, 
 }));
 
 const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
@@ -176,56 +180,57 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       </Typography>
       
       <ScrollableContent>
-        <Grid container spacing={1}>
-          {commandCategories[selectedCategory]?.commands.map((cmd, index) => (
-            <Grid item xs={12} sm={6} key={index}>
-              {isEmergencyCategory ? (
-                <EmergencyCommandButton
-                  startIcon={cmd.icon}
-                  onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
-                  disabled={isSending || !isConnected}
-                  fullWidth
-                >
-                  {cmd.label}
-                </EmergencyCommandButton>
-              ) : (
-                <CommandButton
-                  startIcon={cmd.icon}
-                  onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
-                  disabled={isSending || !isConnected}
-                  fullWidth
-                >
-                  {cmd.label}
-                </CommandButton>
-              )}
-            </Grid>
-          ))}
-          
-          <Grid item xs={12}>
-            <EmergencyCommandButton
-              startIcon={<Warning />}
-              onClick={() => onSendCommand('SOS')}
-              disabled={!isConnected}
-              fullWidth
-              sx={{
-                backgroundColor: 'rgb(53, 69, 130)',
-                color: '#fff',
-                '&:hover': {
-                  backgroundColor: 'rgba(53, 68, 130, 0.65)'
-                }
-              }}
-            >
-              EMERGENCY SOS
-            </EmergencyCommandButton>
+        {/* 60% area: primary command grid */}
+        <Box sx={{ flex: '1 1 60%', minHeight: 0, overflowY: 'auto' }}>
+          <Grid container spacing={1}>
+            {commandCategories[selectedCategory]?.commands.map((cmd, index) => (
+              <Grid item xs={12} sm={6} key={index}>
+                {isEmergencyCategory ? (
+                  <EmergencyCommandButton
+                    startIcon={cmd.icon}
+                    onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
+                    disabled={isSending || !isConnected}
+                    fullWidth
+                  >
+                    {cmd.label}
+                  </EmergencyCommandButton>
+                ) : (
+                  <CommandButton
+                    startIcon={cmd.icon}
+                    onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
+                    disabled={isSending || !isConnected}
+                    fullWidth
+                  >
+                    {cmd.label}
+                  </CommandButton>
+                )}
+              </Grid>
+            ))}
           </Grid>
-        </Grid>
-
-        {/* Emergency Commands Section */}
-        <Box sx={{ mb: 2, mt: 1 }}>
+        </Box>
+        {/* 40% area: Emergency Commands Section */}
+        <Box sx={{ flex: '0 0 40%', minHeight: 0, overflowY: 'auto', mt: 1 }}>
           <Typography variant="subtitle2" gutterBottom color="error">
             Emergency Commands
           </Typography>
           <Grid container spacing={1}>
+            <Grid item xs={12}>
+              <EmergencyCommandButton
+                startIcon={<Warning />}
+                onClick={() => onSendCommand('SOS')}
+                disabled={!isConnected}
+                fullWidth
+                sx={{
+                  backgroundColor: 'rgb(53, 69, 130)',
+                  color: '#fff',
+                  '&:hover': {
+                    backgroundColor: 'rgba(53, 68, 130, 0.65)'
+                  }
+                }}
+              >
+                EMERGENCY SOS
+              </EmergencyCommandButton>
+            </Grid>
             {emergencyCommands.map((cmd) => (
               <Grid item xs={6} key={cmd.command}>
                 <EmergencyButton
