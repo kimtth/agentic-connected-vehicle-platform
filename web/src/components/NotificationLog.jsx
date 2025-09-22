@@ -4,8 +4,7 @@ import {
   TableHead, TableRow, Paper, Typography, Box,
   CircularProgress
 } from '@mui/material';
-import { fetchNotifications } from '../api/notifications';
-import { INTERVALS } from '../config/intervals';
+import { fetchNotifications, subscribeToNotificationsStream } from '../api/notifications';
 
 const NotificationLog = ({ vehicleId }) => {
   const [notifications, setNotifications] = useState([]);
@@ -24,11 +23,22 @@ const NotificationLog = ({ vehicleId }) => {
   }, [vehicleId]);
 
   useEffect(() => {
+    if (!vehicleId) return;
+    // Initial load
     loadNotifications();
-    // Poll for updates using centralized interval configuration
-    const interval = setInterval(loadNotifications, INTERVALS.NOTIFICATIONS_POLLING);
-    return () => clearInterval(interval);
-  }, [loadNotifications]);
+    // SSE subscription (replaces polling)
+    const unsubscribe = subscribeToNotificationsStream(vehicleId, {
+      onNotification: (payload) => {
+        setNotifications(prev => {
+          if (prev.some(n => n.id === payload.id)) return prev;
+          return [payload, ...prev];
+        });
+      }
+    });
+    return () => {
+      unsubscribe && unsubscribe();
+    };
+  }, [vehicleId, loadNotifications]);
 
   // Helper function to safely get substring
   const safeSubstring = (str, start, end) => {

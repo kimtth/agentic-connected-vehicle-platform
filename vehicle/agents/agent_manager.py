@@ -347,6 +347,40 @@ class AgentManager:
             logger.error(f"Fallback processing failed: {e}")
             raise
 
+    def _extract_candidate_text(self, chunk) -> str:
+        """Return a single best textual candidate from a streaming chunk."""
+        try:
+            if chunk is None:
+                return ""
+            if isinstance(chunk, str):
+                return chunk
+            for attr in ("message", "content", "text"):
+                val = getattr(chunk, attr, None)
+                if isinstance(val, str):
+                    return val
+                if isinstance(val, (list, tuple)):
+                    parts = []
+                    for p in val:
+                        if isinstance(p, str):
+                            parts.append(p)
+                        else:
+                            t = getattr(p, "text", None)
+                            if isinstance(t, str):
+                                parts.append(t)
+                            else:
+                                c = getattr(p, "content", None)
+                                if isinstance(c, str):
+                                    parts.append(c)
+                    if parts:
+                        return "".join(parts)
+            # Fallback (avoid noisy reprs)
+            rep = str(chunk)
+            if rep.startswith("<"):
+                return ""
+            return rep
+        except Exception:
+            return ""
+
     async def process_request_stream(
         self, query: str, context: Dict[str, Any]
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -357,41 +391,51 @@ class AgentManager:
                 logger.info(f"Processing streaming request: {query[:100]}...")
                 context["query"] = query
                 enriched_context = await self._enrich_context(context)
-                yield StreamingChunk(
-                    response="Processing your request...", complete=False
-                ).model_dump(by_alias=True)
+
+                yield StreamingChunk(response="Processing your request...", complete=False).model_dump(by_alias=True)
+
                 await self._ensure_thread(session_id)
-                chunks: List[Any] = []
+
+                full_response = ""
+                plugins_used = []
                 async for chunk in self.manager.invoke_stream(
                     messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
                     thread=self.thread,
                 ):
-                    chunks.append(chunk)
-                if not chunks:
-                    yield StreamingChunk(
-                        response="No response received", complete=True
-                    ).model_dump(by_alias=True)
-                    return
-                final_content = (
-                    chunks[-1].message
-                    if hasattr(chunks[-1], "message")
-                    else str(chunks[-1])
-                )
-                parsed = self._parse_response_safely(final_content)
-                sentences = [s for s in parsed.message.split(". ") if s]
-                for i, sentence in enumerate(sentences):
-                    if i < len(sentences) - 1 and not sentence.endswith("."):
-                        sentence += "."
-                    is_last = i == len(sentences) - 1
-                    sc = StreamingChunk(
-                        response=sentence,
-                        complete=is_last,
-                        plugins_used=parsed.plugins_used if is_last else [],
-                    )
-                    yield sc.model_dump(by_alias=True)
+                    candidate = self._extract_candidate_text(chunk)
+                    if candidate is None:
+                        continue
+                    candidate = candidate.replace("\r", "")
+
+                    # Extract plugins_used if present in chunk
+                    if hasattr(chunk, "plugins_used"):
+                        plugins_used = getattr(chunk, "plugins_used", []) or []
+                    elif isinstance(chunk, dict) and "plugins_used" in chunk:
+                        plugins_used = chunk.get("plugins_used") or []
+                    # Always append every non-empty candidate (preserve all spaces and formatting)
+                    if candidate:
+                        full_response += candidate
+                        yield StreamingChunk(
+                            response=full_response,
+                            complete=False,
+                            plugins_used=plugins_used,
+                        ).model_dump(by_alias=True)
+                    # else skip empty
+
+                if not full_response.strip():
+                    full_response = "I processed your request."
+
+                parsed = self._parse_response_safely(full_response)
+
+                yield StreamingChunk(
+                    response=parsed.message,
+                    complete=True,
+                    plugins_used=parsed.plugins_used or [],
+                ).model_dump(by_alias=True)
+
                 logger.info("Streaming request processed successfully")
             except Exception as e:
-                logger.error(f"Error in streaming request: {e}")
+                logger.error(f"Error in streaming request: {e}", exc_info=True)
                 err = StreamingChunk(
                     response="I apologize, but I encountered an error processing your request.",
                     complete=True,
@@ -400,6 +444,7 @@ class AgentManager:
                 )
                 yield err.model_dump(by_alias=True)
 
+    @DeprecationWarning
     async def cleanup(self) -> None:
         """Cleanup resources when shutting down."""
         try:
@@ -438,5 +483,4 @@ async def get_agent_manager() -> AgentManager:
         return manager
     finally:
         # Note: cleanup will happen via context managers in the manager itself
-        pass
         pass

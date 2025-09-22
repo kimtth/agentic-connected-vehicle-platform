@@ -82,12 +82,14 @@ class AlertsNotificationsPlugin:
                     "unacknowledgedCount": len(unack),
                     "vehicleId": vid,
                 },
+                function_name="_handle_alert_status",
             )
         except Exception as e:
             logger.error(f"Error retrieving vehicle alerts: {e}")
             return self._format_response(
                 "I'm having trouble retrieving your vehicle's alert information. Please try again later.",
                 success=False,
+                function_name="_handle_alert_status",
             )
 
     @kernel_function(description="Set a speed alert for a vehicle")
@@ -142,12 +144,14 @@ class AlertsNotificationsPlugin:
                     "speedLimit": speed_limit,
                     "notification": notification_obj.model_dump(by_alias=True),
                 },
+                function_name="_handle_speed_alert",
             )
         except Exception as e:
             logger.error(f"Error setting speed alert: {e}")
             return self._format_response(
                 "I encountered an error when trying to set the speed alert. Please try again later.",
                 success=False,
+                function_name="_handle_speed_alert",
             )
 
     @kernel_function(description="Set a curfew alert for a vehicle")
@@ -193,12 +197,14 @@ class AlertsNotificationsPlugin:
                     "endTime": end,
                     "notification": notification_obj.model_dump(by_alias=True),
                 },
+                function_name="_handle_curfew_alert",
             )
         except Exception as e:
             logger.error(f"Error setting curfew alert: {e}")
             return self._format_response(
                 "I encountered an error when trying to set the curfew alert. Please try again later.",
                 success=False,
+                function_name="_handle_curfew_alert",
             )
 
     @kernel_function(description="Set a battery alert for a vehicle")
@@ -251,12 +257,14 @@ class AlertsNotificationsPlugin:
                     "threshold": threshold,
                     "notification": notification_obj.model_dump(by_alias=True),
                 },
+                function_name="_handle_battery_alert",
             )
         except Exception as e:
             logger.error(f"Error setting battery alert: {e}")
             return self._format_response(
                 "I encountered an error when trying to set the battery alert. Please try again later.",
                 success=False,
+                function_name="_handle_battery_alert",
             )
 
     @kernel_function(description="View and adjust notification settings")
@@ -299,18 +307,28 @@ class AlertsNotificationsPlugin:
             return self._format_response(
                 f"Notification settings for your vehicle:\n\n{text}",
                 data={"settings": settings, "vehicleId": vid},
+                function_name="_handle_notification_settings",
             )
         except Exception as e:
             logger.error(f"Error retrieving notification settings: {e}")
             return self._format_response(
                 "I'm having trouble retrieving your notification settings. Please try again later.",
                 success=False,
+                function_name="_handle_notification_settings",
             )
 
     def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        success: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        function_name: str = "",
     ) -> Dict[str, Any]:
-        resp = {"message": message, "success": success}
+        resp = {
+            "message": message,
+            "success": success,
+            "plugins_used": [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__],
+        }
         if data:
             resp["data"] = data
         return resp

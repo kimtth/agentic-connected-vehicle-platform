@@ -5,13 +5,13 @@ An AI agent-driven car management system: control, diagnostics, and insights via
 > **Important:** The code in this repository was developed during a hackathon and implemented within a limited timeline. It is intended for demonstration purposes only.
 
 ## ✨ Features
-- 🗣️ Natural-language agent interface  
-- 🔒 Remote access: lock/unlock, engine start/stop  
-- ⚡ EV charging & energy optimization  
-- 📍 Weather, traffic, and POI info  
-- 🎛️ In-car controls: climate, lights, windows  
-- 🔧 Diagnostics & predictive maintenance  
-- 🔔 Alerts & customized notifications  
+- 🗣️ Natural-language agent interface for intuitive commands and queries
+- 🚗 In-vehicle assistant for real-time driver and passenger support
+- 🔒 Remote access: lock/unlock, engine start/stop
+- 📍 Smart integration of weather, traffic, and points of interest (via Model Context Protocol)
+- 🎛️ In-car controls for climate, lighting, and windows
+- 🔧 Diagnostics and proactive maintenance
+- 🔔 Real-time alerts with notifications
 
 ## 🛠️ Tech Stack
 - Backend: Python 3.12+, FastAPI, Semantic Kernel

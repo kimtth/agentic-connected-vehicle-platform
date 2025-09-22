@@ -119,13 +119,13 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "lightType": light_type,
                     "commandId": command_obj.command_id,
                 },
+                function_name="_handle_lights_control",
             )
-
         except Exception as e:
-            logger.error(f"Error controlling lights: {e}")
             return self._format_response(
                 "I encountered an error while controlling the lights. Please try again.",
                 success=False,
+                function_name="_handle_lights_control",
             )
 
     @kernel_function(description="Control vehicle climate settings")
@@ -202,13 +202,13 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "mode": action,
                     "commandId": command_obj.command_id,
                 },
+                function_name="_handle_climate_control",
             )
-
         except Exception as e:
-            logger.error(f"Error controlling climate: {e}")
             return self._format_response(
                 "I encountered an error while adjusting the climate control. Please try again.",
                 success=False,
+                function_name="_handle_climate_control",
             )
 
     @kernel_function(description="Control vehicle windows")
@@ -270,13 +270,13 @@ class VehicleFeatureControlPlugin(BasePlugin):
                     "windows": window_position,
                     "commandId": command_obj.command_id,
                 },
+                function_name="_handle_windows_control",
             )
-
         except Exception as e:
-            logger.error(f"Error controlling windows: {e}")
             return self._format_response(
                 "I encountered an error while controlling the windows. Please try again.",
                 success=False,
+                function_name="_handle_windows_control",
             )
 
     @kernel_function(description="Get current vehicle feature status")
@@ -302,17 +302,26 @@ class VehicleFeatureControlPlugin(BasePlugin):
             return self._format_response(
                 "Feature status retrieved.",
                 data={"vehicleId": vid, "features": features},
+                function_name="_handle_feature_status",
             )
         except Exception as e:
-            logger.error(f"Error retrieving feature status: {e}")
-            return self._format_response("Unable to retrieve feature status.", success=False)
+            return self._format_response(
+                "Unable to retrieve feature status.",
+                success=False,
+                function_name="_handle_feature_status",
+            )
 
     def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        success: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
         resp = {"message": message, "success": success}
         if data:
             resp["data"] = data
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
         return resp
 
 

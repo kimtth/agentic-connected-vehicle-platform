@@ -149,12 +149,14 @@ class ChargingEnergyPlugin:
             return self._format_response(
                 f"I found {len(nearby_stations)} charging stations near you:\n\n{stations_text}",
                 data={"stations": nearby_stations, "vehicleId": vid},
+                function_name="_handle_charging_stations",
             )
         except Exception as e:
             logger.error(f"Error retrieving charging stations: {str(e)}")
             return self._format_response(
                 "I encountered an error while retrieving charging stations. Please try again later.",
                 success=False,
+                function_name="_handle_charging_stations",
             )
 
     @kernel_function(description="Check charging status and battery")
@@ -215,12 +217,14 @@ class ChargingEnergyPlugin:
             return self._format_response(
                 response_text,
                 data={"chargingStatus": charging_status, "vehicleId": vid},
+                function_name="_handle_charging_status",
             )
         except Exception as e:
             logger.error(f"Error retrieving charging status: {str(e)}")
             return self._format_response(
                 "I encountered an error while retrieving the charging status. Please try again later.",
                 success=False,
+                function_name="_handle_charging_status",
             )
 
     @kernel_function(description="Start vehicle charging")
@@ -284,6 +288,7 @@ class ChargingEnergyPlugin:
                         "status": "success",
                         "commandId": command_obj.command_id,
                     },
+                    function_name="_handle_start_charging",
                 )
             else:
                 return self._format_response(
@@ -295,12 +300,14 @@ class ChargingEnergyPlugin:
                         "status": "failed",
                         "error": "Command processing failed",
                     },
+                    function_name="_handle_start_charging",
                 )
         except Exception as e:
             logger.error(f"Error starting charging: {str(e)}")
             return self._format_response(
                 "I encountered an error while trying to start charging. Please try again later.",
                 success=False,
+                function_name="_handle_start_charging",
             )
 
     @kernel_function(description="Stop vehicle charging")
@@ -363,6 +370,7 @@ class ChargingEnergyPlugin:
                         "status": "success",
                         "commandId": command_obj.command_id,
                     },
+                    function_name="_handle_stop_charging",
                 )
             else:
                 return self._format_response(
@@ -374,12 +382,14 @@ class ChargingEnergyPlugin:
                         "status": "failed",
                         "error": "Command processing failed",
                     },
+                    function_name="_handle_stop_charging",
                 )
         except Exception as e:
             logger.error(f"Error stopping charging: {str(e)}")
             return self._format_response(
                 "I encountered an error while trying to stop charging. Please try again later.",
                 success=False,
+                function_name="_handle_stop_charging",
             )
 
     @kernel_function(description="Get energy usage metrics")
@@ -489,12 +499,14 @@ class ChargingEnergyPlugin:
                 f"• Energy recovered from regenerative braking: {energy_usage['regenerativeBraking']} kWh\n"
                 f"• Estimated cost: ${energy_usage['costEstimate']}",
                 data={"energyUsage": energy_usage, "vehicleId": vid},
+                function_name="_handle_energy_usage",
             )
         except Exception as e:
             logger.error(f"Error retrieving energy usage: {str(e)}")
             return self._format_response(
                 "I encountered an error while retrieving energy usage data. Please try again later.",
                 success=False,
+                function_name="_handle_energy_usage",
             )
 
     @kernel_function(description="Estimate vehicle range")
@@ -568,12 +580,14 @@ class ChargingEnergyPlugin:
                 f"In eco mode, you could potentially reach {range_data['estimatedRangeEcoKm']} km. "
                 f"The nearest charging station is {range_data['nearestStationKm']} km away.",
                 data={"rangeData": range_data, "vehicleId": vid},
+                function_name="_handle_range_estimation",
             )
         except Exception as e:
             logger.error(f"Error estimating range: {str(e)}")
             return self._format_response(
                 "I encountered an error while estimating your vehicle's range. Please try again later.",
                 success=False,
+                function_name="_handle_range_estimation",
             )
 
     async def _get_vehicle_location(self, vehicle_id: Optional[str]) -> Dict[str, Any]:
@@ -649,9 +663,14 @@ class ChargingEnergyPlugin:
             return None
 
     def _format_response(
-        self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
+        self,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+        success: bool = True,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
         resp = {"message": message, "success": success}
         if data:
             resp["data"] = data
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
         return resp

@@ -432,10 +432,69 @@ class SafetyEmergencyPlugin:
             )
 
     def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        success: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
         resp = {"message": message, "success": success}
         if data:
             resp["data"] = data
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
         return resp
+
+    @kernel_function(description="Example emergency action")
+    async def _handle_emergency_example(
+        self,
+        vehicle_id: Annotated[str, "Vehicle GUID for example action"] = "",
+        call_context: Annotated[Dict[str, Any], "Invocation context"] = {},
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Handle an example emergency action."""
+        vid = extract_vehicle_id(call_context, vehicle_id or None)
+        if not vid:
+            return self._format_response(
+                "Please specify which vehicle you are using for the example action.",
+                success=False,
+            )
+
+        try:
+            await self.cosmos_client.ensure_connected()
+
+            # Check if vehicle exists
+            vehicles = await self.cosmos_client.list_vehicles()
+            vehicle = find_vehicle(vehicles, vid)
+            if not vehicle:
+                return self._format_response(
+                    f"Vehicle with ID {vid} not found.", success=False
+                )
+
+            # Simulate some emergency action logic
+            await self._apply_status_update(
+                vid,
+                {
+                    "exampleAction": {
+                        "executed": True,
+                        "timestamp": datetime.datetime.now().isoformat(),
+                    }
+                },
+            )
+            return self._format_response(
+                "Emergency example action has been executed successfully.",
+                data={
+                    "action": "emergency_example",
+                    "vehicleId": vid,
+                    "status": "executed",
+                },
+                function_name="_handle_emergency_example",
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling emergency example action: {e}")
+            return self._format_response(
+                "I encountered an error while processing the emergency example action. "
+                "Please try again.",
+                success=False,
+            )
 

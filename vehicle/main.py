@@ -58,7 +58,7 @@ from plugin.mcp_poi_server import start_poi_server
 from plugin.mcp_navigation_server import start_navigation_server
 
 # Load environment variables first
-env_type = os.getenv("ENV_TYPE", "").lower()
+env_type = os.getenv("ENV_TYPE", "dev").lower()
 if env_type.startswith("dev") or env_type in ("local",):
     load_dotenv(override=True)
 
@@ -756,6 +756,40 @@ async def delete_notification(notification_id: str):
     return GenericDetailResponse(
         detail=f"Notification {notification_id} deleted successfully"
     )
+
+
+@app.get("/api/notifications/stream")
+async def stream_notifications(vehicle_id: str):
+    client = get_cosmos_client()
+    connected = await client.ensure_connected()
+
+    async def gen():
+        if not connected:
+            # Early DB unavailable signal
+            yield f"data: {json.dumps({'error': 'db_unavailable'})}\n\n"
+            return
+
+        last_ts = None
+        while True:
+            try:
+                notifications = await client.list_notifications(vehicle_id)
+                fresh = []
+                for n in notifications:
+                    ts = getattr(n, "timestamp", None)
+                    if last_ts is None or (ts and ts > last_ts):
+                        fresh.append(n)
+                if fresh:
+                    last_ts = max([f.timestamp for f in fresh if f.timestamp], default=last_ts)
+                    for f in reversed(fresh):  # oldest first
+                        yield f"data: {json.dumps(f.model_dump(by_alias=True))}\n\n"
+                await asyncio.sleep(3)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Notification stream error: {e}")
+                await asyncio.sleep(5)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/api/debug/cosmos")
