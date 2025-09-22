@@ -125,18 +125,15 @@ class RemoteAccessPlugin(BasePlugin):
             )
             return self._format_response(
                 f"I've {action}ed your vehicle doors.",
-                data={
-                    "action": f"door_{action}",
-                    "vehicleId": vid,
-                    "commandId": command_id,
-                },
+                data={"action": f"door_{action}", "vehicleId": vid, "commandId": command_id},
+                function_name="_handle_door_lock",
             )
-
         except Exception as e:
             logger.error(f"Error handling door lock request: {e}")
             return self._format_response(
                 f"I encountered an error while trying to {action} the doors. Please try again.",
                 success=False,
+                function_name="_handle_door_lock",
             )
 
     @kernel_function(description="Handle remote engine start/stop request.")
@@ -194,18 +191,14 @@ class RemoteAccessPlugin(BasePlugin):
             verb = "stopped" if action == "stop" else f"{action}ed"
             return self._format_response(
                 f"I've {verb} your vehicle engine remotely.",
-                data={
-                    "action": f"engine_{action}",
-                    "vehicleId": vid,
-                    "commandId": command_id,
-                },
+                data={"action": f"engine_{action}", "vehicleId": vid, "commandId": command_id},
+                function_name="_handle_engine_control",
             )
-
         except Exception as e:
-            logger.error(f"Error handling engine control: {e}")
             return self._format_response(
                 f"I encountered an error while trying to {action} the engine. Please try again.",
                 success=False,
+                function_name="_handle_engine_control",
             )
 
     @kernel_function(description="Handle horn and lights activation.")
@@ -252,25 +245,27 @@ class RemoteAccessPlugin(BasePlugin):
             )
             return self._format_response(
                 "I've activated the horn and lights to help you locate your vehicle.",
-                data={
-                    "action": "HORN_LIGHTS",
-                    "vehicleId": vid,
-                    "commandId": command_id,
-                },
+                data={"action": "HORN_LIGHTS", "vehicleId": vid, "commandId": command_id},
+                function_name="_handle_horn_lights",
             )
-
         except Exception as e:
             logger.error(f"Error activating horn and lights: {e}")
             return self._format_response(
                 "I encountered an error while activating horn and lights. Please try again.",
                 success=False,
+                function_name="_handle_horn_lights",
             )
 
     def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        success: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
         resp = {"message": message, "success": success}
         if data:
             resp["data"] = data
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
         return resp
 

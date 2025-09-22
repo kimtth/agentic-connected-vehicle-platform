@@ -1,4 +1,4 @@
-import { api } from './apiClient';
+import { api, apiFetch } from './apiClient';
 import { API_BASE_URL } from './config';
 import { INTERVALS } from '../config/intervals';
 
@@ -116,67 +116,84 @@ export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) =>
       handlers: new Set(),
       refCount: 0,
       started: false,
+      controller: null,
+      reader: null,
       connect() {
-        if (record.started || (typeof document !== 'undefined' && document.hidden)) {
-          return;
-        }
+        if (record.started || (typeof document !== 'undefined' && document.hidden)) return;
         record.started = true;
-        const streamUrl = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
-        const es = new EventSource(streamUrl);
-        record.eventSource = es;
-
-        es.onmessage = (event) => {
-          let statusData;
+        const url = `${API_BASE_URL}/api/vehicle/${encodeURIComponent(vehicleId)}/status/stream`;
+        (async () => {
+          record.controller = new AbortController();
           try {
-            statusData = JSON.parse(event.data);
+            const res = await apiFetch(url, {
+              method: 'GET',
+              headers: { Accept: 'text/event-stream' },
+              signal: record.controller.signal
+            });
+            if (!res.ok || !res.body) {
+              const err = new Error(`Status stream failed (${res.status})`);
+              err.code = 'STREAM_ERROR';
+              record.handlers.forEach(h => h.onError?.(err));
+              record.started = false;
+              return;
+            }
+            const reader = res.body.getReader();
+            record.reader = reader;
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              let idx;
+              while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                const raw = buffer.slice(0, idx).trim();
+                buffer = buffer.slice(idx + 2);
+                if (!raw || !raw.startsWith('data:')) continue;
+                const payload = raw.replace(/^data:\s*/, '');
+                try {
+                  const json = JSON.parse(payload);
+                  if (json?.error) {
+                    const err = new Error(json.error);
+                    err.code = 'STREAM_ERROR';
+                    record.handlers.forEach(h => h.onError?.(err));
+                  } else {
+                    // cache latest
+                    try { statusFetchCache.set(vehicleId, { data: json, ts: Date.now() }); } catch { }
+                    record.handlers.forEach(h => h.onStatusUpdate?.(json));
+                  }
+                } catch (e) {
+                  record.handlers.forEach(h => h.onError?.(e));
+                }
+              }
+            }
           } catch (e) {
-            record.handlers.forEach(h => h.onError?.(e));
-            return;
+            if (e.name !== 'AbortError') {
+              record.handlers.forEach(h => h.onError?.(e));
+            }
+          } finally {
+            record.started = false;
           }
-          if (statusData?.error) {
-            const err = new Error(statusData.error);
-            err.code = 'STREAM_ERROR';
-            record.handlers.forEach(h => h.onError?.(err));
-            return;
-          }
-          record.handlers.forEach(h => h.onStatusUpdate?.(statusData));
-        };
-
-        es.onerror = (error) => {
-          if (es.readyState === EventSource.CLOSED) {
-            const err = new Error('Status stream connection closed');
-            err.code = 'STREAM_CLOSED';
-            record.handlers.forEach(h => h.onError?.(err));
-          } else {
-            record.handlers.forEach(h => h.onError?.(error));
-          }
-        };
+        })();
       }
     };
     activeStatusStreams.set(vehicleId, record);
-
-    // Visibility handling: defer or reconnect when tab becomes visible
+    // Visibility handling
     if (typeof document !== 'undefined') {
       const visibilityHandler = () => {
         if (!activeStatusStreams.has(vehicleId)) {
           document.removeEventListener('visibilitychange', visibilityHandler);
           return;
         }
-        if (!document.hidden && record.eventSource == null) {
-          record.started = false;
+        if (!document.hidden && !record.started) {
           record.connect();
-        } else if (document.hidden && record.eventSource) {
-          // Suspend to reduce background usage
-          record.eventSource.close();
-          record.eventSource = null;
-          record.started = false;
+        } else if (document.hidden && record.controller) {
+          try { record.controller.abort(); } catch { }
         }
       };
       document.addEventListener('visibilitychange', visibilityHandler);
-      // Initial attempt
       visibilityHandler();
     } else {
-      // Non-browser environment
       record.connect();
     }
   }
@@ -185,8 +202,6 @@ export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) =>
   const handlerObj = { onStatusUpdate, onError };
   record.handlers.add(handlerObj);
   record.refCount += 1;
-
-  // If stream not started (e.g., created while document hidden) try to connect
   record.connect();
 
   let cleaned = false;
@@ -197,13 +212,10 @@ export const streamVehicleStatus = async (vehicleId, onStatusUpdate, onError) =>
     record.handlers.delete(handlerObj);
     record.refCount -= 1;
     if (record.refCount <= 0) {
-      if (record.eventSource) {
-        record.eventSource.close();
-      }
+      try { record.controller && record.controller.abort(); } catch { }
       activeStatusStreams.delete(vehicleId);
     }
   };
-
   return cleanup;
 };
 
@@ -265,7 +277,7 @@ export const subscribeToVehicleStatus = (vehicleId, onStatusUpdate, onError) => 
 // ---- Added global unsubscribe helper ----
 export const unsubscribeAllVehicleStatusStreams = () => {
   activeStatusStreams.forEach(rec => {
-    try { rec.eventSource && rec.eventSource.close(); } catch {}
+    try { rec.eventSource && rec.eventSource.close(); } catch { }
   });
   activeStatusStreams.clear();
 };

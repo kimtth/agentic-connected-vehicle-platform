@@ -335,9 +335,14 @@ export async function apiFetch(input, init = {}) {
   const headers = {
     ...(init.headers || {}),
     ...(auth || {}),
-    'Content-Type': init.body && !(init.headers && init.headers['Content-Type']) ? 'application/json' : (init.headers || {})['Content-Type']
+    'Content-Type': init.body && !(init.headers && init.headers['Content-Type'])
+      ? 'application/json'
+      : (init.headers || {})['Content-Type']
   };
-  return fetch(input, { ...init, headers });
+  const fullUrl = (typeof input === 'string' && input.startsWith('/'))
+    ? (baseURL ? baseURL + input : input)
+    : input;
+  return fetch(fullUrl, { ...init, headers });
 }
 
 /**

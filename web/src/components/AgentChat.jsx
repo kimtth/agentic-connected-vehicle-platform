@@ -6,7 +6,7 @@ import {
   List, ListItem, Divider, Tooltip, IconButton
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { askAgent } from '../api/apiClient';  
+import { streamAgent } from '../api/chat';
 import { styled } from '@mui/system';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -126,6 +126,7 @@ const AgentChat = ({ vehicleId }) => {
   const [chatHistory, setChatHistory] = useState([]);
   const [chatAreaHeight, setChatAreaHeight] = useState(0); // dynamic chat history height
   const messagesEndRef = useRef(null);
+  const currentAbortRef = useRef(null);
   
   // Generate a session ID if we don't have one
   useEffect(() => {
@@ -209,163 +210,106 @@ const AgentChat = ({ vehicleId }) => {
   
   const submitQuery = async (textParam) => {
     const textToSend = (typeof textParam === 'string' ? textParam : query).trim();
-    if (!textToSend) return;
+    if (!textToSend || loading) return;
 
-    // Add user message to chat history
-    const userMessage = {
-      type: 'user',
-      text: textToSend,
+    const userMessage = { type: 'user', text: textToSend, timestamp: new Date().toISOString() };
+    setChatHistory(prev => [...prev, userMessage]);
+    setLoading(true);
+    setQuery('');
+
+    const streamingPlaceholderId = `agent-${Date.now()}`;
+    setChatHistory(prev => [...prev, {
+      type: 'agent',
+      text: '',
+      agentType: selectedAgent.type,
+      agentTitle: selectedAgent.title,
+      streaming: true,
+      id: streamingPlaceholderId,
       timestamp: new Date().toISOString()
+    }]);
+
+    const combined = [...chatHistory, userMessage];
+    const lastItems = combined.slice(-10).map(m => ({
+      role: m.type === 'user' ? 'user' : (m.type === 'agent' ? 'assistant' : m.type),
+      content: m.text
+    }));
+
+    const sid = sessionId || generateSessionId();
+    if (!sessionId) setSessionId(sid);
+
+    const payload = {
+      query: textToSend,
+      context: {
+        agentType: selectedAgent.type,
+        conversationHistory: lastItems,
+        vehicleId: vehicleId,
+        timestamp: new Date().toISOString()
+      },
+      sessionId: sid
     };
 
-    setChatHistory(prev => [...prev, userMessage]);
-    
-    setLoading(true);
-    
+    // abort previous stream if any
+    if (currentAbortRef.current) {
+      currentAbortRef.current();
+      currentAbortRef.current = null;
+    }
     try {
-      // Build compact conversation history (last 10 messages including new one)
-      const combined = [...chatHistory, userMessage];
-      const lastItems = combined.slice(-10).map(m => ({
-        role: m.type === 'user' ? 'user' : (m.type === 'agent' ? 'assistant' : m.type),
-        content: m.text
-      }));
-
-      const requestPayload = {
-        query: `${textToSend}`,
-        context: {
-          agentType: selectedAgent.type,
-          conversationHistory: lastItems,
-          vehicleId: vehicleId,
-          timestamp: new Date().toISOString()
+      const abortStream = streamAgent(payload, {
+        onChunk: (fullText, chunk) => {
+          if (fullText === 'Processing your request...' && !chunk.complete) {
+            return; // suppress placeholder text
+          }
+          setChatHistory(prev => prev.map(m =>
+            m.id === streamingPlaceholderId
+              ? {
+                  ...m,
+                  text: fullText,
+                  pluginsUsed: chunk.pluginsUsed || m.pluginsUsed
+                }
+              : m
+          ));
         },
-        sessionId: sessionId,
-        stream: false
-      };
-
-      // Log the API call in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 Sending agent request:', requestPayload);
-      }
-      
-      const responseData = await askAgent(requestPayload);
-      const agentMsg = responseData.response || "Sorry, I couldn't process that request.";
-      const dataBlock = responseData.data;
-      const plugins = responseData.pluginsUsed || []; // enforce camelCase only
-      const execTime = responseData.executionTime || 0;
-      const success = responseData.success === true;
-      
-      // Log the response in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Agent response received:', responseData);
-      }
-      
-      // Add agent response to chat history
-      const agentMessage = {
-        type: 'agent',
-        text: agentMsg,
-        agentType: selectedAgent.type,
-        agentTitle: selectedAgent.title,
-        data: dataBlock,
-        pluginsUsed: plugins,
-        executionTime: execTime,
-        success,
-        timestamp: new Date().toISOString()
-      };
-      
-      setChatHistory(prev => [...prev, agentMessage]);
-    } catch (error) {
-      console.error(`Error querying ${selectedAgent.type}:`, error);
-      
-      // More detailed error handling
-      let errorMessage = "Sorry, there was an error processing your request.";
-      let errorDetails = null;
-      
-      // Check for custom error messages from the API client
-      if (error.userMessage) {
-        errorMessage = error.userMessage;
-        errorDetails = {
-          type: error.isTimeout ? 'timeout' : error.isNetworkError ? 'network_error' : 'api_error',
-          agentType: selectedAgent.type,
-          timestamp: new Date().toISOString()
-        };
-      } else if (error.response) {
-        // Server responded with error status
-        const status = error.response.status;
-        const data = error.response.data;
-        
-        switch (status) {
-          case 503:
-            errorMessage = "The agent service is temporarily unavailable. Please try again in a moment.";
-            break;
-          case 404:
-            errorMessage = "The requested agent endpoint was not found. Please check your configuration.";
-            break;
-          case 500:
-            errorMessage = "Internal server error. Please try again later.";
-            break;
-          case 504:
-            errorMessage = "Gateway timeout - the request took too long. Please try again with a simpler query.";
-            break;
-          default:
-            errorMessage = `Server error (${status}): ${data?.detail || data?.message || error.response.statusText}`;
+        onComplete: (finalText, chunk) => {
+          setChatHistory(prev => prev.map(m =>
+            m.id === streamingPlaceholderId
+              ? {
+                  ...m,
+                  text: finalText || m.text,
+                  streaming: false,
+                  pluginsUsed: chunk?.pluginsUsed || m.pluginsUsed
+                }
+              : m
+          ));
+          currentAbortRef.current = null;
+        },
+        onError: () => {
+          setChatHistory(prev => prev.map(m =>
+            m.id === streamingPlaceholderId
+              ? {
+                  ...m,
+                  text: (m.text && m.text.length)
+                    ? m.text + '\n\n[Streaming interrupted]'
+                    : 'Streaming failed. Please retry.',
+                  streaming: false,
+                  error: true
+                }
+              : m
+          ));
+          currentAbortRef.current = null;
         }
-        
-        errorDetails = {
-          status: status,
-          endpoint: '/agent/ask',
-          agentType: selectedAgent.type,
-          timestamp: new Date().toISOString()
-        };
-      } else if (error.request) {
-        // Request was made but no response received
-        if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-          errorMessage = "The request is taking longer than expected. The agent might be processing a complex operation. Please try again or simplify your request.";
-          errorDetails = {
-            type: 'timeout',
-            endpoint: '/agent/ask',
-            agentType: selectedAgent.type,
-            timestamp: new Date().toISOString(),
-            hint: 'Agent operations can take 10-30 seconds. Consider increasing timeout if this persists.'
-          };
-        } else {
-          errorMessage = "Unable to connect to the server. Please ensure the backend service is running on port 8000.";
-          errorDetails = {
-            type: 'network_error',
-            endpoint: '/agent/ask',
-            agentType: selectedAgent.type,
-            timestamp: new Date().toISOString(),
-            hint: 'Check if the backend is running: python main.py'
-          };
-        }
-      } else {
-        // Something else happened
-        errorMessage = `Request error: ${error.message}`;
-        errorDetails = {
-          type: 'client_error',
-          message: error.message,
-          agentType: selectedAgent.type,
-          timestamp: new Date().toISOString()
-        };
-      }
-      
-      // Add error response to chat history with more detail
-      const errorResponseMessage = {
-        type: 'error',
-        text: errorMessage,
-        errorDetails: errorDetails,
-        timestamp: new Date().toISOString()
-      };
-      
-      setChatHistory(prev => [...prev, errorResponseMessage]);
-      
-      // Show hint in development mode
-      if (process.env.NODE_ENV === 'development' && errorDetails?.hint) {
-        console.log('💡 Hint:', errorDetails.hint);
-      }
+      });
+      currentAbortRef.current = abortStream;
+    } catch (e) {
+      console.error('stream start error', e);
+      setChatHistory(prev => prev.map(m =>
+        m.id === streamingPlaceholderId
+          ? { ...m, text: 'Unable to start stream.', streaming: false, error: true }
+          : m
+      ));
     } finally {
       setLoading(false);
-      setQuery(''); // Clear input field after submission
     }
+    return currentAbortRef.current;
   };
 
   const handleQuickAction = (message) => {
@@ -553,6 +497,11 @@ const AgentChat = ({ vehicleId }) => {
                               {JSON.stringify(message.data, null, 2)}
                             </pre>
                           </Box>
+                        )}
+                        {message.streaming && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                            Streaming...
+                          </Typography>
                         )}
                       </Paper>
                     </ListItem>

@@ -217,12 +217,14 @@ class DiagnosticsBatteryPlugin:
                     status=status,
                     vehicle_id=vid,
                 ).model_dump(by_alias=True),
+                function_name="_handle_diagnostics",
             )
         except Exception as e:
             logger.error(f"Error running diagnostics: {str(e)}")
             return self._format_response(
                 "I encountered an error while running diagnostics. Please try again later.",
                 success=False,
+                function_name="_handle_diagnostics",
             )
 
     @kernel_function(description="Check battery status and health")
@@ -405,12 +407,14 @@ class DiagnosticsBatteryPlugin:
             return self._format_response(
                 combined_message,
                 data=battery_response.model_dump(by_alias=True),
+                function_name="_handle_battery_status",
             )
         except Exception as e:
             logger.error(f"Error checking battery status: {str(e)}")
             return self._format_response(
                 "I encountered an error while checking battery status. Please try again later.",
                 success=False,
+                function_name="_handle_battery_status",
             )
 
     @kernel_function(description="Check system health and status")
@@ -523,13 +527,14 @@ class DiagnosticsBatteryPlugin:
                     vehicle_id=vid,
                     failed_commands=len(failed_commands),
                 ).model_dump(by_alias=True),
+                function_name="_handle_system_health",
             )
-
         except Exception as e:
             logger.error(f"Error checking system health: {e}")
             return self._format_response(
                 "I encountered an error while checking system health. Please try again later.",
                 success=False,
+                function_name="_handle_system_health",
             )
 
     @kernel_function(description="Check vehicle maintenance schedule")
@@ -684,20 +689,26 @@ class DiagnosticsBatteryPlugin:
             return self._format_response(
                 response_text,
                 data=MaintenanceCheckData(
-                    maintenance_items=[
-                        MaintenanceItem(**mi) for mi in maintenance_items
-                    ],
+                    maintenance_items=[MaintenanceItem(**mi) for mi in maintenance_items],
                     vehicle_id=vid,
                 ).model_dump(by_alias=True),
+                function_name="_handle_maintenance_check",
             )
         except Exception as e:
             logger.error(f"Error checking maintenance: {str(e)}")
             return self._format_response(
                 "I encountered an error while checking maintenance status. Please try again later.",
                 success=False,
+                function_name="_handle_maintenance_check",
             )
 
     def _format_response(
-        self, message: str, data: Optional[Dict[str, Any]] = None, success: bool = True
+        self,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+        success: bool = True,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
-        return {"message": message, "data": data or {}, "success": success}
+        resp = {"message": message, "data": data or {}, "success": success}
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
+        return resp

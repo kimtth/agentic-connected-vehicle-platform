@@ -145,10 +145,19 @@ class InformationServicesPlugin:
             )
             # ensure result is JSON-serializable
             serializable = self._ensure_serializable(result)
-            return json.dumps(serializable)
+            return json.dumps({
+                "message": "Weather data retrieved.",
+                "data": serializable,
+                "success": True,
+                "plugins_used": [f"{self.__class__.__name__}._handle_weather"]
+            })
         except Exception as e:
-            logger.error(f"Error getting weather: {e}")
-            return json.dumps({"error": str(e)})
+            return json.dumps({
+                "message": "Error getting weather.",
+                "success": False,
+                "error": str(e),
+                "plugins_used": [f"{self.__class__.__name__}._handle_weather"]
+            })
 
     @kernel_function(
         description="Get traffic information for the vehicle's route",
@@ -178,10 +187,19 @@ class InformationServicesPlugin:
                 longitude=coords.get("longitude", 0.0),
             )
             serializable = self._ensure_serializable(result)
-            return json.dumps(serializable)
+            return json.dumps({
+                "message": "Traffic data retrieved.",
+                "data": serializable,
+                "success": True,
+                "plugins_used": [f"{self.__class__.__name__}._handle_traffic"]
+            })
         except Exception as e:
-            logger.error(f"Error getting traffic: {e}")
-            return json.dumps({"error": str(e)})
+            return json.dumps({
+                "message": "Error getting traffic.",
+                "success": False,
+                "error": str(e),
+                "plugins_used": [f"{self.__class__.__name__}._handle_traffic"]
+            })
 
     @kernel_function(
         description="Find points of interest near the vehicle's location",
@@ -209,10 +227,19 @@ class InformationServicesPlugin:
                 longitude=coords.get("longitude", 0.0),
             )
             serializable = self._ensure_serializable(result)
-            return json.dumps(serializable)
+            return json.dumps({
+                "message": "POIs retrieved.",
+                "data": serializable,
+                "success": True,
+                "plugins_used": [f"{self.__class__.__name__}._handle_pois"]
+            })
         except Exception as e:
-            logger.error(f"Error finding POIs: {e}")
-            return json.dumps({"error": str(e)})
+            return json.dumps({
+                "message": "Error finding POIs.",
+                "success": False,
+                "error": str(e),
+                "plugins_used": [f"{self.__class__.__name__}._handle_pois"]
+            })
 
     @kernel_function(
         description="Get navigation directions to a destination", name="get_directions"
@@ -240,10 +267,19 @@ class InformationServicesPlugin:
             )
             # CallToolResult
             serializable = self._ensure_serializable(result)
-            return serializable
+            return json.dumps({
+                "message": "Navigation retrieved.",
+                "data": serializable,
+                "success": True,
+                "plugins_used": [f"{self.__class__.__name__}._handle_navigation"]
+            })
         except Exception as e:
-            logger.error(f"Error getting navigation: {e}")
-            return json.dumps({"error": str(e)})
+            return json.dumps({
+                "message": "Error getting navigation.",
+                "success": False,
+                "error": str(e),
+                "plugins_used": [f"{self.__class__.__name__}._handle_navigation"]
+            })
 
     def _ensure_serializable(self, result):
         """Return a JSON-serializable representation of obj."""

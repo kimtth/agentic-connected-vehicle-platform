@@ -432,10 +432,15 @@ class SafetyEmergencyPlugin:
             )
 
     def _format_response(
-        self, message: str, success: bool = True, data: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        success: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        function_name: str | None = None,
     ) -> Dict[str, Any]:
         resp = {"message": message, "success": success}
         if data:
             resp["data"] = data
+        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
         return resp
 

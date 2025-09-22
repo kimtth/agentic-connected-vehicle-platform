@@ -138,8 +138,14 @@ async def ask_agent(
                         session_id=session_id,
                     )
                     yield f"data: {sc.model_dump_json(by_alias=True)}\n\n"
-
-            return StreamingResponse(stream_generator(), media_type="text/event-stream")
+            return StreamingResponse(
+                stream_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
         else:
             # Regular non-streaming response
             try:
@@ -185,7 +191,14 @@ async def _handle_direct_agent(request: AgentQueryRequest, agent_key: str, agent
                     session_id=session_id,
                 )
                 yield f"data: {sc.model_dump_json(by_alias=True)}\n\n"
-        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
     try:
         raw = await agent_manager.process_request(request.query, context)
         return _build_service_response(raw, session_id)
