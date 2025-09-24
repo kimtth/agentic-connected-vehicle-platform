@@ -15,6 +15,7 @@ _CAMEL_FIELD_MAP = {
     "ServiceCode": "serviceCode",
 }
 
+
 def ensure_dict(obj: Any) -> Dict[str, Any]:
     if obj is None:
         return {}
@@ -31,6 +32,7 @@ def ensure_dict(obj: Any) -> Dict[str, Any]:
         if hasattr(obj, original) and camel not in result:
             result[camel] = getattr(obj, original)
     return result
+
 
 def find_vehicle(vehicles: Iterable[Any], vid: str) -> Optional[Any]:
     if not vid:
@@ -49,6 +51,7 @@ def find_vehicle(vehicles: Iterable[Any], vid: str) -> Optional[Any]:
                 continue
     return None
 
+
 def extract_location(vehicle_status: Any, vehicle: Any) -> Optional[Dict[str, Any]]:
     vs = ensure_dict(vehicle_status)
     v = ensure_dict(vehicle)
@@ -61,6 +64,7 @@ def extract_location(vehicle_status: Any, vehicle: Any) -> Optional[Dict[str, An
             "longitude": last_loc.get("Longitude") or last_loc.get("longitude", 0),
         }
     return None
+
 
 def notification_to_dict(n: Any) -> Dict[str, Any]:
     return ensure_dict(n)

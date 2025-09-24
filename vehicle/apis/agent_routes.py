@@ -14,13 +14,7 @@ from models.agent_request import (
 from models.agent_response import AgentServiceResponse, StreamingChunk
 import uuid
 import logging
-from utils.agent_tools import (
-    search_vehicle_database,
-    recommend_services,
-    validate_command,
-    analyze_vehicle_data,
-    format_notification,
-)
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +34,6 @@ async def _resolve_agent_manager() -> "AgentManager":
     from agents.agent_manager import AgentManager
 
     return AgentManager()
-
-
-# Define request models
-
-
-# Define tool handlers (kept for backward compatibility)
-tool_handlers = {
-    "search_vehicle_database": search_vehicle_database,
-    "recommend_services": recommend_services,
-    "validate_command": validate_command,
-    "analyze_vehicle_data": analyze_vehicle_data,
-    "format_notification": format_notification,
-}
 
 
 def _build_service_response(raw: dict, session_id: str, vehicle_id: str | None = None) -> AgentServiceResponse:

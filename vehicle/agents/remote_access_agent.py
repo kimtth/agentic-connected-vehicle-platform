@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
-from utils.agent_tools import validate_command
+from utils.agent_context import validate_command
 from semantic_kernel.functions import kernel_function
 from semantic_kernel.agents import ChatCompletionAgent
 from plugin.oai_service import create_chat_service
@@ -90,19 +90,7 @@ class RemoteAccessPlugin(BasePlugin):
             command_type = "lock_doors" if lock else "unlock_doors"
             command_id = f"remote_access_{action}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-            validation = await validate_command(
-                command_id=command_id,
-                command_type=command_type,
-                parameters={"doors": "all"},
-            )
-
-            if not validation.get("valid", False):
-                return self._format_response(
-                    f"Command validation failed: {validation.get('reason', 'Unknown error')}",
-                    success=False,
-                )
-
-            # Create the command in Cosmos DB via model (replaces raw dict)
+            # Create the command in Cosmos DB via model
             command_obj = Command(
                 id=str(uuid.uuid4()),
                 command_id=command_id,

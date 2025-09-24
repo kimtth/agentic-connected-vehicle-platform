@@ -213,7 +213,7 @@ sequenceDiagram
 ## API Specifications
 
 ### Agent System APIs (`/api/agent/*`)
-- `POST /api/agent/ask` – Universal natural language interface (set `stream:true` for SSE streaming)
+- `POST /api/agent/ask` – Universal natural language interface (set `stream:true` for SSE streaming). Context prefers camelCase keys (e.g., `vehicleId`, `agentType`); snake_case is accepted but normalized internally.
 - `POST /api/agent/remote-access` – Remote access intents (lock/unlock, engine start/stop, locate)
 - `POST /api/agent/safety-emergency` – Emergency, collision, theft, SOS intents
 - `POST /api/agent/charging-energy` – Charging operations & energy insights
@@ -223,13 +223,13 @@ sequenceDiagram
 - `POST /api/agent/alerts-notifications` – Alert rule + notification interactions
 
 ### Agent Analytics / Recommendations
-- `POST /api/agent/analyze/vehicle-data` – Run vehicle diagnostics analysis (internally routes to diagnostics agent)
-- `POST /api/agent/recommend/services` – Service recommendation generation
+- `POST /api/agent/analyze/vehicle-data` – Diagnostics analysis (uses Diagnostics & Battery agent)
+- `POST /api/agent/recommend/services` – Service recommendation generation (currently handled via Feature Control agent pipeline)
 
 ### Direct Vehicle Control / Feature / Emergency Routers
-Explicit REST-style endpoints (bypass NL intent) for structured apps:
-- `POST /api/vehicles/{vehicle_id}/remote-access/doors` – `{ "action": "lock|unlock" }`
-- `POST /api/vehicles/{vehicle_id}/remote-access/engine` – `{ "action": "start|stop" }`
+Explicit REST-style endpoints (bypass NL intent) for structured apps. All accept query parameter `direct_api_call=true|false` (default `true`). When `false`, request is routed through the AgentManager instead of directly invoking the domain plugin.
+- `POST /api/vehicles/{vehicle_id}/remote-access/doors` – Body: `{ "action": "lock|unlock" }`
+- `POST /api/vehicles/{vehicle_id}/remote-access/engine` – Body: `{ "action": "start|stop" }`
 - `POST /api/vehicles/{vehicle_id}/remote-access/locate` – Activate horn & lights
 - `POST /api/vehicles/{vehicle_id}/emergency/call` – Initiate emergency call (`emergency_type` optional)
 - `POST /api/vehicles/{vehicle_id}/emergency/collision` – Report collision (`severity`, optional location)
@@ -238,15 +238,15 @@ Explicit REST-style endpoints (bypass NL intent) for structured apps:
 - `POST /api/vehicles/{vehicle_id}/features/lights` – Control lights (`light_type`, `action`)
 - `POST /api/vehicles/{vehicle_id}/features/climate` – Climate / temperature control
 - `POST /api/vehicles/{vehicle_id}/features/windows` – Window control (`action`, `windows`)
-- `GET  /api/vehicles/{vehicle_id}/features/status` – Aggregated feature status via agent
+- `GET  /api/vehicles/{vehicle_id}/features/status` – Aggregated feature status (direct plugin or via agent depending on `direct_api_call`)
 
 ### Core Platform & Data APIs
 - `GET    /api/vehicles` – List vehicle profiles
-- `POST   /api/vehicle` – Create vehicle profile (requires `vehicleId` field; `id` optional/legacy)
+- `POST   /api/vehicle` – Create vehicle profile (requires `vehicleId` field; `id` optional legacy)
 - `GET    /api/vehicles/{vehicle_id}` – Retrieve vehicle profile
 - `GET    /api/vehicles/{vehicle_id}/status` – Latest status snapshot
 - `GET    /api/vehicle/{vehicle_id}/status/stream` – Status SSE stream (note singular `vehicle` in path)
-- `PUT    /api/vehicle/{vehicle_id}/status` – Full status replace (must include matching `vehicleId`)
+- `PUT    /api/vehicle/{vehicle_id}/status` – Full status replace (body must include matching `vehicleId`)
 - `PATCH  /api/vehicle/{vehicle_id}/status` – Partial status update
 - `POST   /api/vehicles/{vehicle_id}/services` – Add service record
 - `GET    /api/vehicles/{vehicle_id}/services` – List service records
@@ -255,10 +255,11 @@ Explicit REST-style endpoints (bypass NL intent) for structured apps:
 - `GET    /api/vehicles/{vehicle_id}/command-history` – Summary history of commands
 - `POST   /api/command` – Submit command (async processing & notification)
 - `GET    /api/commands` – List commands (optional `vehicleId` query)
-- `GET    /api/notifications` – List notifications (optional `vehicleId`)
+- `GET    /api/notifications` – List notifications (optional `vehicleId` query)
 - `POST   /api/notifications` – Create notification
-- `PUT    /api/notifications/{NotificationId}/read` – Mark read (case-sensitive `NotificationId`)
-- `DELETE /api/notifications/{NotificationId}` – Delete notification
+- `PUT    /api/notifications/{notification_id}/read` – Mark read
+- `DELETE /api/notifications/{notification_id}` – Delete notification
+- `GET    /api/notifications/stream?vehicle_id=...` – SSE stream of new notifications (poll-based)
 
 ### Speech & Voice / Avatar
 - `GET /api/speech/token` – Azure Speech auth token (cached ~9 min)
@@ -273,6 +274,8 @@ Explicit REST-style endpoints (bypass NL intent) for structured apps:
 ### Health & Info
 - `GET /api/info` – Service status + version + Cosmos availability
 - `GET /api/health` – Detailed health (Cosmos + MCP sidecars weather/traffic/poi/navigation)
+- `GET /api/debug/cosmos` – Cosmos client diagnostics (development)
+- `POST /api/mcp/restart` – Restart MCP sidecars (when `ENABLE_MCP=true`)
 
 ```bash
 # List vehicles
@@ -340,20 +343,21 @@ curl -X POST http://localhost:8000/api/dev/seed?vehicleId=vehicle-123
 
 ### Field & Casing Notes
 All Pydantic models inherit from `CamelModel`:
-- Accept snake_case or camelCase input
+- Accept snake_case or camelCase inbound
 - Always emit camelCase JSON
 
 Key fields:
-- VehicleProfile: `vehicleId` (primary), optional `id` may still appear (legacy) – include `vehicleId` in requests
-- Command: `commandId` (assigned by backend when submitting), `commandType`, `vehicleId`, `status`
-- VehicleStatus: always includes `vehicleId` + server `timestamp`
-- Notification: `id`, `vehicleId`, `type`, `severity`, `read`
+- VehicleProfile: `vehicleId` (primary) — always include when creating.
+- Command: `commandId` (server-assigned), `commandType`, `vehicleId`, `status` (life-cycle: pending → processing → completed).
+- VehicleStatus: includes `vehicleId` + server `timestamp`.
+- Notification: `id`, `vehicleId`, `type`, `severity`, `read`.
 
-Never manually map keys—return model instances to preserve uniform serialization.
+Agent context best practice: prefer camelCase keys (`vehicleId`, `sessionId`, `agentType`).
 
 ### Streaming Conventions
-- Agent streaming (set `stream:true`): SSE frames `data: {json}\n\n` with fields `response`, `complete`, `sessionId`
-- Status streaming: SSE frames of raw status documents (includes `timestamp`)
+- Agent streaming (`stream:true`): SSE frames `data: {json}\n\n` accumulating `response` text; final frame sets `complete:true`. Fields: `response`, `complete`, `sessionId`, optional `pluginsUsed`, `error`.
+- Status streaming: raw status documents per frame (includes `timestamp`).
+- Notification streaming: each new notification as an SSE frame (oldest-first within each poll batch).
 
 ### Versioning
 `/api/info` reports the current backend version (presently `2.0.0`).
@@ -559,7 +563,7 @@ const response = await fetch('/api/agent/ask', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     query: "Prepare my car for a long trip",
-    context: { vehicle_id: "my-car" },
+  context: { vehicleId: "my-car" },
     stream: true
   })
 });
