@@ -57,8 +57,7 @@ The platform implements a sophisticated multi-agent system that provides two pri
 
 ### Key Components
 
-- **Agent Manager** - Central orchestrator using Semantic Kernel for intent interpretation and agent coordination
- - **Agent Manager** - Central orchestrator using Semantic Kernel for intent interpretation, agent routing, and optional Server-Sent Events (SSE) streaming responses
+- **Agent Manager** - Central orchestrator using Semantic Kernel for intent interpretation, agent routing, and optional Server-Sent Events (SSE) streaming responses
 - **Specialized Agents** - Domain-specific agents for vehicle operations (7 specialized agents)
 - **Vehicle Management** - Comprehensive vehicle profiles, status monitoring, and service records
 - **Command Execution** - Asynchronous vehicle control operations with real-time status tracking
