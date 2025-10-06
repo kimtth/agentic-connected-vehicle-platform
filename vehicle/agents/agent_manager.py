@@ -4,6 +4,7 @@ import json
 from contextlib import asynccontextmanager
 from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
 from semantic_kernel.functions.kernel_arguments import KernelArguments
+from semantic_kernel.filters import FunctionInvocationContext
 from azure.cosmos_db import get_cosmos_client
 
 from agents.alerts_notifications_agent import AlertsNotificationsAgent
@@ -99,6 +100,9 @@ class AgentManager:
                     self.general_agent,
                 ],
             )
+            
+            logger.debug("Manager agent initialized successfully")
+
         except Exception as e:
             logger.error(f"Failed to initialize manager agent: {e}")
             raise
@@ -186,7 +190,7 @@ class AgentManager:
             logger.error(f"Error enriching context for vehicleId {vehicle_id}: {e}")
         return enriched_context
 
-    def _parse_response_safely(self, response_content: str) -> ParsedAgentMessage:
+    def _parse_response_safely(self, response_content: str, plugins_used: Optional[List[str]] = None) -> ParsedAgentMessage:
         """Safely parse response content into ParsedAgentMessage model."""
         try:
             if hasattr(response_content, "content"):
@@ -194,23 +198,38 @@ class AgentManager:
             else:
                 content = str(response_content)
             content = content.strip()
+
+            # Try to parse as JSON first (this is what nested agents return)
             if content.startswith("{") and content.endswith("}"):
                 try:
                     parsed = json.loads(content)
                     if isinstance(parsed, dict):
+                        # Nested agents provide plugins_used in their response
+                        # Trust that information as the source of truth
+                        response_plugins = parsed.get("plugins_used") or []
+                        
                         return ParsedAgentMessage(
                             message=parsed.get("message") or content,
                             status=parsed.get("status") or "completed",
-                            plugins_used=parsed.get("plugins_used") or [],
+                            plugins_used=response_plugins,  # Use what nested agent provided
                             data=parsed.get("data"),
                         )
                 except json.JSONDecodeError:
                     logger.warning(
                         f"Failed to parse response as JSON: {content[:100]}..."
                     )
+
+            # Plain text response (no nested agent involved)
             if content:
-                return ParsedAgentMessage(message=content)
-            return ParsedAgentMessage(message="Command executed successfully.")
+                return ParsedAgentMessage(
+                    message=content,
+                    plugins_used=[]  # No plugin info available for plain text
+                )
+
+            return ParsedAgentMessage(
+                message="Command executed successfully.",
+                plugins_used=[]
+            )
         except Exception as e:
             logger.error(f"Error parsing response: {e}")
             return ParsedAgentMessage(
@@ -269,6 +288,7 @@ class AgentManager:
         async with self._managed_session(session_id):
             try:
                 logger.info(f"Processing request: {query[:100]}...")
+
                 # Attach query into context for kernel argument usage
                 context["query"] = query
                 enriched_context = await self._enrich_context(context)
@@ -280,14 +300,18 @@ class AgentManager:
                     arguments=kernel_args,
                 )
                 logger.debug(f"Raw SK response: {sk_response}")
+
+                # Parse response - nested agents provide plugins_used in their JSON response
                 parsed = self._parse_response_safely(sk_response.message)
                 agent_resp = self._build_agent_response(parsed)
                 logger.info(
-                    f"Request processed successfully: {agent_resp.response[:100]}..."
+                    f"Request processed successfully with plugins: {agent_resp.plugins_used}"
                 )
+
                 return agent_resp.model_dump(by_alias=True)
             except Exception as e:
                 logger.error(f"Error processing request: {e}", exc_info=True)
+
                 try:
                     if "enriched_context" not in locals():
                         enriched_context = await self._enrich_context(context)
@@ -334,14 +358,17 @@ class AgentManager:
                     self.general_agent,
                 ],
             )
+
             kernel_args = await self._prepare_kernel_arguments(enriched_context)
             sk_response = await fallback_manager.get_response(
                 messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
                 thread=self.thread,
                 arguments=kernel_args,
             )
+
             parsed = self._parse_response_safely(sk_response.message)
             agent_resp = self._build_agent_response(parsed, fallback_used=True)
+
             return agent_resp.model_dump(by_alias=True)
         except Exception as e:
             logger.error(f"Fallback processing failed: {e}")
@@ -389,6 +416,7 @@ class AgentManager:
         async with self._managed_session(session_id):
             try:
                 logger.info(f"Processing streaming request: {query[:100]}...")
+
                 context["query"] = query
                 enriched_context = await self._enrich_context(context)
 
@@ -397,7 +425,6 @@ class AgentManager:
                 await self._ensure_thread(session_id)
 
                 full_response = ""
-                plugins_used = []
                 async for chunk in self.manager.invoke_stream(
                     messages=f"Query: {query}\nContext: {json.dumps(enriched_context, default=str)}",
                     thread=self.thread,
@@ -407,24 +434,19 @@ class AgentManager:
                         continue
                     candidate = candidate.replace("\r", "")
 
-                    # Extract plugins_used if present in chunk
-                    if hasattr(chunk, "plugins_used"):
-                        plugins_used = getattr(chunk, "plugins_used", []) or []
-                    elif isinstance(chunk, dict) and "plugins_used" in chunk:
-                        plugins_used = chunk.get("plugins_used") or []
                     # Always append every non-empty candidate (preserve all spaces and formatting)
                     if candidate:
                         full_response += candidate
                         yield StreamingChunk(
                             response=full_response,
                             complete=False,
-                            plugins_used=plugins_used,
+                            plugins_used=[],  # Will be filled in final chunk
                         ).model_dump(by_alias=True)
-                    # else skip empty
 
                 if not full_response.strip():
                     full_response = "I processed your request."
 
+                # Parse final response to get plugins_used from nested agent
                 parsed = self._parse_response_safely(full_response)
 
                 yield StreamingChunk(
@@ -433,9 +455,10 @@ class AgentManager:
                     plugins_used=parsed.plugins_used or [],
                 ).model_dump(by_alias=True)
 
-                logger.info("Streaming request processed successfully")
+                logger.info(f"Streaming request processed successfully with plugins: {parsed.plugins_used}")
             except Exception as e:
                 logger.error(f"Error in streaming request: {e}", exc_info=True)
+
                 err = StreamingChunk(
                     response="I apologize, but I encountered an error processing your request.",
                     complete=True,

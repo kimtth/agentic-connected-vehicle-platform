@@ -122,17 +122,32 @@ def configure_logging(log_level: str | None = None) -> None:
     warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"websockets(\.|$)")
     warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"uvicorn\.protocols\.websockets\.websockets_impl")
     
-    # Suppress noisy Pydantic 2.11 deprecation about __get_pydantic_core_schema__
+    # Suppress ALL Pydantic V2.11 deprecation warnings (including from internal modules)
     warnings.filterwarnings(
         "ignore",
         category=DeprecationWarning,
-        message=r".*__get_pydantic_core_schema__.*PydanticDeprecatedSince211.*",
+        message=r".*PydanticDeprecatedSince211.*",
     )
+    
+    # Suppress Pydantic V2.0 deprecation warnings
+    warnings.filterwarnings(
+        "ignore",
+        category=DeprecationWarning,
+        message=r".*PydanticDeprecatedSince20.*",
+    )
+    
+    # Suppress specific Pydantic internal schema generation warnings
     warnings.filterwarnings(
         "ignore",
         category=DeprecationWarning,
         module=r"pydantic\._internal\._generate_schema",
-        message=r".*PydanticDeprecatedSince211.*",
+    )
+    
+    # Broader filter for any Pydantic deprecation
+    warnings.filterwarnings(
+        "ignore",
+        category=DeprecationWarning,
+        module=r"pydantic(\.|$)",
     )
 
 # A function to get a logger for a specific module

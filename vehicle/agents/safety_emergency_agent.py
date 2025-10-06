@@ -1,5 +1,6 @@
 import datetime
 import uuid
+import json
 from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
@@ -16,17 +17,20 @@ logger = get_logger(__name__)
 
 class SafetyEmergencyAgent:
     """
-    Safety & Emergency Agent for handling emergency-related features.
+    Safety & Emergency Agent for the Connected Car Platform.
     """
 
     def __init__(self):
-        # Get the singleton cosmos client instance
+        """Initialize the Safety & Emergency Agent."""
         self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="SafetyEmergencyAgent",
-            instructions="You specialize in safety and emergency.",
+            instructions=(
+                "You specialize in vehicle safety features and emergency responses. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[SafetyEmergencyPlugin()],
         )
 
@@ -436,11 +440,15 @@ class SafetyEmergencyPlugin:
         message: str,
         success: bool = True,
         data: Optional[Dict[str, Any]] = None,
-        function_name: str | None = None,
-    ) -> Dict[str, Any]:
-        resp = {"message": message, "success": success}
+        function_name: str = "",
+    ) -> str:  # Changed from Dict to str
+        """Return JSON string to preserve structure through SK's LLM layer."""
+        resp = {
+            "message": message,
+            "success": success,
+            "plugins_used": [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__],
+        }
         if data:
             resp["data"] = data
-        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
-        return resp
+        return json.dumps(resp)  # Return JSON string instead of dict
 

@@ -30,7 +30,10 @@ class InformationServicesAgent:
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="InformationServicesAgent",
-            instructions="You specialize in providing real-time information including weather, traffic, navigation, and points of interest.",
+            instructions=(
+                "You specialize in providing real-time information including weather, traffic, navigation, and points of interest. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[InformationServicesPlugin()],
         )
 
@@ -54,6 +57,7 @@ class InformationServicesPlugin:
         self.nav_client = None
 
         try:
+            from fastmcp import Client
             self.weather_client = Client(self._svc_urls["weather"])
             self.traffic_client = Client(self._svc_urls["traffic"])
             self.poi_client = Client(self._svc_urls["poi"])
@@ -64,13 +68,11 @@ class InformationServicesPlugin:
                 "poi": False,
                 "navigation": False,
             }
-            logger.info(f"FastMCP clients initialized for host {self._base_host}")
-        except Exception as e:
-            logger.warning(
-                f"FastMCP client init failed, will fallback to raw HTTP: {e}"
-            )
-        else:
+            logger.info(f"FastMCP clients initialized successfully for host {self._base_host}")
+        except ImportError:
             logger.info("fastmcp library not available, using raw HTTP fallback")
+        except Exception as e:
+            logger.warning(f"FastMCP client initialization failed, will fallback to raw HTTP: {e}")
 
     async def _enter_fastmcp(self, service: str, client) -> bool:
         """

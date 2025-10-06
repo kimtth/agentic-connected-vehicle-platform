@@ -1,5 +1,6 @@
 import datetime
 import uuid
+import json
 from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from semantic_kernel.functions import kernel_function
@@ -25,7 +26,10 @@ class AlertsNotificationsAgent:
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="AlertsNotificationsAgent",
-            instructions="You manage vehicle alerts and notifications.",
+            instructions=(
+                "You manage vehicle alerts and notifications. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[AlertsNotificationsPlugin()],
         )
 
@@ -323,7 +327,8 @@ class AlertsNotificationsPlugin:
         success: bool = True,
         data: Optional[Dict[str, Any]] = None,
         function_name: str = "",
-    ) -> Dict[str, Any]:
+    ) -> str:  # Changed from Dict to str
+        """Return JSON string to preserve structure through SK's LLM layer."""
         resp = {
             "message": message,
             "success": success,
@@ -331,4 +336,4 @@ class AlertsNotificationsPlugin:
         }
         if data:
             resp["data"] = data
-        return resp
+        return json.dumps(resp)  # Return JSON string instead of dict

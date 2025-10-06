@@ -1,5 +1,6 @@
 import datetime
 import uuid
+import json
 from typing import Dict, Any, Optional, Annotated
 from azure.cosmos_db import get_cosmos_client
 from utils.agent_context import validate_command
@@ -17,7 +18,7 @@ logger = get_logger(__name__)
 
 class RemoteAccessAgent:
     """
-    Remote Access Agent for controlling vehicle access and remote operations.
+    Remote Access Agent for handling vehicle remote control operations.
     """
 
     def __init__(self):
@@ -28,7 +29,11 @@ class RemoteAccessAgent:
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="RemoteAccessAgent",
-            instructions="You specialize in remote vehicle access control including door locks, engine start/stop, and horn/lights.",
+            instructions=(
+                "You specialize in remote vehicle operations like locking/unlocking doors, "
+                "starting engines, and controlling lights. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[RemoteAccessPlugin()],
         )
 
@@ -249,11 +254,15 @@ class RemoteAccessPlugin(BasePlugin):
         message: str,
         success: bool = True,
         data: Optional[Dict[str, Any]] = None,
-        function_name: str | None = None,
-    ) -> Dict[str, Any]:
-        resp = {"message": message, "success": success}
+        function_name: str = "",
+    ) -> str:  # Changed from Dict to str
+        """Return JSON string to preserve structure through SK's LLM layer."""
+        resp = {
+            "message": message,
+            "success": success,
+            "plugins_used": [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__],
+        }
         if data:
             resp["data"] = data
-        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
-        return resp
+        return json.dumps(resp)  # Return JSON string instead of dict
 

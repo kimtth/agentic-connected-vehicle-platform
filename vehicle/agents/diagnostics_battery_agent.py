@@ -14,6 +14,7 @@ from utils.logging_config import get_logger
 from utils.agent_context import extract_vehicle_id
 from utils.vehicle_object_utils import find_vehicle, ensure_dict
 from models.base import BaseSchemaModel  # NEW: base for camelCase serialization
+import json
 
 logger = get_logger(__name__)
 
@@ -82,13 +83,15 @@ class DiagnosticsBatteryAgent:
 
     def __init__(self):
         """Initialize the Diagnostics & Battery Agent."""
-        # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="DiagnosticsBatteryAgent",
-            instructions="You specialize in diagnostics and battery monitoring.",
+            instructions=(
+                "You specialize in diagnostics and battery monitoring. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[DiagnosticsBatteryPlugin()],
         )
 
@@ -708,7 +711,13 @@ class DiagnosticsBatteryPlugin:
         data: Optional[Dict[str, Any]] = None,
         success: bool = True,
         function_name: str | None = None,
-    ) -> Dict[str, Any]:
-        resp = {"message": message, "data": data or {}, "success": success}
-        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
-        return resp
+    ) -> str:  # Changed from Dict to str
+        """Return JSON string to preserve structure through SK's LLM layer."""
+        resp = {
+            "message": message,
+            "success": success,
+            "plugins_used": [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__],
+        }
+        if data:
+            resp["data"] = data
+        return json.dumps(resp)  # Return JSON string instead of dict

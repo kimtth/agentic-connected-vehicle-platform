@@ -9,24 +9,27 @@ from utils.logging_config import get_logger
 from agents.base.base_agent import BasePlugin
 from utils.agent_context import extract_vehicle_id
 from models.command import Command  
+import json
 
 logger = get_logger(__name__)
 
 
 class VehicleFeatureControlAgent:
     """
-    Vehicle Feature Control Agent for managing in-car features.
+    Vehicle Feature Control Agent for managing vehicle features and settings.
     """
 
     def __init__(self):
         """Initialize the Vehicle Feature Control Agent."""
-        # Get the singleton cosmos client instance
         self.cosmos_client = get_cosmos_client()
         service_factory = create_chat_service()
         self.agent = ChatCompletionAgent(
             service=service_factory,
             name="VehicleFeatureControlAgent",
-            instructions="You specialize in vehicle feature control including lights, climate, and comfort settings.",
+            instructions=(
+                "You specialize in controlling vehicle features like climate, seats, and entertainment. "
+                "IMPORTANT: Return the EXACT JSON response from your plugin functions without modification."
+            ),
             plugins=[VehicleFeatureControlPlugin()],
         )
 
@@ -316,12 +319,16 @@ class VehicleFeatureControlPlugin(BasePlugin):
         message: str,
         success: bool = True,
         data: Optional[Dict[str, Any]] = None,
-        function_name: str | None = None,
-    ) -> Dict[str, Any]:
-        resp = {"message": message, "success": success}
+        function_name: str = "",
+    ) -> str:  # Changed from Dict to str
+        """Return JSON string to preserve structure through SK's LLM layer."""
+        resp = {
+            "message": message,
+            "success": success,
+            "plugins_used": [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__],
+        }
         if data:
             resp["data"] = data
-        resp["plugins_used"] = [f"{self.__class__.__name__}.{function_name}"] if function_name else [self.__class__.__name__]
-        return resp
+        return json.dumps(resp)  # Return JSON string instead of dict
 
 
