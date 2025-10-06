@@ -410,7 +410,7 @@ You can use a single app registration for both the SPA frontend and API backend.
 Backend Configuration (vehicle/.env):
 ```env
 AZURE_TENANT_ID=<your-tenant-id>
-AZURE_CLIENT_ID=api://<your-app-client-id>   # Application ID URI (audience)
+AZURE_CLIENT_ID=api://<your-app-client-id> or <your-app-client-id>   # Application ID URI (audience)
 AZURE_AUTH_REQUIRED=true
 ```
 

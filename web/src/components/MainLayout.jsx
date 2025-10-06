@@ -5,7 +5,7 @@ import {
   Drawer, Box, Divider, List, ListItem, 
   ListItemIcon, ListItemText, ListItemButton,
   FormControl, InputLabel, Select, MenuItem,
-  useMediaQuery, useTheme
+  useMediaQuery, useTheme, Button
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -19,7 +19,11 @@ import SecurityIcon from '@mui/icons-material/Security';
 import InfoIcon from '@mui/icons-material/Info';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
+import LogoutIcon from '@mui/icons-material/Logout';
+import LoginIcon from '@mui/icons-material/Login';
 import { Link } from 'react-router-dom';
+import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react';
+import { loginRequest } from '../auth/msalConfig';
 
 const drawerWidth = 280; // Increased drawer width for large screens
 
@@ -77,11 +81,13 @@ const DrawerHeader = styled('div')(({ theme }) => ({
   justifyContent: 'flex-end',
 }));
 
-const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange, extraHeaderRight }) => {
+const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = useTheme();
-  // On mobile, we want the drawer to be temporarily displayed over content instead of pushing content
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
+  // MSAL authentication hooks
+  const { instance, accounts } = useMsal();
 
   const handleDrawerToggle = () => {
     setDrawerOpen(!drawerOpen);
@@ -93,6 +99,15 @@ const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange,
     if (vehicle) {
       onVehicleChange(vehicle);
     }
+  };
+
+  // Authentication handlers
+  const handleLogin = () => {
+    instance.loginRedirect(loginRequest).catch((error) => console.error('Login error:', error));
+  };
+
+  const handleLogout = () => {
+    instance.logoutRedirect().catch((error) => console.error('Logout error:', error));
   };
 
   // Navigation items for sidebar
@@ -148,12 +163,35 @@ const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange,
               </Select>
             </FormControl>
           )}
-          <Box sx={{ flexGrow: 1 }} /> {/* push right side content */}
-          {extraHeaderRight && (
+          <Box sx={{ flexGrow: 1 }} />
+          {/* Authentication buttons */}
+          <AuthenticatedTemplate>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {extraHeaderRight}
+              {accounts[0] && (
+                <Typography variant="body2" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
+                  {accounts[0].name || accounts[0].username}
+                </Typography>
+              )}
+              <Button
+                color="inherit"
+                startIcon={<LogoutIcon />}
+                onClick={handleLogout}
+                sx={{ textTransform: 'none' }}
+              >
+                Sign Out
+              </Button>
             </Box>
-          )}
+          </AuthenticatedTemplate>
+          <UnauthenticatedTemplate>
+            <Button
+              color="inherit"
+              startIcon={<LoginIcon />}
+              onClick={handleLogin}
+              sx={{ textTransform: 'none' }}
+            >
+              Sign In
+            </Button>
+          </UnauthenticatedTemplate>
         </Toolbar>
       </AppBarStyled>
       
@@ -182,7 +220,6 @@ const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange,
                   backgroundColor: '#f8f9fa',
                   borderRight: '1px solid #e5e7eb',
                 }),
-            // No font color overrides; rely on theme text colors
           },
         }}
       >

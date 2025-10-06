@@ -13,7 +13,6 @@ import VoiceControl from './components/VoiceControl';
 import { fetchVehicles } from './api/vehicles';
 import './App.css';
 import Dashboard from './pages/Dashboard';
-import AuthButtons from './components/auth/AuthButtons';
 import ProtectedRoute from './auth/ProtectedRoute';
 import ThemeToggle from './components/ThemeToggle';
 import { useIsAuthenticated } from '@azure/msal-react';
@@ -297,7 +296,6 @@ function App() {
           vehicles={vehicles}
           selectedVehicle={selectedVehicle}
           onVehicleChange={setSelectedVehicle}
-          extraHeaderRight={<AuthButtons />}
         >
           <Routes>
             <Route path="/" element={

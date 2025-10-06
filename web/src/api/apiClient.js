@@ -4,7 +4,6 @@
 
 import axios from 'axios';
 import { createRetryInterceptor } from './config';
-import { msalInstance, acquireApiToken, getAuthorizationHeader } from '../auth/msalConfig'; // ensure single shared instance
 
 // Support both env var names for base URL
 // Prefer explicit env; otherwise default to backend (avoid relying on a proxy that may not exist)
@@ -29,6 +28,7 @@ function resolveBaseURL() {
 }
 
 const baseURL = resolveBaseURL();
+
 // Create axios instance
 export const api = axios.create({
   baseURL,
@@ -56,125 +56,75 @@ function createRequestId() {
 }
 
 /**
- * Add request and response interceptors if needed
+ * Token provider callback - will be set by the auth context
+ * This allows the API client to acquire tokens without directly depending on MSAL
  */
-// Authorization + correlation id interceptor (silent token injection)
-api.interceptors.request.use(async (config) => {
+let tokenProvider = null;
+
+/**
+ * Set the token provider function
+ * @param {Function} provider - Async function that returns a token or null
+ */
+export function setTokenProvider(provider) {
+  tokenProvider = provider;
+}
+
+/**
+ * Request interceptor for adding authentication and correlation headers
+ */
+async function addAuthHeaders(config) {
   // Correlation ID
   if (!config.headers['X-Client-Request-Id']) {
     config.headers['X-Client-Request-Id'] = createRequestId();
   }
+  
   // Identify client for backend auditing
   if (!config.headers['X-Client-App']) {
-    config.headers['X-Client-App'] = 'web';
+    config.headers['X-Client-App'] = config._isAgentClient ? 'web-agent' : 'web';
   }
   
-  try {
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length) {
-      const acct = accounts[0];
-      const userName = acct.username;
-
-      // Prevent API calls if user_name is null or empty
-      if (!userName || userName.trim() === '') {
-        const error = new Error('User not authenticated - username is required');
-        error.code = 'USER_NOT_AUTHENTICATED';
-        throw error;
+  // Try to add authentication if token provider is configured
+  if (tokenProvider && !config.headers.Authorization) {
+    try {
+      const token = await tokenProvider();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      } else if (process.env.NODE_ENV === 'development') {
+        console.debug('[apiClient] No token available from provider');
       }
-
-      if (!config.headers['X-User-Name']) {
-        config.headers['X-User-Name'] = userName;
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[apiClient] Token provider error:', e?.message);
       }
-      if (!config.headers.Authorization) {
-        const token = await acquireApiToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        } else if (process.env.NODE_ENV === 'development') {
-          console.debug('[apiClient] Token acquisition returned null (no Authorization header set).');
-        }
-      }
-    } else {
-      // No accounts available - user not logged in
-      const error = new Error('User not authenticated - no valid account found');
-      error.code = 'USER_NOT_AUTHENTICATED';
-      throw error;
     }
-  } catch (e) {
-    if (e.code === 'USER_NOT_AUTHENTICATED') {
-      throw e; // Re-throw authentication errors
-    }
+  }
+  
+  return config;
+}
+
+// Add request interceptors
+api.interceptors.request.use(addAuthHeaders, (error) => Promise.reject(error));
+
+agentClient.interceptors.request.use(
+  async (config) => {
+    config._isAgentClient = true; // Flag for X-Client-App header
+    const result = await addAuthHeaders(config);
+    
     if (process.env.NODE_ENV === 'development') {
-      console.debug('[apiClient] MSAL not ready, sending request without token.', e?.message);
+      console.log('🚀 Agent API Request:', {
+        url: config.url,
+        method: config.method,
+        data: config.data,
+        timeout: config.timeout
+      });
     }
+    return result;
+  },
+  (error) => {
+    console.error('❌ Agent API Request Error:', error);
+    return Promise.reject(error);
   }
-  return config;
-}, (error) => {
-  return Promise.reject(error);
-});
-
-// Agent client correlation id (keep separate to avoid duplication)
-agentClient.interceptors.request.use(async (config) => {
-  if (!config.headers['X-Client-Request-Id']) {
-    config.headers['X-Client-Request-Id'] = createRequestId();
-  }
-  // Identify client for backend auditing
-  if (!config.headers['X-Client-App']) {
-    config.headers['X-Client-App'] = 'web-agent';
-  }
-  
-  try {
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length) {
-      const acct = accounts[0];
-      const userName = acct.username;
-
-      // Prevent API calls if user_name is null or empty
-      if (!userName || userName.trim() === '') {
-        const error = new Error('User not authenticated - username is required for agent operations');
-        error.code = 'USER_NOT_AUTHENTICATED';
-        throw error;
-      }
-
-      if (!config.headers['X-User-Id']) {
-        config.headers['X-User-Id'] = acct.homeAccountId || acct.localAccountId || userName;
-      }
-      if (!config.headers['X-User-Name']) {
-        config.headers['X-User-Name'] = userName;
-      }
-      if (!config.headers.Authorization) {
-        const token = await acquireApiToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        } else if (process.env.NODE_ENV === 'development') {
-          console.debug('[agentClient] No token acquired (Authorization header not set).');
-        }
-      }
-    } else {
-      // No accounts available - user not logged in
-      const error = new Error('User not authenticated - no valid account found for agent operations');
-      error.code = 'USER_NOT_AUTHENTICATED';
-      throw error;
-    }
-  } catch (e) {
-    if (e.code === 'USER_NOT_AUTHENTICATED') {
-      throw e; // Re-throw authentication errors
-    }
-    // For other errors, continue without auth headers in development
-  }
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.log('🚀 Agent API Request:', {
-      url: config.url,
-      method: config.method,
-      data: config.data,
-      timeout: config.timeout
-    });
-  }
-  return config;
-}, (error) => {
-  console.error('❌ Agent API Request Error:', error);
-  return Promise.reject(error);
-});
+);
 
 // Add retry interceptor for automatic endpoint correction
 createRetryInterceptor(api);
@@ -284,12 +234,12 @@ agentClient.interceptors.response.use(
   }
 );
 
-// Agent endpoint (fallback removed)
+// Agent endpoint
 const AGENT_AGENT_PATH = process.env.REACT_APP_AGENT_ENDPOINT || '/api/agent/ask';
 
 /**
  * Agent-specific API function
- * Ask an agent to process a query with endpoint fallback
+ * Ask an agent to process a query
  * @param {Object} payload - The request payload
  * @returns {Promise} The agent response
  */
@@ -299,7 +249,6 @@ export const askAgent = async (payload) => {
     throw new Error('Invalid payload - request data is required');
   }
 
-  // Try primary endpoint first
   try {
     const res = await agentClient.post(AGENT_AGENT_PATH, payload);
     
@@ -327,40 +276,54 @@ export const askAgent = async (payload) => {
 };
 
 /**
- * apiFetch wraps window.fetch adding Authorization header (if available).
- * Usage: const data = await apiFetch('/api/vehicles').then(r => r.json());
- */
-export async function apiFetch(input, init = {}) {
-  const auth = await getAuthorizationHeader();
-  const headers = {
-    ...(init.headers || {}),
-    ...(auth || {}),
-    'Content-Type': init.body && !(init.headers && init.headers['Content-Type'])
-      ? 'application/json'
-      : (init.headers || {})['Content-Type']
-  };
-  const fullUrl = (typeof input === 'string' && input.startsWith('/'))
-    ? (baseURL ? baseURL + input : input)
-    : input;
-  return fetch(fullUrl, { ...init, headers });
-}
-
-/**
- * Convenience JSON helpers
+ * Convenience JSON helpers using fetch
+ * These don't require a token provider - they can work with or without auth
  */
 export async function getJson(url) {
-  const r = await apiFetch(url);
-  if (!r.ok) throw new Error(`GET ${url} failed: ${r.status}`);
-  return r.json();
+  const r = await api.get(url);
+  return r.data;
 }
 
 export async function postJson(url, body) {
-  const r = await apiFetch(url, {
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) throw new Error(`POST ${url} failed: ${r.status}`);
-  return r.json();
+  const r = await api.post(url, body);
+  return r.data;
+}
+
+/**
+ * Fetch wrapper that adds Authorization header if token is available
+ * Useful for streaming endpoints (SSE) that need auth
+ * @param {string | Request} input - URL or Request object
+ * @param {RequestInit} init - Fetch options
+ * @returns {Promise<Response>} Fetch response
+ */
+export async function apiFetch(input, init = {}) {
+  const headers = { ...init.headers };
+  
+  // Add correlation ID
+  if (!headers['X-Client-Request-Id']) {
+    headers['X-Client-Request-Id'] = createRequestId();
+  }
+  
+  // Try to add authorization if token provider is configured
+  if (tokenProvider && !headers.Authorization) {
+    try {
+      const token = await tokenProvider();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('[apiFetch] Token provider error:', e?.message);
+      }
+    }
+  }
+  
+  // Construct full URL
+  const fullUrl = typeof input === 'string' && input.startsWith('/')
+    ? (baseURL ? baseURL + input : input)
+    : input;
+  
+  return fetch(fullUrl, { ...init, headers });
 }
 
 export default api;

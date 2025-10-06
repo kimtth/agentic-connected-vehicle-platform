@@ -1,58 +1,33 @@
-import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react';
-import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { useState, useEffect } from 'react';
-import { loginRequest, isClientIdConfigured } from './msalConfig';
+import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
+import { Box, Typography, Container } from '@mui/material';
 
 const ProtectedRoute = ({ children }) => {
-  const { inProgress, instance } = useMsal();
-  const [initializing, setInitializing] = useState(true);
-
-  useEffect(() => {
-    try {
-      const active = instance.getActiveAccount();
-      if (!active) {
-        const accounts = instance.getAllAccounts();
-        if (accounts.length) instance.setActiveAccount(accounts[0]);
-      }
-    } catch {
-      // Instance not ready yet; will retry next render
-    }
-    setInitializing(false);
-  }, [instance, inProgress]);
-
-  if (initializing || inProgress === 'startup') {
-    return (
-      <Box sx={{ p: 4, textAlign: 'center' }}>
-        <CircularProgress />
-        <Typography variant="body2" sx={{ mt: 2 }}>Initializing authentication...</Typography>
-      </Box>
-    );
-  }
-
   return (
     <>
-      <AuthenticatedTemplate>{children}</AuthenticatedTemplate>
+      <AuthenticatedTemplate>
+        {children}
+      </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        <Box sx={{ p: 4, textAlign: 'center' }}>
-          {!isClientIdConfigured() ? (
-            <>
-              <Typography variant="h6" gutterBottom>Authentication Unavailable</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Please try again later.
-              </Typography>
-            </>
-          ) : (
-            <>
-              <Typography variant="h6" gutterBottom>Sign in required</Typography>
-              <Button
-                variant="contained"
-                onClick={() => isClientIdConfigured() && instance.loginRedirect(loginRequest)}
-              >
-                Sign In
-              </Button>
-            </>
-          )}
-        </Box>
+        <Container maxWidth="sm">
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            minHeight: '100vh',
+            textAlign: 'center'
+          }}>
+            <Typography variant="h4" gutterBottom>
+              Welcome to Connected Car Platform
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              Please sign in using the button in the header to access the application
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Click "Sign In" in the top-right corner to continue
+            </Typography>
+          </Box>
+        </Container>
       </UnauthenticatedTemplate>
     </>
   );

@@ -158,7 +158,7 @@ Note: This endpoint is for development only. Do not expose it in production.
 Set your backend env (vehicle/.env):
 ```env
 AZURE_TENANT_ID=<tenant-guid>
-AZURE_CLIENT_ID=api://<your-app-client-id>   # Application ID URI (aud)
+AZURE_CLIENT_ID=api://<your-app-client-id> or <your-app-client-id>   # Application ID URI (aud)
 AZURE_AUTH_REQUIRED=true
 ```
 Frontend requests the scope (note: scope = audience + "/access_as_user"):
