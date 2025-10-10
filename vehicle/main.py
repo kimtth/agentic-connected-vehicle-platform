@@ -18,18 +18,13 @@ from uuid import uuid4
 import socket
 import http.client  # added for health probing
 import multiprocessing
-
-# Add the project root to Python path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
     PlainTextResponse,
-)  # added
+)
 from contextlib import asynccontextmanager
 from models.command import Command
 from models.vehicle_profile import VehicleProfile
@@ -57,6 +52,14 @@ from plugin.mcp_traffic_server import start_traffic_server
 from plugin.mcp_poi_server import start_poi_server
 from plugin.mcp_navigation_server import start_navigation_server
 
+# Configure loguru with better error handling
+from utils.logging_config import configure_logging
+
+
+# Add the project root to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
 # Load environment variables first
 env_type = os.getenv("ENV_TYPE", "dev").lower()
 if env_type.startswith("dev") or env_type in ("local",):
@@ -75,9 +78,6 @@ logger = logging.getLogger(__name__)
 # Prevent duplicate logging from uvicorn
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn").setLevel(logging.WARNING)
-
-# Configure loguru with better error handling
-from utils.logging_config import configure_logging
 
 configure_logging(log_level)
 
@@ -779,7 +779,9 @@ async def stream_notifications(vehicle_id: str):
                     if last_ts is None or (ts and ts > last_ts):
                         fresh.append(n)
                 if fresh:
-                    last_ts = max([f.timestamp for f in fresh if f.timestamp], default=last_ts)
+                    last_ts = max(
+                        [f.timestamp for f in fresh if f.timestamp], default=last_ts
+                    )
                     for f in reversed(fresh):  # oldest first
                         yield f"data: {json.dumps(f.model_dump(by_alias=True))}\n\n"
                 await asyncio.sleep(3)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Box, Typography, Button, 
   TextField, Paper, CircularProgress,
@@ -125,6 +125,7 @@ const AgentChat = ({ vehicleId }) => {
   const [sessionId, setSessionId] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
   const [chatAreaHeight, setChatAreaHeight] = useState(0); // dynamic chat history height
+  const localStorageWriteTimeout = useRef(null);
   const messagesEndRef = useRef(null);
   const currentAbortRef = useRef(null);
   
@@ -152,11 +153,17 @@ const AgentChat = ({ vehicleId }) => {
     }
   }, [selectedAgent]);
   
-  // Save chat history to localStorage whenever it changes
+  // Debounced save chat history to localStorage whenever it changes
   useEffect(() => {
     if (selectedAgent && chatHistory.length > 0) {
-      localStorage.setItem(`chat_history_${selectedAgent.type}`, JSON.stringify(chatHistory));
+      if (localStorageWriteTimeout.current) clearTimeout(localStorageWriteTimeout.current);
+      localStorageWriteTimeout.current = setTimeout(() => {
+        localStorage.setItem(`chat_history_${selectedAgent.type}`, JSON.stringify(chatHistory));
+      }, 500); // 500ms debounce
     }
+    return () => {
+      if (localStorageWriteTimeout.current) clearTimeout(localStorageWriteTimeout.current);
+    };
   }, [chatHistory, selectedAgent]);
   
   // Scroll to bottom of chat whenever history changes
@@ -180,15 +187,22 @@ const AgentChat = ({ vehicleId }) => {
     };
   }, []);
 
-  // NEW: dynamically size chat history area
+  // Dynamically size chat history area with debounced resize
   useEffect(() => {
-    const OFFSET = 280; // header + agent selector + description + input area padding
+    const OFFSET = 280;
+    let resizeTimeout;
     const calcHeight = () => {
-      setChatAreaHeight(Math.max(320, window.innerHeight - OFFSET));
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        setChatAreaHeight(Math.max(320, window.innerHeight - OFFSET));
+      }, 100); // 100ms debounce
     };
     calcHeight();
     window.addEventListener('resize', calcHeight);
-    return () => window.removeEventListener('resize', calcHeight);
+    return () => {
+      window.removeEventListener('resize', calcHeight);
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+    };
   }, []);
 
   const handleAgentChange = (event) => {
@@ -324,7 +338,7 @@ const AgentChat = ({ vehicleId }) => {
     }
   };
 
-  const quickActions = [
+  const quickActions = useMemo(() => [
     {
       category: 'features',
       title: 'Vehicle Features',
@@ -385,7 +399,68 @@ const AgentChat = ({ vehicleId }) => {
         { text: 'Report theft', message: 'I need to report my vehicle as stolen' }
       ]
     }
-  ];
+  ], []);
+
+  // Memoize chat history rendering
+  const renderedChatHistory = useMemo(() => chatHistory.map((message, index) => (
+    <React.Fragment key={index}>
+      <ListItem alignItems="flex-start" sx={{
+        justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
+        mb: 2,
+        px: 2
+      }}>
+        <Paper
+          elevation={1}
+          sx={(theme) => ({
+            maxWidth: '80%',
+            p: 2,
+            background: theme.palette.mode === 'dark'
+              ? (message.type === 'user'
+                  ? 'linear-gradient(180deg, rgba(0,230,255,0.12), rgba(0,151,209,0.08))'
+                  : message.type === 'error'
+                    ? 'linear-gradient(180deg, rgba(255,92,124,0.12), rgba(255,92,124,0.08))'
+                    : 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))')
+              : (message.type === 'user'
+                  ? 'rgba(25,118,210,0.08)'
+                  : message.type === 'error'
+                    ? 'rgba(211,47,47,0.08)'
+                    : theme.palette.background.paper),
+            border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.14)' : '1px solid #e5e7eb',
+            borderRadius: 2
+          })}
+        >
+          {message.type !== 'user' && (
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
+              {message.type === 'agent' ? message.agentTitle : 'System Message'}
+            </Typography>
+          )}
+          {message.type === 'agent' ? (
+            <MarkdownText>{message.text}</MarkdownText>
+          ) : (
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {message.text}
+            </Typography>
+          )}
+          {message.data && (
+            <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                Additional Data:
+              </Typography>
+              <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
+                {JSON.stringify(message.data, null, 2)}
+              </pre>
+            </Box>
+          )}
+          {message.streaming && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              Streaming...
+            </Typography>
+          )}
+        </Paper>
+      </ListItem>
+      {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
+    </React.Fragment>
+  )), [chatHistory]);
 
   return (
     <Box sx={{ 
@@ -449,65 +524,7 @@ const AgentChat = ({ vehicleId }) => {
           >
             <List>
               {chatHistory.length > 0 ? (
-                chatHistory.map((message, index) => (
-                  <React.Fragment key={index}>
-                    <ListItem alignItems="flex-start" sx={{
-                      justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
-                      mb: 2,
-                      px: 2
-                    }}>
-                      <Paper
-                        elevation={1}
-                        sx={(theme) => ({
-                          maxWidth: '80%',
-                          p: 2,
-                          background: theme.palette.mode === 'dark'
-                            ? (message.type === 'user'
-                                ? 'linear-gradient(180deg, rgba(0,230,255,0.12), rgba(0,151,209,0.08))'
-                                : message.type === 'error'
-                                  ? 'linear-gradient(180deg, rgba(255,92,124,0.12), rgba(255,92,124,0.08))'
-                                  : 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))')
-                            : (message.type === 'user'
-                                ? 'rgba(25,118,210,0.08)'
-                                : message.type === 'error'
-                                  ? 'rgba(211,47,47,0.08)'
-                                  : theme.palette.background.paper),
-                          border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.14)' : '1px solid #e5e7eb',
-                          borderRadius: 2
-                        })}
-                      >
-                        {message.type !== 'user' && (
-                          <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
-                            {message.type === 'agent' ? message.agentTitle : 'System Message'}
-                          </Typography>
-                        )}
-                        {message.type === 'agent' ? (
-                          <MarkdownText>{message.text}</MarkdownText>
-                        ) : (
-                          <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                            {message.text}
-                          </Typography>
-                        )}
-                        {message.data && (
-                          <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                              Additional Data:
-                            </Typography>
-                            <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
-                              {JSON.stringify(message.data, null, 2)}
-                            </pre>
-                          </Box>
-                        )}
-                        {message.streaming && (
-                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                            Streaming...
-                          </Typography>
-                        )}
-                      </Paper>
-                    </ListItem>
-                    {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
-                  </React.Fragment>
-                ))
+                renderedChatHistory
               ) : (
                 <ListItem>
                   <Typography variant="body2" color="text.secondary" align="center" sx={{ width: '100%' }}>

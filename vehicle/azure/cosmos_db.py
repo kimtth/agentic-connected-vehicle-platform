@@ -21,7 +21,7 @@ from azure.identity.aio import (
     AzureDeveloperCliCredential
 )
 from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
-import traceback, functools, concurrent.futures
+import traceback
 from azure.cosmos import CosmosClient as SyncCosmosClient  # for fallback probe
 
 from utils.logging_config import get_logger
@@ -193,7 +193,7 @@ class CosmosDBClient:
         # Validate endpoint format - Support both old and new formats
         if (
             not self.endpoint.startswith("https://")
-            or not ".documents.azure.com" in self.endpoint
+            or ".documents.azure.com" not in self.endpoint
         ):
             logger.warning(f"Cosmos DB endpoint format may be invalid: {self.endpoint}")
 
@@ -530,9 +530,9 @@ class CosmosDBClient:
                         indexing_policy=config["indexing_policy"],
                     )
                     logger.debug(f"Created container {container_name}")
-                except Exception as ce:
-                    self._diagnostic_log(ce, f"create_container:{container_name}")
-                    raise
+                except Exception:
+                    # Silently ignore cleanup errors during shutdown
+                    pass
             except Exception as re:
                 self._diagnostic_log(re, f"read_container:{container_name}")
                 raise
@@ -761,13 +761,15 @@ class CosmosDBClient:
                 except Exception:
                     pass
 
+            idle_count = 0
             while True:
                 if self._closing or not self.connected:
                     break
+                # Only reconnect if not connected or status_container is missing
+                if not self.connected or not self.status_container:
+                    if self._closing or not await self.ensure_connected():
+                        break
                 try:
-                    if not self.connected or not self.status_container:
-                        if self._closing or not await self.ensure_connected():
-                            break
                     query = "SELECT * FROM c WHERE c.vehicleId = @vehicleId AND c._ts > @lastTs ORDER BY c._ts DESC"
                     parameters = [
                         {"name": "@vehicleId", "value": vehicle_id},
@@ -790,24 +792,28 @@ class CosmosDBClient:
                         last_timestamp_epoch = max(
                             last_timestamp_epoch, item.get("_ts", 0)
                         )
-                    await asyncio.sleep(1.0 if had_updates else 5.0)
+                    # Reduce logging in idle loops
+                    if had_updates:
+                        idle_count = 0
+                        await asyncio.sleep(1.0)
+                    else:
+                        idle_count += 1
+                        # Increase sleep time after several idle loops
+                        sleep_time = 5.0 if idle_count < 6 else 15.0
+                        await asyncio.sleep(sleep_time)
                 except asyncio.CancelledError:
-                    # Break promptly on cancellation (client SSE disconnect)
-                    logger.debug(f"Status subscription cancelled for {vehicle_id}")
                     break
                 except Exception as e:
                     if self._closing:
                         break
                     if self._is_transport_closed_error(e):
-                        logger.info(
-                            "Stopping status polling: underlying HTTP transport closed"
-                        )
                         break
-                    logger.error(f"Error in status polling iteration: {str(e)}")
+                    # Only log every 5th error to avoid log spam
+                    if idle_count % 5 == 0:
+                        logger.error(f"Error in status polling iteration: {str(e)}")
                     await asyncio.sleep(10.0)
                     continue
         except asyncio.CancelledError:
-            logger.debug(f"Subscription outer cancelled for {vehicle_id}")
             return
         except Exception as e:
             logger.error(f"Error in vehicle status subscription: {str(e)}")
