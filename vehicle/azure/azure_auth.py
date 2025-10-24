@@ -37,7 +37,7 @@ class AzureADMiddleware(BaseHTTPMiddleware):
         # The tenant-specific endpoint is https://login.microsoftonline.com/{tenant_id}/discovery/keys
         #  > Where can I find the JWKS Uri for Azure AD?
         #  > https://learn.microsoft.com/en-us/answers/questions/1163810/where-can-i-find-the-jwks-uri-for-azure-ad
-        self.jwks_uri = f"https://login.microsoftonline.com/common/discovery/keys"
+        self.jwks_uri = "https://login.microsoftonline.com/common/discovery/keys"
         self.jwk_client = PyJWKClient(self.jwks_uri)
         # Accept Microsoft Graph audience (primary) + optional custom API audiences
         raw_audience = os.getenv("AZURE_CLIENT_ID")
@@ -78,10 +78,6 @@ class AzureADMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/api/dev/seed",  # includes /api/dev/seed, /bulk, /status, etc.
         )
-
-        if os.getenv("ENV_TYPE") == "development":
-            # Dev: disable auth for all paths
-            self.exclude_prefixes = ("/",)
 
         if not self.tenant_id:
             logger.warning(
@@ -147,6 +143,10 @@ class AzureADMiddleware(BaseHTTPMiddleware):
         path = request.url.path or "/"
         if path != "/" and path.endswith("/"):
             path = path.rstrip("/")
+
+        # API_TEST_MODE: skip all auth checks: DO NOT USE IN PRODUCTION
+        if os.getenv("API_TEST_MODE") == "true":
+            return await call_next(request)
 
         # All non-/api paths skip auth unconditionally (prevents 307 loops)
         if not path.startswith("/api"):
