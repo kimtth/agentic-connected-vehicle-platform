@@ -1,24 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import {
-    Box, Paper, Typography, Grid, Button, TextField, Switch,
-    FormControlLabel, Divider, Chip, LinearProgress, IconButton, Tooltip,
-    Select, MenuItem, FormControl, InputLabel
-} from '@mui/material';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import StopIcon from '@mui/icons-material/Stop';
-import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
-import HearingIcon from '@mui/icons-material/Hearing';
-import SubtitlesIcon from '@mui/icons-material/Subtitles';
-import BoltIcon from '@mui/icons-material/Bolt';
-import CloseIcon from '@mui/icons-material/Close';
+import { 
+  RotateCcw, Play, Square, Volume2, 
+  ChevronDown, X, Zap 
+} from 'lucide-react';
 import { fetchSpeechToken, fetchSpeechIceToken } from '../api/services';
 import {
     speakText as speakAvatarText,
     buildAvatarPipeline,
     initSpeechRecognizer
 } from '../services/speechStreamService';
-import { askAI } from '../api/services'; // ADDED
+import { askAI } from '../api/services';
 
 const LANGUAGE_OPTIONS = [
     { code: 'en-US', label: 'English', voice: 'en-US-AvaMultilingualNeural' },
@@ -363,13 +354,14 @@ const VoiceControl = ({ vehicleId }) => {
         });
     }, []);
 
-    const sessionStatusChip = (
-        <Chip
-            size="small"
-            label={sessionActive ? 'Session Active' : 'Inactive'}
-            color={sessionActive ? 'success' : 'default'}
-            variant={sessionActive ? 'filled' : 'outlined'}
-        />
+    const sessionStatusBadge = (
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+            sessionActive 
+                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+        }`}>
+            {sessionActive ? 'Session Active' : 'Inactive'}
+        </span>
     );
 
     // Periodic speech token refresh (token valid ~10 min; refresh at 8 min)
@@ -399,312 +391,220 @@ const VoiceControl = ({ vehicleId }) => {
     }, [sessionActive, ensureSpeechToken]);
 
     return (
-        <Paper sx={{ p: 3 }}>
-            <Grid container spacing={3}>
-                <Grid item xs={12} display="flex" alignItems="center" justifyContent="space-between">
-                    <Typography variant="h6">
-                        In-Vehicle Assistant — Voice & Avatar {vehicleId && <Typography component="span" variant="subtitle2" color="text.secondary"> (Vehicle {vehicleId})</Typography>}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        {sessionStatusChip}
-                        <Tooltip title="Reset all (stop session and clear transcript)">
-                            <IconButton
-                                size="small"
-                                onClick={() => {
-                                    stopSession();
-                                    setTranscript([]);
-                                }}
-                            >
-                                <RestartAltIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
+        <div className="rounded-lg border bg-card p-5 shadow-sm h-[calc(85vh)]">
+            <div className="flex flex-col gap-2.5 h-full">
+                <div className="flex items-center justify-between">
+                    <h1 className="text-xl font-semibold mb-3">
+                        In-Vehicle Assistant — Voice & Avatar {vehicleId && <span className="text-sm text-muted-foreground"> (Vehicle {vehicleId})</span>}
+                    </h1>
+                    <div className="flex items-center gap-1.5">
+                        {sessionStatusBadge}
+                        <button
+                            className="px-1.5 py-0.5 text-sm rounded-md bg-secondary hover:bg-secondary/80"
+                            onClick={() => {
+                                stopSession();
+                                setTranscript([]);
+                            }}
+                            title="Reset all (stop session and clear transcript)"
+                        >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
                         {sessionActive && (
-                            <Tooltip title="Close session">
-                                <IconButton size="small" color="error" onClick={stopSession}>
-                                    <CloseIcon fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
+                            <button 
+                                className="px-1.5 py-0.5 text-sm rounded-md bg-red-100 text-red-600 hover:bg-red-200" 
+                                onClick={stopSession}
+                                title="Close session"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                            </button>
                         )}
-                    </Box>
-                </Grid>
+                    </div>
+                </div>
 
-                <Grid item xs={12} md={4}>
-                    <Typography variant="subtitle2" gutterBottom>Configuration</Typography>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12}>
-                            <TextField
-                                multiline
-                                minRows={10}
-                                maxRows={12} 
-                                fullWidth
-                                label="Message / Prompt"
-                                value={message}
-                                onChange={e => setMessage(e.target.value)}
-                                sx={{
-                                    '& .MuiInputBase-root': {
-                                        overflowY: 'auto' // added vertical scroll
-                                    }
-                                }}
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <FormControl fullWidth size="small">
-                                <InputLabel>Language</InputLabel>
-                                <Select
-                                    value={selectedLanguage}
-                                    label="Language"
-                                    onChange={e => setSelectedLanguage(e.target.value)}
-                                    disabled={sessionActive}
-                                >
-                                    {LANGUAGE_OPTIONS.map(lang => (
-                                        <MenuItem key={lang.code} value={lang.code}>
-                                            {lang.label}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                        <Grid item xs={12}>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 flex-1">
+                    <div className="flex flex-col gap-1.5">
+                        <h2 className="text-base font-bold">Configuration</h2>
+                        <div className="flex flex-col gap-1.5">
+                            <div>
+                                <label className="block text-xs font-medium mb-0.5">Message / Prompt</label>
+                                <textarea
+                                    rows={8}
+                                    value={message}
+                                    onChange={e => setMessage(e.target.value)}
+                                    className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md bg-background resize-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium mb-0.5">Language</label>
+                                <div className="relative">
+                                    <select 
+                                        value={selectedLanguage} 
+                                        onChange={e => setSelectedLanguage(e.target.value)} 
+                                        disabled={sessionActive}
+                                        className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md bg-background appearance-none pr-8 disabled:opacity-50"
+                                    >
+                                        {LANGUAGE_OPTIONS.map(lang => (
+                                            <option key={lang.code} value={lang.code}>
+                                                {lang.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" />
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
                                 {!sessionActive && (
-                                    <Button
-                                        variant="contained"
-                                        startIcon={<PlayArrowIcon />}
-                                        onClick={startSession}
+                                    <button 
+                                        className="px-2.5 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                        onClick={startSession} 
                                         disabled={loadingTokens || sessionActive || avatarConnecting}
                                     >
-                                        Start
-                                    </Button>
+                                        <Play className="h-3.5 w-3.5" /> Start
+                                    </button>
                                 )}
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<RecordVoiceOverIcon />}
-                                    onClick={handleSpeak}
+                                <button 
+                                    className="px-2.5 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                    onClick={handleSpeak} 
                                     disabled={loadingTokens || avatarConnecting}
                                 >
-                                    {sessionActive ? 'Send' : 'Start & Send'}
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<HearingIcon />}
-                                    onClick={doRecognizeOnce}
-                                    disabled={!sessionActive || isRecognizing || continuousListening} // modified
+                                    <Volume2 className="h-3.5 w-3.5" /> {sessionActive ? 'Send' : 'Start & Send'}
+                                </button>
+                                <button 
+                                    className="px-2.5 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                    onClick={doRecognizeOnce} 
+                                    disabled={!sessionActive || isRecognizing || continuousListening}
                                 >
-                                    Recognize Once
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    startIcon={<BoltIcon />}
-                                    onClick={toggleContinuousRecognition}
+                                    🎤 Recognize Once
+                                </button>
+                                <button 
+                                    className="px-2.5 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                    onClick={toggleContinuousRecognition} 
                                     disabled
                                 >
-                                    Continuous Recognition
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    color="error"
-                                    startIcon={<StopIcon />}
-                                    onClick={stopSession}
+                                    <Zap className="h-3.5 w-3.5" /> Continuous Recognition
+                                </button>
+                                <button 
+                                    className="px-2.5 py-1.5 text-sm rounded-md border border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                    onClick={stopSession} 
                                     disabled={!sessionActive && !avatarConnecting}
                                 >
-                                    Stop
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    color={avatarEnabled ? 'primary' : 'warning'}
-                                    onClick={toggleAvatarEnabled}
+                                    <Square className="h-3.5 w-3.5" /> Stop
+                                </button>
+                                <button 
+                                    className={`px-2.5 py-1.5 text-sm rounded-md border inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                        avatarEnabled 
+                                            ? 'border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950' 
+                                            : 'border-orange-500 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950'
+                                    }`}
+                                    onClick={toggleAvatarEnabled} 
                                     disabled={!sessionActive || avatarConnecting || !avatarStreamReady}
                                 >
                                     {avatarEnabled ? 'Avatar Active' : 'Avatar Inactive'}
-                                </Button>
-                            </Box>
-                        </Grid>
-                    </Grid>
+                                </button>
+                            </div>
+                        </div>
 
-                    <Divider sx={{ my: 2 }} />
+                        <div className="h-px bg-border my-4" />
+                        <div>
+                            <h3 className="text-lg font-bold mb-2">Toggles</h3>
+                            <div className="flex items-center gap-2 mb-2">
+                                <button
+                                    onClick={() => setShowSubtitles(!showSubtitles)}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                        showSubtitles ? 'bg-primary' : 'bg-muted-foreground'
+                                    }`}
+                                >
+                                    <span
+                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                            showSubtitles ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                </button>
+                                <span className="text-sm">💬 Subtitles</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Tokens auto-refresh every 8 mins. Region: {region || (loadingTokens ? 'Loading...' : '—')}
+                                {tokenError && ' | ' + tokenError}
+                            </p>
+                        </div>
+                    </div>
 
-                    <Typography variant="subtitle2" gutterBottom>Toggles</Typography>
-                    <FormControlLabel
-                        control={<Switch checked={showSubtitles} onChange={e => setShowSubtitles(e.target.checked)} />}
-                        label={<Box sx={{ display: 'flex', alignItems: 'center', gap: .5 }}><SubtitlesIcon fontSize="small" />Subtitles</Box>}
-                    />
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" color="text.secondary">
-                            Tokens auto-refresh every 8 mins. Region: {region || (loadingTokens ? 'Loading...' : '—')}
-                            {tokenError && ' | ' + tokenError}
-                        </Typography>
-                    </Box>
-                </Grid>
+                    <div className="flex flex-col flex-1">
+                        <h2 className="text-base font-bold mb-1.5">Avatar / Playback (Real-time)</h2>
+                        <div className="relative w-full flex-1 bg-muted rounded-lg overflow-hidden" style={{ minHeight: '450px' }}>
+                            <video
+                                ref={videoRef}
+                                className="w-full h-full object-contain"
+                                style={{ display: avatarStreamReady && avatarEnabled ? 'block' : 'none' }}
+                                muted
+                            />
+                            <audio ref={audioRef} className="hidden" />
 
-                <Grid item xs={12} md={4} sx={{ display: 'flex', flexDirection: 'column', height: 600 }}>
-                    <Typography variant="subtitle2" gutterBottom>Avatar / Playback (Real-time)</Typography>
-                    <Box
-                        sx={{
-                            position: 'relative',
-                            width: '100%',
-                            height: '90%',
-                            minHeight: 300,
-                            borderRadius: 2,
-                            overflow: 'hidden',
-                            bgcolor: 'background.default',
-                            border: theme => `1px solid ${theme.palette.divider}`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        {/* Avatar video/audio placeholders (logic removed) */}
-                        <video
-                            ref={videoRef}
-                            style={{
-                                position: 'absolute',
-                                inset: 0,
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                background: '#000',
-                                display: avatarStreamReady && avatarEnabled ? 'block' : 'none',
-                                zIndex: 1
-                            }}
-                            muted
-                        />
-                        <audio ref={audioRef} style={{ display: 'none' }} />
+                            {avatarStreamReady && avatarMuted && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                    <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90" onClick={unmuteAvatar}>Unmute</button>
+                                </div>
+                            )}
 
-                        {avatarStreamReady && avatarMuted && (
-                            <Box sx={{
-                                position: 'absolute',
-                                top: 8,
-                                right: 8,
-                                zIndex: 5,
-                                backdropFilter: 'blur(4px)',
-                                bgcolor: 'rgba(0,0,0,0.45)',
-                                p: .5,
-                                borderRadius: 1
-                            }}>
-                                <Button size="small" variant="contained" onClick={unmuteAvatar}>
-                                    Unmute
-                                </Button>
-                            </Box>
-                        )}
+                            {!avatarStreamReady && !avatarConnecting && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <p className="text-sm text-muted-foreground text-center px-4">
+                                        {avatarConnecting ? 'Connecting to avatar...' : 'Session inactive. Click "Start" to begin.'}
+                                    </p>
+                                </div>
+                            )}
 
-                        {!avatarStreamReady && !avatarConnecting && (
-                            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', px: 2, textAlign: 'center', zIndex: 2 }}>
-                                <Typography variant="body2" color="text.secondary">
-                                    {avatarConnecting ? 'Connecting to avatar...' : 'Session inactive. Click "Start" to begin.'}
-                                </Typography>
-                            </Box>
-                        )}
+                            {avatarStreamReady && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary/30" />}
 
-                        {avatarStreamReady && (
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    zIndex: 3
-                                }}
-                            >
-                                <LinearProgress />
-                            </Box>
-                        )}
+                            {subtitleText && (
+                                <div className="absolute bottom-4 left-0 right-0 flex justify-center px-4">
+                                    <div className="bg-black/75 text-white px-4 py-2 rounded-md">
+                                        <p className="text-sm">{subtitleText}</p>
+                                    </div>
+                                </div>
+                            )}
 
-                        {subtitleText && (
-                            <Box
-                                component={Paper}
-                                elevation={3}
-                                sx={{
-                                    display: 'inline-block',
-                                    px: 1.5,
-                                    py: 0.5,
-                                    bgcolor: 'rgba(0,0,0,0.55)',
-                                    backdropFilter: 'blur(4px)',
-                                    position: 'absolute',
-                                    bottom: 8,
-                                    left: 0,
-                                    right: 0,
-                                    textAlign: 'center',
-                                    zIndex: 4
-                                }}
-                            >
-                                <Typography variant="caption" sx={{ color: '#fff' }}>
-                                    {subtitleText}
-                                </Typography>
-                            </Box>
-                        )}
-
-                        {!avatarEnabled && avatarStreamReady && (
-                            <Box sx={{
-                                position: 'absolute',
-                                inset: 0,
-                                zIndex: 4,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backdropFilter: 'blur(6px)',
-                                bgcolor: 'rgba(0,0,0,0.55)',
-                                color: '#fff',
-                                px: 2,
-                                textAlign: 'center'
-                            }}>
-                                <Typography variant="caption">
-                                    Avatar inactive (video/audio tracks paused). Use the button to reactivate.
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                            {!avatarEnabled && avatarStreamReady && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/75">
+                                    <p className="text-xs text-white text-center px-4">
+                                        Avatar inactive (video/audio tracks paused). Use the button to reactivate.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
                             Avatar Character: {avatarMeta.character} | Style: {avatarMeta.style} | Voice: {avatarMeta.voice} | {sessionActive ? (avatarEnabled ? 'Active' : 'Paused') : 'Idle'} | STT: {continuousListening ? 'Continuous' : 'Idle'}
-                        </Typography>
-                    </Box>
-                </Grid>
+                        </p>
+                    </div>
 
-                <Grid item xs={12} md={4}>
-                    <Typography variant="subtitle2" gutterBottom>Transcription</Typography>
-                    <Paper
-                        variant="outlined"
-                        sx={{
-                            p: 1.5,
-                            height: 350,
-                            overflowY: 'auto',
-                            fontFamily: 'monospace',
-                            fontSize: '0.75rem',
-                            lineHeight: 1.4,
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word'
-                        }}
-                    >
-                        {transcript.length === 0 ? (
-                            <Typography variant="caption" color="text.secondary">
-                                (Inactive) Transcript will appear here.
-                            </Typography>
-                        ) : transcript.map((line, index) => (
-                            <div key={index}>{line}</div>
-                        ))}
-                    </Paper>
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" color="text.secondary">
-                            {/* UPDATED: handle both standard and (cont) prefixes */}
+                    <div className="flex flex-col flex-1">
+                        <h2 className="text-base font-bold mb-1.5">Transcription</h2>
+                        <div className="p-3 border border-input rounded-md bg-muted/50 flex-1 overflow-y-auto font-mono text-[10px]" style={{ minHeight: '450px' }}>
+                            {transcript.length === 0 ? (
+                                <p className="text-muted-foreground">(Inactive) Transcript will appear here.</p>
+                            ) : transcript.map((line, index) => (
+                                <div key={index} className="mb-1">{line}</div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
                             Last recognized: {
                                 (() => {
                                     const last = [...transcript].reverse().find(t => t.startsWith('RECOGNIZED'));
                                     return last ? last.split(':').slice(1).join(':').trim() : '—';
                                 })()
                             }
-                        </Typography>
-                    </Box>
-                    <Divider sx={{ my: 2 }} />
-                </Grid>
+                        </p>
+                        <div className="h-px bg-border my-4" />
+                    </div>
 
-                <Grid item xs={12}>
-                    <Divider sx={{ mb: 2 }} />
-                    <Typography variant="caption" color="text.secondary">
-                        Azure Speech with Avatar demo. Implements session management, STT (recognize once), and TTS with avatar video.
-                    </Typography>
-                </Grid>
-            </Grid>
-        </Paper>
+                </div>
+
+                <div className="h-px bg-border" />
+                <p className="text-xs text-muted-foreground">
+                    Azure Speech with Avatar demo. Implements session management, STT (recognize once), and TTS with avatar video.
+                </p>
+            </div>
+        </div>
     );
 };
 

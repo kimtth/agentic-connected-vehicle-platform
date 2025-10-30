@@ -1,13 +1,33 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Box, Typography, Button, 
-  TextField, Paper, CircularProgress,
-  Select, MenuItem, FormControl, InputLabel,
-  List, ListItem, Divider, Tooltip, IconButton
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
+  Trash2, 
+  ChevronDown, 
+  Loader2, 
+  Lightbulb, 
+  Thermometer, 
+  Square, 
+  Lamp,
+  Lock,
+  Power,
+  Unlock,
+  MapPin,
+  Battery,
+  BatteryCharging,
+  Zap,
+  Calendar,
+  Cloud,
+  Car,
+  UtensilsCrossed,
+  Navigation,
+  Wrench,
+  AlertTriangle,
+  HeartPulse,
+  Clock,
+  AlertCircle,
+  Phone,
+  ShieldAlert
+} from 'lucide-react';
 import { streamAgent } from '../api/chat';
-import { styled } from '@mui/system';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -67,54 +87,12 @@ const AVAILABLE_AGENTS = [
 const generateSessionId = () =>
   `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-const QuickActionsPanel = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(2),
-  marginBottom: theme.spacing(2),
-  backgroundColor: theme.palette.background.paper, // white surface
-}));
-
-const QuickActionButton = styled(Button)(({ theme, category }) => {
-  const colors = {
-    features: theme.palette.primary.main,
-    remote: theme.palette.info.main,
-    emergency: theme.palette.error.main,
-    charging: theme.palette.success.main,
-    info: theme.palette.warning.main,
-    diagnostics: theme.palette.secondary.main
-  };
-
-  return {
-    margin: theme.spacing(0.5),
-    backgroundColor: colors[category] || theme.palette.primary.main,
-    color: 'white',
-    '&:hover': {
-      backgroundColor: theme.palette.action.hover,
-    },
-  };
-});
-
-// Markdown renderer with basic styling
 const MarkdownText = ({ children }) => (
-  <Box sx={(theme) => ({
-    '& p': { m: 0 },
-    '& code': {
-      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-      px: 0.5, py: 0.25, borderRadius: 0.5,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      fontSize: '0.85em'
-    },
-    '& pre': {
-      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-      p: 1.5, borderRadius: 1, overflow: 'auto'
-    },
-    '& a': { color: 'primary.main' },
-    '& ul, & ol': { pl: 2, my: 1 },
-    '& h1, & h2, & h3': { mt: 0, mb: 1 }
-  })}>
+  <div className="prose dark:prose-invert prose-xs max-w-none">
     <ReactMarkdown remarkPlugins={[remarkGfm]}>
       {children || ''}
     </ReactMarkdown>
-  </Box>
+  </div>
 );
 
 // Modified component to accept vehicleId prop
@@ -173,28 +151,15 @@ const AgentChat = ({ vehicleId }) => {
     }
   }, [chatHistory]);
 
-  // Hide window scrollbar while AgentChat is mounted
-  useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    
-    // Add a class to hide scrollbars globally
-    document.documentElement.style.overflow = 'hidden';
-    
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.documentElement.style.overflow = '';
-    };
-  }, []);
-
   // Dynamically size chat history area with debounced resize
   useEffect(() => {
-    const OFFSET = 280;
+    const OFFSET = 160; // Reduced offset for 120% larger chat area
     let resizeTimeout;
     const calcHeight = () => {
       if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
-        setChatAreaHeight(Math.max(320, window.innerHeight - OFFSET));
+        const availableHeight = window.innerHeight - OFFSET;
+        setChatAreaHeight(Math.max(400, Math.min(availableHeight, 650)));
       }, 100); // 100ms debounce
     };
     calcHeight();
@@ -204,12 +169,6 @@ const AgentChat = ({ vehicleId }) => {
       if (resizeTimeout) clearTimeout(resizeTimeout);
     };
   }, []);
-
-  const handleAgentChange = (event) => {
-    const selectedType = event.target.value;
-    const agent = AVAILABLE_AGENTS.find(a => a.type === selectedType);
-    setSelectedAgent(agent);
-  };
 
   const handleQueryChange = (e) => {
     setQuery(e.target.value);
@@ -343,275 +302,219 @@ const AgentChat = ({ vehicleId }) => {
       category: 'features',
       title: 'Vehicle Features',
       actions: [
-        { text: 'Turn on headlights', message: 'Please turn on the headlights' },
-        { text: 'Set climate to 22°C', message: 'Set the climate control to 22 degrees' },
-        { text: 'Roll up all windows', message: 'Please roll up all the windows' },
-        { text: 'Turn on interior lights', message: 'Turn on the interior lights' }
+        { icon: Lightbulb, text: 'Turn on headlights', message: 'Please turn on the headlights' },
+        { icon: Thermometer, text: 'Set climate to 22°C', message: 'Set the climate control to 22 degrees' },
+        { icon: Square, text: 'Roll up all windows', message: 'Please roll up all the windows' },
+        { icon: Lamp, text: 'Turn on interior lights', message: 'Turn on the interior lights' }
       ]
     },
     {
       category: 'remote',
       title: 'Remote Access',
       actions: [
-        { text: 'Lock doors', message: 'Lock all the doors' },
-        { text: 'Start engine', message: 'Start the engine remotely' },
-        { text: 'Unlock vehicle', message: 'Unlock the vehicle doors' },
-        { text: 'Locate vehicle', message: 'Help me find my vehicle with horn and lights' }
+        { icon: Lock, text: 'Lock doors', message: 'Lock all the doors' },
+        { icon: Power, text: 'Start engine', message: 'Start the engine remotely' },
+        { icon: Unlock, text: 'Unlock vehicle', message: 'Unlock the vehicle doors' },
+        { icon: MapPin, text: 'Locate vehicle', message: 'Help me find my vehicle with horn and lights' }
       ]
     },
     {
       category: 'charging',
       title: 'Charging & Energy',
       actions: [
-        { text: 'Find charging stations', message: 'Find nearby charging stations' },
-        { text: 'Check battery status', message: 'What is my current battery level and range?' },
-        { text: 'Start charging', message: 'Start charging the vehicle' },
-        { text: 'Set charging schedule', message: 'Set up a charging schedule for overnight' }
+        { icon: Zap, text: 'Find charging stations', message: 'Find nearby charging stations' },
+        { icon: Battery, text: 'Check battery status', message: 'What is my current battery level and range?' },
+        { icon: BatteryCharging, text: 'Start charging', message: 'Start charging the vehicle' },
+        { icon: Calendar, text: 'Set charging schedule', message: 'Set up a charging schedule for overnight' }
       ]
     },
     {
       category: 'info',
       title: 'Information Services',
       actions: [
-        { text: 'Weather update', message: 'What is the current weather?' },
-        { text: 'Traffic conditions', message: 'Check traffic conditions on my route' },
-        { text: 'Find restaurants', message: 'Find restaurants near my location' },
-        { text: 'Navigation help', message: 'Help me navigate to the nearest gas station' }
+        { icon: Cloud, text: 'Weather update', message: 'What is the current weather?' },
+        { icon: Car, text: 'Traffic conditions', message: 'Check traffic conditions on my route' },
+        { icon: UtensilsCrossed, text: 'Find restaurants', message: 'Find restaurants near my location' },
+        { icon: Navigation, text: 'Navigation help', message: 'Help me navigate to the nearest gas station' }
       ]
     },
     {
       category: 'diagnostics',
       title: 'Diagnostics & Alerts',
       actions: [
-        { text: 'Vehicle diagnostics', message: 'Run a full vehicle diagnostic check' },
-        { text: 'Check alerts', message: 'Show me any active alerts or warnings' },
-        { text: 'Battery health', message: 'Check my vehicle battery health status' },
-        { text: 'Maintenance status', message: 'When is my next scheduled maintenance?' }
+        { icon: Wrench, text: 'Vehicle diagnostics', message: 'Run a full vehicle diagnostic check' },
+        { icon: AlertTriangle, text: 'Check alerts', message: 'Show me any active alerts or warnings' },
+        { icon: HeartPulse, text: 'Battery health', message: 'Check my vehicle battery health status' },
+        { icon: Clock, text: 'Maintenance status', message: 'When is my next scheduled maintenance?' }
       ]
     },
     {
       category: 'emergency',
       title: 'Emergency & Safety',
       actions: [
-        { text: 'Emergency SOS', message: 'EMERGENCY SOS - I need immediate help' },
-        { text: 'Report collision', message: 'I need to report a collision' },
-        { text: 'Call emergency services', message: 'I need to call emergency services' },
-        { text: 'Report theft', message: 'I need to report my vehicle as stolen' }
+        { icon: AlertCircle, text: 'Emergency SOS', message: 'EMERGENCY SOS - I need immediate help' },
+        { icon: ShieldAlert, text: 'Report collision', message: 'I need to report a collision' },
+        { icon: Phone, text: 'Call emergency services', message: 'I need to call emergency services' },
+        { icon: ShieldAlert, text: 'Report theft', message: 'I need to report my vehicle as stolen' }
       ]
     }
   ], []);
 
-  // Memoize chat history rendering
   const renderedChatHistory = useMemo(() => chatHistory.map((message, index) => (
-    <React.Fragment key={index}>
-      <ListItem alignItems="flex-start" sx={{
-        justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
-        mb: 2,
-        px: 2
-      }}>
-        <Paper
-          elevation={1}
-          sx={(theme) => ({
-            maxWidth: '80%',
-            p: 2,
-            background: theme.palette.mode === 'dark'
-              ? (message.type === 'user'
-                  ? 'linear-gradient(180deg, rgba(0,230,255,0.12), rgba(0,151,209,0.08))'
-                  : message.type === 'error'
-                    ? 'linear-gradient(180deg, rgba(255,92,124,0.12), rgba(255,92,124,0.08))'
-                    : 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))')
-              : (message.type === 'user'
-                  ? 'rgba(25,118,210,0.08)'
-                  : message.type === 'error'
-                    ? 'rgba(211,47,47,0.08)'
-                    : theme.palette.background.paper),
-            border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.14)' : '1px solid #e5e7eb',
-            borderRadius: 2
-          })}
-        >
+    <div key={index} className="flex flex-col">
+      <div className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} mb-3`}>
+        <div className={`max-w-[80%] rounded-lg p-3 text-xs leading-relaxed ${
+          message.type === 'user' 
+            ? 'bg-primary text-primary-foreground' 
+            : message.type === 'error' 
+            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' 
+            : 'bg-muted'
+        }`}>
           {message.type !== 'user' && (
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
+            <p className="text-[11px] text-muted-foreground font-medium mb-1.5">
               {message.type === 'agent' ? message.agentTitle : 'System Message'}
-            </Typography>
+            </p>
           )}
           {message.type === 'agent' ? (
             <MarkdownText>{message.text}</MarkdownText>
           ) : (
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            <p className="text-xs whitespace-pre-wrap">
               {message.text}
-            </Typography>
+            </p>
           )}
           {message.data && (
-            <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                Additional Data:
-              </Typography>
-              <pre style={{ fontSize: '0.75rem', overflow: 'auto', margin: 0 }}>
+            <div className="mt-4 p-3 bg-muted/50 rounded-md">
+              <p className="text-xs text-muted-foreground mb-2">Additional Data:</p>
+              <pre className="text-xs overflow-auto m-0">
                 {JSON.stringify(message.data, null, 2)}
               </pre>
-            </Box>
+            </div>
           )}
           {message.streaming && (
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            <p className="text-xs text-muted-foreground mt-2">
               Streaming...
-            </Typography>
+            </p>
           )}
-        </Paper>
-      </ListItem>
-      {index < chatHistory.length - 1 && <Divider variant="middle" component="li" sx={{ my: 1 }} />}
-    </React.Fragment>
+        </div>
+      </div>
+      {index < chatHistory.length - 1 && <div className="h-px bg-border my-2" />}
+    </div>
   )), [chatHistory]);
 
   return (
-    <Box sx={{ 
-      width: '100%', // full viewport width
-      height: 'calc(100vh - 120px)', 
-      display: 'flex', 
-      flexDirection: 'column',
-      mx: 'auto',
-      overflow: 'hidden',
-      '&::-webkit-scrollbar': { display: 'none' },
-      msOverflowStyle: 'none',
-      scrollbarWidth: 'none',
-    }}>
-      <Typography variant="h5" component="h1" gutterBottom>
+    <div className="flex flex-col h-full p-5" style={{ minHeight: '520px' }}>
+      <h1 className="text-xl font-semibold mb-3">
         Connected Vehicle Agent Chat
         {vehicleId ? ` - Vehicle: ${vehicleId}` : ' - No vehicle selected'}
-      </Typography>
+      </h1>
       
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 1 }}>
-        <FormControl fullWidth>
-          <InputLabel id="agent-select-label">Select Agent</InputLabel>
-          <Select
-            labelId="agent-select-label"
-            id="agent-select"
+      <div className="flex gap-1.5 items-center mb-2">
+        <div className="relative flex-1">
+          <select 
             value={selectedAgent.type}
-            label="Select Agent"
-            onChange={handleAgentChange}
+            onChange={(e) => {
+              const agent = AVAILABLE_AGENTS.find(a => a.type === e.target.value);
+              setSelectedAgent(agent);
+            }}
+            className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md bg-background appearance-none pr-8"
           >
             {AVAILABLE_AGENTS.map((agent) => (
-              <MenuItem key={agent.type} value={agent.type}>
+              <option key={agent.type} value={agent.type}>
                 {agent.title}
-              </MenuItem>
+              </option>
             ))}
-          </Select>
-        </FormControl>
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" />
+        </div>
         
-        <Tooltip title="Clear chat history">
-          <span>
-            <IconButton 
-              color="error" 
-              onClick={clearChatHistory}
-              disabled={chatHistory.length === 0}
-            >
-              <DeleteIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
+        <button 
+          className="p-1.5 rounded-md bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          onClick={clearChatHistory}
+          disabled={chatHistory.length === 0}
+          title="Clear chat history"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
       
-      <Box sx={{ display: 'flex', gap: 3, flexGrow: 1, minHeight: 0, flexDirection: { xs: 'column', md: 'row' } }}>
-        {/* Left side - Chat area (responsive ~60% on md+) */}
-        <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 60%' }, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <Paper
-            elevation={3}
-            sx={{
-              mb: 2,
-              height: chatAreaHeight,
-              overflowY: 'auto',
-              backgroundColor: 'background.paper'
-            }}
+      <div className="flex flex-1 flex-col gap-2.5 min-h-0 lg:flex-row">
+        <div className="flex flex-col flex-1 min-h-0 min-w-0">
+          <div 
+            className="flex-1 min-h-0 overflow-y-auto border rounded-lg bg-card mb-2.5" 
+            style={{ maxHeight: chatAreaHeight || undefined, minHeight: '460px' }}
           >
-            <List>
+            <div className="flex flex-col gap-2.5 p-3">
               {chatHistory.length > 0 ? (
                 renderedChatHistory
               ) : (
-                <ListItem>
-                  <Typography variant="body2" color="text.secondary" align="center" sx={{ width: '100%' }}>
-                    No messages yet. Start a conversation with the {selectedAgent.title} agent.
-                  </Typography>
-                </ListItem>
+                <p className="text-xs text-muted-foreground text-center w-full mt-6">
+                  No messages yet. Start a conversation with the {selectedAgent.title} agent.
+                </p>
               )}
               <div ref={messagesEndRef} />
-            </List>
-          </Paper>
+            </div>
+          </div>
           
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              fullWidth
-              multiline
-              maxRows={2}
+          <div className="flex gap-1.5">
+            <textarea
               placeholder={selectedAgent.placeholderText}
-              variant="outlined"
               value={query}
-              onChange={handleQueryChange}
+              onChange={(e) => handleQueryChange(e)}
               onKeyDown={handleKeyPress}
               disabled={loading}
-              sx={{ 
-                '& .MuiOutlinedInput-root': {
-                  fontSize: { xs: '14px', lg: '16px' }
-                }
-              }}
+              rows={2}
+              className="flex-1 px-2.5 py-1.5 text-sm border border-input rounded-md bg-background resize-none disabled:opacity-50"
             />
-            <Button 
-              variant="contained" 
-              color="primary"
+            <button 
               onClick={submitQuery}
               disabled={loading || !query.trim()}
-              sx={{ minWidth: '120px', height: 'fit-content' }}
+              className="min-w-[100px] px-3 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
             >
-              {loading ? <CircularProgress size={24} /> : 'Send'}
-            </Button>
-          </Box>
-        </Box>
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Send'}
+            </button>
+          </div>
+        </div>
 
-        {/* Right side - Quick Actions Panel (responsive ~40% on md+, stacks below on xs) */}
-        <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 40%' }, minWidth: { xs: '100%', md: 360 } }}>
-          <QuickActionsPanel sx={{ 
-            height: { xs: 'auto', md: '100%' }, 
-            overflow: 'hidden', 
-            display: 'flex', 
-            flexDirection: 'column',
-            p: { xs: 2, lg: 3 }
-          }}>
-            <Typography variant="h6" gutterBottom>
-              Quick Actions
-            </Typography>
-            <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
-              {quickActions.map((group) => (
-                <Box key={group.category} sx={{ mb: 3 }}>
-                  <Typography variant="subtitle2" gutterBottom color="text.secondary">
-                    {group.title}
-                  </Typography>
-                  <Box sx={{ 
-                    display: 'grid', 
-                    // UPDATED: cap at 2 columns max
-                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                    gap: 1 
-                  }}>
-                    {group.actions.map((action, index) => (
-                      <QuickActionButton
+        <div 
+          className="w-full flex-shrink-0 rounded-lg border bg-card p-4 flex flex-col mt-2 lg:w-72 lg:mt-0" 
+          style={{ height: chatAreaHeight ? `${chatAreaHeight + 60}px` : undefined, minHeight: '520px' }}
+        >
+          <h2 className="text-lg font-bold mb-3">Quick Actions</h2>
+          <div className="overflow-y-auto flex-1">
+            {quickActions.map((group) => (
+              <div key={group.category} className="mb-4">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                  {group.title}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {group.actions.map((action, index) => {
+                    const Icon = action.icon;
+                    return (
+                      <button
                         key={index}
-                        category={group.category}
-                        size="small"
+                        className={`px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 justify-center ${
+                          group.category === 'features' ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200' :
+                          group.category === 'remote' ? 'bg-cyan-100 text-cyan-800 hover:bg-cyan-200 dark:bg-cyan-900 dark:text-cyan-200' :
+                          group.category === 'charging' ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200' :
+                          group.category === 'info' ? 'bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-200' :
+                          group.category === 'diagnostics' ? 'bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-200' :
+                          'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200'
+                        }`}
                         onClick={() => handleQuickAction(action.message)}
                         disabled={loading}
-                        sx={{ 
-                          fontSize: { xs: '0.75rem', lg: '0.8rem' },
-                          p: { xs: '6px 8px', lg: '8px 12px' }
-                        }}
                       >
-                        {action.text}
-                      </QuickActionButton>
-                    ))}
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          </QuickActionsPanel>
-        </Box>
-      </Box>
-    </Box>
+                        <Icon className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{action.text}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

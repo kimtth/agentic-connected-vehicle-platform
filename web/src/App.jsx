@@ -1,514 +1,218 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import { Box, Container, Grid, Paper, Typography, CircularProgress } from '@mui/material';
-import { Routes, Route, useLocation } from 'react-router-dom';
-import MainLayout from './components/MainLayout';
+import { Routes, Route } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
+import { getMsalInstance, isClientIdConfigured } from './auth/msalConfig';
+import { fetchVehicles } from './api/vehicles';
+
+// Import pages
+import Dashboard from './pages/Dashboard';
+import AgentChat from './components/AgentChat';
+import VoiceControl from './components/VoiceControl';
+import Simulator from './pages/Simulator';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
-import AgentChat from './components/AgentChat';
-import SimulatorPanel from './components/simulator/SimulatorPanel';
 import RemoteDrive from './components/RemoteDrive';
-import VoiceControl from './components/VoiceControl';
-import { fetchVehicles } from './api/vehicles';
-import './App.css';
-import Dashboard from './pages/Dashboard';
+import MainLayout from './components/MainLayout';
 import ProtectedRoute from './auth/ProtectedRoute';
-import ThemeToggle from './components/ThemeToggle';
-import { useIsAuthenticated } from '@azure/msal-react';
-import { unsubscribeAllVehicleStatusStreams } from './api/status';
-
-// Create theme factory function
-const createAppTheme = (mode) => createTheme({
-  palette: {
-    mode: mode,
-    // Quick Action category colors
-    quickActions: {
-      features: '#5DADE2',  // Vehicle Features - Soft Blue
-      remote:   '#85C1E9',  // Remote Access - Sky Blue
-      emergency:'#F1948A',  // Emergency & Safety - Light Coral
-      charging: '#F5B041',  // Charging & Energy - Light Orange
-      info:     '#BB8FCE',  // Information Services - Soft Purple
-    },
-    ...(mode === 'dark' ? {
-      primary: { main: '#1976d2' },
-      secondary: { main: '#2979FF' },            // brighter electric blue
-      success: { main: '#2ba18d' },
-      warning: { main: '#BB8FCE' },
-      error: { main: '#ff1900ff' },
-      info: { main: '#0288d1' },                 // cooler info blue
-      background: {
-        default: '#05080F',
-        paper: 'rgba(10,18,32,0.9)'             // deeper glass surface
-      },
-      text: {
-        primary: '#E6F7FF',                      // slightly brighter
-        secondary: '#A7C0DF'                     // cooler secondary
-      }
-    } : {
-      primary: { main: '#1976d2' },
-      secondary: { main: '#7c85ae' },
-      success: { main: '#2ba18d' },
-      warning: { main: '#BB8FCE' },
-      error: { main: '#ff1900ff' },
-      info: { main: '#0288d1' },
-      background: {
-        default: '#ffffff',
-        paper: '#ffffff'
-      },
-      text: {
-        primary: '#1a1a1a',
-        secondary: '#666666'
-      }
-    })
-  },
-  shape: { borderRadius: 12 },
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: mode === 'dark' ? {
-          background:
-            'radial-gradient(1200px 500px at 50% 120%, rgba(0,230,255,0.08), transparent 60%), linear-gradient(180deg, #0B1220 0%, #09101C 40%, #05080F 100%)',
-          color: '#E6F7FF',
-          accentColor: '#00E6FF',
-          WebkitFontSmoothing: 'antialiased',
-          MozOsxFontSmoothing: 'grayscale'
-        } : {
-          background: '#ffffff',
-          color: '#1a1a1a',
-          WebkitFontSmoothing: 'antialiased',
-          MozOsxFontSmoothing: 'grayscale'
-        }
-      }
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: mode === 'dark' ? {
-          backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)',
-          backdropFilter: 'blur(10px) saturate(140%)',
-          border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.55)'   // slightly deeper shadow
-        } : {
-          backgroundColor: '#ffffff',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-        }
-      }
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: mode === 'dark' ? {
-          backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)',
-          backdropFilter: 'blur(10px) saturate(140%)',
-          border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.55)'
-        } : {
-          backgroundColor: '#ffffff',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-        }
-      }
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        colorPrimary: mode === 'dark' ? {
-          backgroundImage:
-            'linear-gradient(180deg, rgba(0,230,255,0.22) 0%, rgba(0,151,209,0.12) 100%), linear-gradient(180deg, #0B1220 0%, #09101C 50%, #05080F 100%)',
-          backdropFilter: 'blur(12px) saturate(140%)',
-          borderBottom: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.55)'
-        } : {
-          backgroundColor: '#1976d2',
-          color: '#ffffff',
-          borderBottom: '1px solid #e5e7eb',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          '& .MuiTypography-root': {
-            color: '#ffffff'
-          },
-          '& .MuiIconButton-root': {
-            color: '#ffffff'
-          },
-          '& .MuiFormControl-root .MuiInputLabel-root': {
-            color: '#ffffff !important'
-          },
-          '& .MuiSelect-root': {
-            color: '#ffffff'
-          },
-          '& .MuiOutlinedInput-notchedOutline': {
-            borderColor: 'rgba(255,255,255,0.5) !important'
-          }
-        }
-      }
-    },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: mode === 'dark' ? {
-          backgroundImage: 'linear-gradient(180deg, rgba(13,22,38,0.95) 0%, rgba(5,8,15,0.95) 100%)',
-          backdropFilter: 'blur(10px) saturate(140%)',
-          borderRight: '1px solid rgba(255,255,255,0.14)'
-          // keep font/icon colors untouched
-        } : {
-          backgroundColor: '#f8f9fa',
-          borderRight: '1px solid #e5e7eb',
-          // no font color overrides in light mode
-          '& .MuiListItemButton-root:hover': {
-            backgroundColor: 'rgba(25, 118, 210, 0.08)'
-          }
-        }
-      }
-    },
-    MuiButton: {
-      styleOverrides: {
-        containedPrimary: mode === 'dark' ? {
-          backgroundImage: 'linear-gradient(180deg, rgba(0,230,255,0.26) 0%, rgba(0,151,209,0.18) 100%)',
-          border: '1px solid rgba(0,230,255,0.35)',
-          boxShadow: '0 0 0 2px rgba(0,230,255,0.2), 0 0 30px rgba(0,230,255,0.25)',
-          '&:hover': {
-            boxShadow: '0 0 0 2px rgba(0,230,255,0.35), 0 0 45px rgba(0,230,255,0.28)'
-          }
-        } : {},
-        outlined: {
-          borderColor: mode === 'dark' ? 'rgba(255,255,255,0.24)' : '#e5e7eb'
-        }
-      }
-    },
-    MuiOutlinedInput: {
-      styleOverrides: {
-        root: mode === 'dark' ? {
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))',
-          '& fieldset': { borderColor: 'rgba(255,255,255,0.24)' },
-          '&:hover fieldset': { borderColor: 'rgba(0,230,255,0.6)' },
-          '&.Mui-focused fieldset': {
-            borderColor: '#00E6FF',
-            boxShadow: '0 0 0 2px rgba(0,230,255,0.35)'
-          }
-        } : {
-          '& fieldset': { borderColor: '#e5e7eb' },
-          '&:hover fieldset': { borderColor: '#1976d2' },
-          '&.Mui-focused fieldset': {
-            borderColor: '#1976d2'
-          }
-        }
-      }
-    },
-    MuiLinearProgress: {
-      styleOverrides: {
-        root: { height: 8, borderRadius: 4 },
-        bar: { borderRadius: 4 }
-      }
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          display: 'inline-flex', // Ensure Chip behaves as inline element
-        },
-        outlined: { 
-          borderColor: mode === 'dark' ? 'rgba(255,255,255,0.24)' : '#e5e7eb'
-        }
-      }
-    }
-  }
-});
 
 function App() {
+  const [themeMode, setThemeMode] = useState(() => {
+    return localStorage.getItem('theme') || 'light';
+  });
+  const [isInitialized, setIsInitialized] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const [loading, setLoading] = useState(false); // was true
-  const [themeMode, setThemeMode] = useState(() => {
-    return localStorage.getItem('themeMode') || 'light';
-  });
-  const isAuthenticated = useIsAuthenticated();
-  const location = useLocation();
 
-  const theme = createAppTheme(themeMode);
+  // Theme management - Tailwind dark mode
+  useEffect(() => {
+    localStorage.setItem('theme', themeMode);
+    if (themeMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [themeMode]);
 
   const toggleTheme = () => {
-    const newMode = themeMode === 'dark' ? 'light' : 'dark';
-    setThemeMode(newMode);
-    localStorage.setItem('themeMode', newMode);
+    setThemeMode(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  const loadVehicles = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchVehicles();
-      // Removed normalization; backend guarantees camelCase
-      setVehicles(data || []);
-      if ((data || []).length > 0) {
-        setSelectedVehicle((data || [])[0]);
-      }
-    } catch {
-      // Simple fallback (camelCase)
-      const mockVehicles = [
-        {
-          vehicleId: 'demo-vehicle-001',
-          make: 'Demo',
-          model: 'Car',
-          year: 2024,
-          status: 'Demo Mode',
-          trim: null,
-          features: null,
-          lastLocation: null
+  // Initialize MSAL
+  useEffect(() => {
+    const init = async () => {
+      if (isClientIdConfigured()) {
+        const instance = getMsalInstance();
+        if (instance) {
+          await instance.initialize();
         }
-      ];
-      setVehicles(mockVehicles);
-      setSelectedVehicle(mockVehicles[0]);
-    } finally {
-      setLoading(false);
-    }
+      }
+      setIsInitialized(true);
+    };
+    init();
   }, []);
 
+  // Load vehicles after initialization
+  const loadVehicles = useCallback(async () => {
+    try {
+      const data = await fetchVehicles();
+      setVehicles(data);
+      if (data.length > 0 && !selectedVehicle) {
+        setSelectedVehicle(data[0]);
+      }
+    } catch (error) {
+      console.error('Error loading vehicles:', error);
+    }
+  }, [selectedVehicle]);
+
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isInitialized) {
       loadVehicles();
-    } else {
-      // ensure not stuck in loading state before auth
-      setLoading(false);
     }
-  }, [isAuthenticated, loadVehicles]);
+  }, [isInitialized, loadVehicles]);
 
-  // Unsubscribe SSE streams when leaving simulator
-  useEffect(() => {
-    if (!/\/simulator/i.test(location.pathname)) {
-      unsubscribeAllVehicleStatusStreams();
-    }
-  }, [location.pathname]);
+  const handleVehicleChange = (vehicle) => {
+    setSelectedVehicle(vehicle);
+  };
 
-  if (loading && vehicles.length === 0) {
+  if (!isInitialized) {
     return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Container maxWidth="sm" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh' }}>
-          <CircularProgress />
-          <Typography variant="h6" sx={{ mt: 2 }}>
-            Loading vehicles...
-          </Typography>
-        </Container>
-      </ThemeProvider>
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading application...</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Box className="App">
-        <MainLayout
-          vehicles={vehicles}
-          selectedVehicle={selectedVehicle}
-          onVehicleChange={setSelectedVehicle}
-        >
-          <Routes>
-            <Route path="/" element={
-              <ProtectedRoute>
-                {selectedVehicle ? (
-                  <Dashboard selectedVehicle={selectedVehicle} />
-                ) : (
-                  <Container maxWidth="sm" sx={{ textAlign: 'center' }}>
-                    <Box>
-                      <Typography variant="h5" color="textSecondary">
-                        No vehicles available. Please add a vehicle to start.
-                      </Typography>
-                    </Box>
-                  </Container>
-                )}
-              </ProtectedRoute>
-            } />
-            <Route path="/agent-chat" element={
-              <ProtectedRoute>
-                <Container maxWidth="lg">
-                  <AgentChat vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
-                </Container>
-              </ProtectedRoute>
-            } />
-            <Route path="/voice-control" element={
-              <ProtectedRoute>
-                <Container maxWidth="lg">
-                  <VoiceControl vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
-                </Container>
-              </ProtectedRoute>
-            } />
-            <Route path="/simulator" element={
-              <ProtectedRoute>
-                <Container maxWidth="lg">
-                  <SimulatorPanel vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
-                </Container>
-              </ProtectedRoute>
-            } />
-            <Route path="/remote-drive" element={
-              <ProtectedRoute>
-                <Container maxWidth="lg">
-                  <RemoteDrive vehicleId={selectedVehicle ? selectedVehicle.vehicleId : null} />
-                </Container>
-              </ProtectedRoute>
-            } />
-            {/* Public example route (About) left unprotected */}
-            {/* Services Route */}
-            <Route path="/services" element={
-              <ProtectedRoute>
-                <Container maxWidth="lg">
-                  <Paper sx={{ p: 3 }}>
-                    <Typography variant="h4" gutterBottom>Services</Typography>
-                    <Typography variant="body1" paragraph>
-                      This page displays all available services for your vehicles.
-                    </Typography>
-                    {selectedVehicle ? (
-                      <ServiceInfo vehicleId={selectedVehicle.vehicleId} />
-                    ) : (
-                      <Box sx={{ mt: 2 }}>
-                        <Typography variant="subtitle1" color="text.secondary">
-                          Please select a vehicle to view services.
-                        </Typography>
-                      </Box>
-                    )}
-                  </Paper>
-                </Container>
-              </ProtectedRoute>
-            } />
-            
-            {/* Notifications Route */}
-            <Route path="/notifications" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>Notifications</Typography>
-                  <Typography variant="body1" paragraph>
-                    This page displays all notifications from your connected vehicles.
-                  </Typography>
-                  <NotificationLog vehicleId={selectedVehicle?.vehicleId} />
-                </Paper>
-              </Container>
-            } />
-            {/* Settings */}
-            <Route path="/settings" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>Settings</Typography>
-                  <Typography variant="body1" paragraph>
-                    Configure your account and application preferences.
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Theme Settings</Typography>
-                        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                          Choose between light and dark theme.
-                        </Typography>
-                        <ThemeToggle 
-                          currentTheme={themeMode} 
-                          onToggleTheme={toggleTheme}
-                        />
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Application Settings</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Set your language and notification preferences.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Vehicle Settings</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Configure settings for your connected vehicles.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              </Container>
-            } />
-            {/* Security */}
-            <Route path="/security" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>Security</Typography>
-                  <Typography variant="body1" paragraph>
-                    Manage your security settings and access control.
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Password & Authentication</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Change your password and set up two-factor authentication.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Access Logs</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          View recent account activity and login history.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              </Container>
-            } />
-            {/* About */}
-            <Route path="/about" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>About</Typography>
-                  <Typography variant="body1" paragraph>
-                    Learn more about the Connected Vehicle Platform.
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Version</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Current version: 1.0.0
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Support</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          For assistance, please contact support@connected-car-platform.com
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              </Container>
-            } />
-            {/* Profile */}
-            <Route path="/profile" element={
-              <Container maxWidth="lg">
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="h4" gutterBottom>User Profile</Typography>
-                  <Typography variant="body1" paragraph>
-                    Manage your personal information and account settings.
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Personal Information</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Update your name, email, and contact details.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="h6" gutterBottom>Preferences</Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          Set your account preferences and notification settings.
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              </Container>
-            } />
-          </Routes>
-        </MainLayout>
-      </Box>
-    </ThemeProvider>
+    <div className="min-h-screen bg-background text-foreground">
+      <MainLayout
+        themeMode={themeMode}
+        toggleTheme={toggleTheme}
+        vehicles={vehicles}
+        selectedVehicle={selectedVehicle}
+        onVehicleChange={handleVehicleChange}
+      >
+        <Routes>
+          <Route path="/" element={
+            <ProtectedRoute>
+              <Dashboard selectedVehicle={selectedVehicle} />
+            </ProtectedRoute>
+          } />
+          <Route path="/agent-chat" element={
+            <ProtectedRoute>
+              <AgentChat vehicleId={selectedVehicle?.vehicleId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/voice-control" element={
+            <ProtectedRoute>
+              <VoiceControl />
+            </ProtectedRoute>
+          } />
+          <Route path="/simulator" element={
+            <ProtectedRoute>
+              <Simulator selectedVehicle={selectedVehicle?.vehicleId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/notifications" element={
+            <ProtectedRoute>
+              <NotificationLog vehicleId={selectedVehicle?.vehicleId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/services" element={
+            <ProtectedRoute>
+              <ServiceInfo vehicleId={selectedVehicle?.vehicleId} />
+            </ProtectedRoute>
+          } />
+          <Route path="/remote-drive" element={
+            <ProtectedRoute>
+              <RemoteDrive />
+            </ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <div className="container mx-auto max-w-4xl p-5">
+              <div className="rounded-lg border bg-card p-5">
+                <h1 className="mb-3 text-2xl font-bold">Settings</h1>
+                <p className="mb-5 text-sm text-muted-foreground">Configure your application preferences and system settings.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">General</h2>
+                    <p className="text-xs text-muted-foreground">Manage general application settings and preferences.</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Notifications</h2>
+                    <p className="text-xs text-muted-foreground">Configure notification preferences and alerts.</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Display</h2>
+                    <p className="text-xs text-muted-foreground">Customize your display settings and theme preferences.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          } />
+          <Route path="/security" element={
+            <div className="container mx-auto max-w-4xl p-5">
+              <div className="rounded-lg border bg-card p-5">
+                <h1 className="mb-3 text-2xl font-bold">Security</h1>
+                <p className="mb-5 text-sm text-muted-foreground">Manage your security settings and authentication options.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Authentication</h2>
+                    <p className="text-xs text-muted-foreground">Configure multi-factor authentication and login options.</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Privacy</h2>
+                    <p className="text-xs text-muted-foreground">Manage your privacy settings and data sharing preferences.</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Access Control</h2>
+                    <p className="text-xs text-muted-foreground">Control access to your connected vehicles and features.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          } />
+          <Route path="/about" element={
+            <div className="container mx-auto max-w-4xl p-5">
+              <div className="rounded-lg border bg-card p-5">
+                <h1 className="mb-3 text-2xl font-bold">About</h1>
+                <p className="mb-5 text-sm text-muted-foreground">Learn more about the Connected Vehicle Platform.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Version</h2>
+                    <p className="text-xs text-muted-foreground">Current version: 1.0.0</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Support</h2>
+                    <p className="text-xs text-muted-foreground">For assistance, please contact support@connected-car-platform.com</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          } />
+          <Route path="/profile" element={
+            <div className="container mx-auto max-w-4xl p-5">
+              <div className="rounded-lg border bg-card p-5">
+                <h1 className="mb-3 text-2xl font-bold">User Profile</h1>
+                <p className="mb-5 text-sm text-muted-foreground">Manage your personal information and account settings.</p>
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Personal Information</h2>
+                    <p className="text-xs text-muted-foreground">Update your name, email, and contact details.</p>
+                  </div>
+                  <div className="rounded-md border bg-card p-3">
+                    <h2 className="mb-1.5 text-lg font-bold">Preferences</h2>
+                    <p className="text-xs text-muted-foreground">Set your account preferences and notification settings.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          } />
+        </Routes>
+      </MainLayout>
+    </div>
   );
 }
 

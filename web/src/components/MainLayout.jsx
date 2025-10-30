@@ -1,107 +1,24 @@
 import { useState } from 'react';
-import { styled } from '@mui/material/styles';
 import { 
-  AppBar, Toolbar, Typography, IconButton, 
-  Drawer, Box, Divider, List, ListItem, 
-  ListItemIcon, ListItemText, ListItemButton,
-  FormControl, InputLabel, Select, MenuItem,
-  useMediaQuery, useTheme, Button
-} from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import BuildIcon from '@mui/icons-material/Build';
-import SettingsIcon from '@mui/icons-material/Settings';
-import ChatIcon from '@mui/icons-material/Chat';
-import VoiceChatIcon from '@mui/icons-material/VoiceChat';
-import SecurityIcon from '@mui/icons-material/Security';
-import InfoIcon from '@mui/icons-material/Info';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
-import SportsEsportsIcon from '@mui/icons-material/SportsEsports';
-import LogoutIcon from '@mui/icons-material/Logout';
-import LoginIcon from '@mui/icons-material/Login';
-import { Link } from 'react-router-dom';
+  Menu, X, LogOut, LogIn, LayoutDashboard, MessageCircle, 
+  Rocket, Volume2, Settings, Lock, Info, User, Component, Bell, ChevronDown 
+} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react';
 import { loginRequest } from '../auth/msalConfig';
 
-const drawerWidth = 280; // Increased drawer width for large screens
-
-// AppBar styled component that shifts when drawer is open
-const AppBarStyled = styled(AppBar, { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme, open }) => ({
-    transition: theme.transitions.create(['margin', 'width'], {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.leavingScreen,
-    }),
-    ...(open && {
-      width: `calc(100% - ${drawerWidth}px)`,
-      marginLeft: `${drawerWidth}px`,
-      transition: theme.transitions.create(['margin', 'width'], {
-        easing: theme.transitions.easing.easeOut,
-        duration: theme.transitions.duration.enteringScreen,
-      }),
-    }),
-  }),
-);
-
-// Main content area that shifts when drawer is open
-const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme, open }) => ({
-    flexGrow: 1,
-    padding: 0,
-    transition: theme.transitions.create('margin', {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.leavingScreen,
-    }),
-    marginLeft: 0,
-    height: '100vh',
-    // Make vertical scrollbar visible
-    overflowY: 'auto',
-    WebkitOverflowScrolling: 'touch',
-    display: 'flex',
-    flexDirection: 'column',
-    ...(open && {
-      transition: theme.transitions.create('margin', {
-        easing: theme.transitions.easing.easeOut,
-        duration: theme.transitions.duration.enteringScreen,
-      }),
-      marginLeft: `${drawerWidth}px`,
-    }),
-  }),
-);
-
-// Offset content below AppBar
-const DrawerHeader = styled('div')(({ theme }) => ({
-  display: 'flex',
-  alignItems: 'center',
-  padding: theme.spacing(0, 1),
-  // necessary for content to be below app bar
-  ...theme.mixins.toolbar,
-  justifyContent: 'flex-end',
-}));
-
-const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange }) => {
+const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange, themeMode, onToggleTheme }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  
-  // MSAL authentication hooks
+  const location = useLocation();
   const { instance, accounts } = useMsal();
 
-  const handleDrawerToggle = () => {
-    setDrawerOpen(!drawerOpen);
+  const handleDrawerToggle = () => setDrawerOpen(!drawerOpen);
+
+  const handleVehicleChange = (value) => {
+    const vehicle = vehicles.find(v => v.vehicleId === value);
+    if (vehicle) onVehicleChange(vehicle);
   };
 
-  const handleVehicleChange = (event) => {
-    const selectedId = event.target.value;
-    const vehicle = vehicles.find(v => v.vehicleId === selectedId);
-    if (vehicle) {
-      onVehicleChange(vehicle);
-    }
-  };
-
-  // Authentication handlers
   const handleLogin = () => {
     instance.loginRedirect(loginRequest).catch((error) => console.error('Login error:', error));
   };
@@ -110,178 +27,156 @@ const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange 
     instance.logoutRedirect().catch((error) => console.error('Logout error:', error));
   };
 
-  // Navigation items for sidebar
   const navigationItems = [
-    { path: '/', icon: <DashboardIcon />, text: 'Dashboard' },
-    { path: '/agent-chat', icon: <ChatIcon />, text: 'Agent Chat' },
-    { path: '/simulator', icon: <DirectionsCarIcon />, text: 'Car Simulator' },
-    { path: '/remote-drive', icon: <SportsEsportsIcon />, text: 'Remote Drive' },
-    { path: '/voice-control', icon: <VoiceChatIcon />, text: 'Voice Control' },
-    { path: '/services', icon: <BuildIcon />, text: 'Services' },
-    { path: '/notifications', icon: <NotificationsIcon />, text: 'Notifications' },
+    { path: '/', icon: LayoutDashboard, text: 'Dashboard' },
+    { path: '/agent-chat', icon: MessageCircle, text: 'Agent Chat' },
+    { path: '/simulator', icon: Rocket, text: 'Car Simulator' },
+    { path: '/remote-drive', icon: Component, text: 'Remote Drive' },
+    { path: '/voice-control', icon: Volume2, text: 'Voice Control' },
+    { path: '/services', icon: Settings, text: 'Services' },
+    { path: '/notifications', icon: Bell, text: 'Notifications' },
   ];
 
-  // System items for sidebar
   const systemItems = [
-    { path: '/settings', icon: <SettingsIcon />, text: 'Settings' },
-    { path: '/security', icon: <SecurityIcon />, text: 'Security' },
-    { path: '/about', icon: <InfoIcon />, text: 'About' },
-    { path: '/profile', icon: <PersonOutlineIcon />, text: 'Profile' },
+    { path: '/settings', icon: Settings, text: 'Settings' },
+    { path: '/security', icon: Lock, text: 'Security' },
+    { path: '/about', icon: Info, text: 'About' },
+    { path: '/profile', icon: User, text: 'Profile' },
   ];
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <AppBarStyled position="fixed" open={drawerOpen && !isMobile} className="dashboard-header">
-        <Toolbar>
-          <IconButton
-            color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2 }}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" component="div" className="dashboard-title">
-            Agentic Connected Vehicle Platform
-          </Typography>
-          {vehicles.length > 0 && (
-            <FormControl sx={{ minWidth: 200, mr: 1 }} size="small">
-              <InputLabel id="vehicle-select-label" sx={{ color: 'white' }}>Vehicle</InputLabel>
-              <Select
-                labelId="vehicle-select-label"
-                value={selectedVehicle?.vehicleId || ''}
-                label="Vehicle"
-                onChange={handleVehicleChange}
-                sx={{ color: 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: 'white' } }}
-              >
-                {vehicles.map((vehicle) => (
-                  <MenuItem key={vehicle.vehicleId} value={vehicle.vehicleId}>
-                    {vehicle.make} {vehicle.model} ({vehicle.vehicleId})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          <Box sx={{ flexGrow: 1 }} />
-          {/* Authentication buttons */}
-          <AuthenticatedTemplate>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {accounts[0] && (
-                <Typography variant="body2" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
-                  {accounts[0].name || accounts[0].username}
-                </Typography>
-              )}
-              <Button
-                color="inherit"
-                startIcon={<LogoutIcon />}
-                onClick={handleLogout}
-                sx={{ textTransform: 'none' }}
-              >
-                Sign Out
-              </Button>
-            </Box>
-          </AuthenticatedTemplate>
-          <UnauthenticatedTemplate>
-            <Button
-              color="inherit"
-              startIcon={<LoginIcon />}
-              onClick={handleLogin}
-              sx={{ textTransform: 'none' }}
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="fixed top-0 left-0 right-0 h-14 bg-primary text-primary-foreground border-b border-primary/20 z-50 px-3 shadow-sm">
+        <div className="flex items-center justify-between h-full">
+          <div className="flex items-center gap-2.5">
+            <button 
+              className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
+              onClick={handleDrawerToggle}
             >
-              Sign In
-            </Button>
-          </UnauthenticatedTemplate>
-        </Toolbar>
-      </AppBarStyled>
-      
-      <Drawer
-        variant={isMobile ? "temporary" : "persistent"}
-        anchor="left"
-        open={drawerOpen}
-        onClose={isMobile ? handleDrawerToggle : undefined}
-        sx={{
-          width: (!isMobile && drawerOpen) ? drawerWidth : 0,
-          flexShrink: 0,
-          transition: (theme) => theme.transitions.create('width', {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
-          }),
-          '& .MuiDrawer-paper': {
-            width: drawerWidth,
-            boxSizing: 'border-box',
-            ...(theme.palette.mode === 'dark'
-              ? {
-                  backgroundImage: 'linear-gradient(180deg, rgba(10,18,32,0.95) 0%, rgba(5,8,15,0.95) 100%)',
-                  backdropFilter: 'blur(10px) saturate(140%)',
-                  borderRight: '1px solid rgba(255,255,255,0.14)',
-                }
-              : {
-                  backgroundColor: '#f8f9fa',
-                  borderRight: '1px solid #e5e7eb',
-                }),
-          },
-        }}
-      >
-        <DrawerHeader />
-        <Box sx={{ overflow: 'auto' }}>
-          {/* Main navigation items */}
-          <List>
-            {navigationItems.map((item) => (
-              <ListItem key={item.path} disablePadding>
-                <ListItemButton 
-                  component={Link} 
-                  to={item.path} 
-                  onClick={isMobile ? handleDrawerToggle : undefined}
-                >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
+              <Menu className="h-4 w-4" />
+            </button>
+            <h1 className="text-lg font-semibold">Agentic Connected Vehicle Platform</h1>
+          </div>
           
-          <Divider />
-          
-          {/* System items */}
-          <List>
-            {systemItems.map((item) => (
-              <ListItem key={item.path} disablePadding>
-                <ListItemButton 
-                  component={Link} 
-                  to={item.path} 
-                  onClick={isMobile ? handleDrawerToggle : undefined}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5">
+            {vehicles.length > 0 && (
+              <div className="relative">
+                <select 
+                  value={selectedVehicle?.vehicleId || ''}
+                  onChange={(e) => handleVehicleChange(e.target.value)}
+                  className="min-w-[180px] px-2.5 py-1.5 text-sm border border-white/20 rounded-md bg-white/10 text-primary-foreground appearance-none pr-8 hover:bg-white/15 transition-colors"
                 >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
-      
-      <Main open={drawerOpen && !isMobile} className="dashboard-content">
-        <DrawerHeader />
-        <Box sx={{ 
-          // Match content to viewport minus AppBar height (56px mobile, 64px desktop)
-          height: { xs: 'calc(100vh - 56px)', sm: 'calc(100vh - 64px)' }, 
-          display: 'flex',
-          flexDirection: 'column',
-          // Ensure the width is 100vw, avoid using 100% to prevent layout issues.
-          width: '100vw'
-        }}>
-          <Box sx={{ 
-            width: '100%',
-            mx: 'auto',
-            p: { xs: 2, md: 3, lg: 4 },
-            flexGrow: 1
-          }}>
-            {children}
-          </Box>
-        </Box>
-      </Main>
-    </Box>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.vehicleId} value={vehicle.vehicleId} className="bg-background text-foreground">
+                      {vehicle.make} {vehicle.model} ({vehicle.vehicleId})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none" />
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2.5">
+            <AuthenticatedTemplate>
+              <div className="flex items-center gap-1.5">
+                {accounts[0] && (
+                  <span className="text-xs hidden">
+                    {accounts[0].name || accounts[0].username}
+                  </span>
+                )}
+                <button 
+                  className="px-2.5 py-1.5 text-sm rounded-md bg-white/10 hover:bg-white/20 inline-flex items-center gap-1.5 transition-colors"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Sign Out
+                </button>
+              </div>
+            </AuthenticatedTemplate>
+            
+            <UnauthenticatedTemplate>
+              <button 
+                className="px-2.5 py-1.5 text-sm rounded-md bg-white/10 hover:bg-white/20 inline-flex items-center gap-1.5 transition-colors"
+                onClick={handleLogin}
+              >
+                <LogIn className="h-3.5 w-3.5" /> Sign In
+              </button>
+            </UnauthenticatedTemplate>
+          </div>
+        </div>
+      </header>
+
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 animate-fadeIn"
+            onClick={handleDrawerToggle}
+          />
+          <nav 
+            className="fixed top-0 left-0 bottom-0 w-[250px] bg-card border-r z-50 overflow-y-auto p-3 animate-slideIn"
+          >
+            <div className="flex justify-end mb-3">
+              <button 
+                className="p-1.5 rounded-md hover:bg-accent"
+                onClick={handleDrawerToggle}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              {navigationItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.path} to={item.path} className="no-underline">
+                    <button 
+                      className={`w-full px-3 py-2 text-sm rounded-md text-left inline-flex items-center gap-1.5 font-medium transition-colors ${
+                        location.pathname === item.path 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'hover:bg-accent'
+                      }`}
+                      onClick={handleDrawerToggle}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {item.text}
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
+            
+            <div className="h-px bg-border my-3" />
+            
+            <div className="flex flex-col gap-1">
+              {systemItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.path} to={item.path} className="no-underline">
+                    <button 
+                      className={`w-full px-3 py-2 text-sm rounded-md text-left inline-flex items-center gap-1.5 font-medium transition-colors ${
+                        location.pathname === item.path 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'hover:bg-accent'
+                      }`}
+                      onClick={handleDrawerToggle}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {item.text}
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </>
+      )}
+
+      {/* Main Content */}
+      <main className="pt-16 p-5">
+        {children}
+      </main>
+    </div>
   );
 };
 
