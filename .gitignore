@@ -327,3 +327,5 @@ memo.md
 /vehicle/.vscode
 /web/.vscode
 /vehicle/.vscode
+*.sh
+/temp

@@ -1,27 +1,61 @@
-* {
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  color-scheme: light dark;
-}
+@layer base {
+  * {
+    @apply box-border;
+  }
 
-/* Light theme variables */
-:root[data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --border-color: #e5e7eb;
-}
+  :root {
+    /* Azure brand colors */
+    --comm-blue-primary: #0078d4;
+    --comm-blue-hover: #005a9e;
+    --comm-blue-active: #004578;
+    --azure-blue: 207 100% 42%;
+    --azure-blue-hover: 207 100% 31%;
+    --azure-blue-active: 207 100% 24%;
+    
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 98%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 207 100% 42%; /* Azure blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 207 100% 42%;
+    --radius: 0.5rem;
+  }
 
-/* Dark theme variables */
-:root[data-theme="dark"] {
-  --bg-primary: #05080F;
-  --bg-secondary: rgba(255,255,255,0.06);
-  --text-primary: #EAF6FF;
-  --text-secondary: #B7C8E6;
-  --border-color: rgba(255,255,255,0.14);
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 217.2 32.6% 12%;
+    --card-foreground: 210 40% 98%;
+    --primary: 210 100% 52%; /* Brighter Azure blue for dark mode */
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 210 100% 52%;
+  }
 }
 
 /* Optimize for 1920x1080 displays */
@@ -39,18 +73,20 @@
 html, body, #root {
   margin: 0;
   padding: 0;
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.3s ease, color 0.3s ease;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 /* Light theme styles */

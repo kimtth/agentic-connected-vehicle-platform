@@ -1,76 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { 
-  Paper, Typography, Box, Button, CircularProgress 
-} from '@mui/material';
-import { styled } from '@mui/material/styles';
-import { ArrowUpward, ArrowDownward, Error, Link, LinkOff } from '@mui/icons-material';
-
-const StyledPaper = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(2),
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  backgroundColor: theme.palette.background.paper,
-}));
-
-const LogsContainer = styled(Box)(({ theme }) => ({
-  flex: 1,
-  overflowY: 'auto',
-  height: '100%', 
-  marginBottom: theme.spacing(2),
-  border: `1px solid ${theme.palette.divider}`,
-  borderRadius: theme.shape.borderRadius,
-  padding: theme.spacing(1),
-}));
-
-const LogEntry = styled(Box)(({ theme, type }) => {
-  let borderColor = theme.palette.info.main;
-  let bgColor = theme.palette.info.light;
-  
-  if (type === 'sent') {
-    borderColor = theme.palette.success.main;
-    bgColor = 'rgba(40, 167, 69, 0.1)';
-  } else if (type === 'error') {
-    borderColor = theme.palette.error.main;
-    bgColor = 'rgba(40, 167, 69, 0.1)';
-  } else if (type === 'success') {
-    borderColor = theme.palette.success.main;
-    bgColor = 'rgba(40, 167, 69, 0.1)';
-  }
-  
-  return {
-    padding: '8px 10px',
-    marginBottom: '5px',
-    borderRadius: theme.shape.borderRadius,
-    borderLeft: `3px solid ${borderColor}`,
-    backgroundColor: bgColor,
-    fontSize: '0.9rem',
-    display: 'flex',
-    alignItems: 'center',
-  };
-});
-
-const TimeStamp = styled(Typography)(({ theme }) => ({
-  color: theme.palette.text.secondary,
-  fontSize: '0.8rem',
-  marginBottom: theme.spacing(1),
-  padding: 0,
-}));
-
-const ConnectionControls = styled(Box)(({ theme }) => ({
-  marginTop: 'auto',
-  paddingTop: theme.spacing(2),
-  borderTop: `1px solid ${theme.palette.divider}`,
-  display: 'flex',
-  alignItems: 'center',
-}));
-
-const LogsHeader = styled(Box)(({ theme }) => ({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: theme.spacing(2),
-}));
+import { ArrowUp, ArrowDown, AlertCircle, Link as LinkIcon, Unlink, Loader2, List } from 'lucide-react';
 
 const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId, onLoadHistory }) => {
   const logsRef = useRef(null);
@@ -129,27 +58,28 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId, onLoadHis
   }, [isConnected, vehicleId, onLoadHistory]);
 
   const getIconForLogType = (type) => {
-    if (type === 'sent') return <ArrowUpward fontSize="small" color="success" sx={{ mr: 1 }} />;
-    if (type === 'error') return <ArrowDownward fontSize="small" color="info" sx={{ mr: 1 }} />;
-    return <ArrowDownward fontSize="small" color="info" sx={{ mr: 1 }} />;
+    if (type === 'sent') return <ArrowUp className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />;
+    if (type === 'error') return <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mr-2" />;
+    return <ArrowDown className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />;
+  };
+
+  const getLogEntryClass = (type) => {
+    if (type === 'sent') return 'border-l-4 border-green-500 bg-green-50 dark:bg-green-950/20';
+    if (type === 'error') return 'border-l-4 border-red-500 bg-red-50 dark:bg-red-950/20';
+    if (type === 'success') return 'border-l-4 border-green-500 bg-green-50 dark:bg-green-950/20';
+    return 'border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/20';
   };
 
   return (
-    <StyledPaper elevation={3}>
-      <LogsContainer>
-        <LogsHeader>
-          <Typography variant="h6" sx={{ color: 'white', flexGrow: 1 }}>
-            Connection Logs
-          </Typography>
-        </LogsHeader>
-        
-        <Typography variant="h6" gutterBottom>
-          <Box component="i" className="fas fa-list" sx={{ mr: 1 }} />
-          Communication Logs
-          {isLoadingHistory && <CircularProgress size={20} sx={{ ml: 1 }} />}
-        </Typography>
-        
-        <LogsContainer ref={logsRef}>
+    <div className="bg-card rounded-lg border border-border p-4 flex flex-col h-auto">
+      <div className="flex items-center gap-2 mb-3 flex-shrink-0">
+        <List className="h-5 w-5" />
+        <h2 className="text-xl font-semibold">Connection Logs</h2>
+        {isLoadingHistory && <Loader2 className="h-5 w-5 animate-spin ml-2" />}
+      </div>
+      
+      <div className="mb-3">
+        <div ref={logsRef} className="border border-border rounded-md overflow-y-auto p-2 max-h-[300px]">
           {logs.map((log, index) => {
             // Check if we need to add a timestamp divider
             const needsTimestamp = 
@@ -159,41 +89,38 @@ const LogsPanel = ({ logs, isConnected, onToggleConnection, vehicleId, onLoadHis
             return (
               <React.Fragment key={index}>
                 {needsTimestamp && (
-                  <TimeStamp variant="caption">[{log.timestamp}]</TimeStamp>
+                  <div className="text-xs text-muted-foreground mb-2">[{log.timestamp}]</div>
                 )}
-                <LogEntry type={log.type}>
+                <div className={`flex items-center px-3 py-2 mb-1 rounded ${getLogEntryClass(log.type)}`}>
                   {getIconForLogType(log.type)}
-                  {log.message}
-                </LogEntry>
+                  <span className="text-sm">{log.message}</span>
+                </div>
               </React.Fragment>
             );
           })}
-        </LogsContainer>
-      </LogsContainer>
+        </div>
+      </div>
       
-      <ConnectionControls>
-        <Box component="i" className="fas fa-server" sx={{ mr: 1 }} />
-        <Button
-          variant="contained"
-          color="success"
+      <div className="flex-shrink-0 border-t border-border pt-3 flex items-center gap-2">
+        <i className="fas fa-server" />
+        <button
           onClick={onToggleConnection}
-          startIcon={<Link />}
           disabled={isConnected}
-          sx={{ mr: 1 }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
+          <LinkIcon className="h-4 w-4" />
           Connect
-        </Button>
-        <Button
-          variant="contained"
-          color="error"
+        </button>
+        <button
           onClick={onToggleConnection}
-          startIcon={<LinkOff />}
           disabled={!isConnected}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-700 dark:bg-slate-800 text-white rounded-md hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
+          <Unlink className="h-4 w-4" />
           Disconnect
-        </Button>
-      </ConnectionControls>
-    </StyledPaper>
+        </button>
+      </div>
+    </div>
   );
 };
 

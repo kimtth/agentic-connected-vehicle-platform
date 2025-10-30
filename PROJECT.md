@@ -614,6 +614,9 @@ app.add_middleware(
 from azure.keyvault.secrets import SecretClient
 ```
 
+> [!IMPORTANT]  
+> If `API_TEST_MODE` is set to `true`, this will bypass API authentication for all requests.
+
 ## Monitoring & Observability
 
 ### Structured Logging

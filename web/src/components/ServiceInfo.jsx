@@ -1,10 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  List, ListItem, ListItemText, Typography, 
-  Box, CircularProgress, Divider, Chip,
-  Button, Dialog, DialogTitle, DialogContent, 
-  DialogActions, TextField
-} from '@mui/material';
+import { Loader2, Plus, X } from 'lucide-react';
 import { fetchServices, addService } from '../api/services';
 
 const ServiceInfo = ({ vehicleId }) => {
@@ -63,124 +58,121 @@ const ServiceInfo = ({ vehicleId }) => {
   };
 
   return (
-    <>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6" component="h2">
-          Vehicle Services
-        </Typography>
-        <Button 
-          variant="contained" 
-          color="primary"
-          size="small"
+    <div className="p-5">
+      <div className="flex justify-between items-center mb-3">
+        <h1 className="text-xl font-semibold mb-3">Vehicle Services</h1>
+        <button 
           onClick={handleOpenDialog}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-xs"
         >
+          <Plus className="h-3.5 w-3.5" />
           Add Service
-        </Button>
-      </Box>
+        </button>
+      </div>
       
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <CircularProgress size={24} />
-        </Box>
+        <div className="flex justify-center p-3">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
       ) : (
-        <Box sx={{ width: '55vw', maxHeight: 500, overflow: 'auto' }}>
-          <List>
+        <div className="w-[55vw] max-h-[450px] overflow-auto">
+          <div className="space-y-1.5">
             {services.length > 0 ? (
               services.map((service, index) => (
                 <React.Fragment key={`${service.serviceCode}-${index}`}>
-                  <ListItem alignItems="flex-start" className="service-item">
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <span>{service.description}</span>
-                          <Chip 
-                            label={service.serviceCode} 
-                            size="small" 
-                            color="primary" 
-                            variant="outlined" 
-                          />
-                        </Box>
-                      }
-                      secondary={
+                  <div className="service-item py-2.5">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="font-medium text-sm">{service.description}</span>
+                      <span className="px-1.5 py-0.5 text-[10px] border border-primary text-primary rounded">
+                        {service.serviceCode}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span>Start: {new Date(service.startDate).toLocaleDateString()}</span>
+                      {service.endDate && (
                         <>
-                          <Typography component="span" variant="body2" color="text.primary">
-                            Start: {new Date(service.startDate).toLocaleDateString()}
-                          </Typography>
-                          {service.endDate && (
-                            <>
-                              {" — "}
-                              <Typography component="span" variant="body2" color="text.primary">
-                                End: {new Date(service.endDate).toLocaleDateString()}
-                              </Typography>
-                            </>
-                          )}
+                          <span> — </span>
+                          <span>End: {new Date(service.endDate).toLocaleDateString()}</span>
                         </>
-                      }
-                    />
-                  </ListItem>
-                  {index < services.length - 1 && <Divider component="li" />}
+                      )}
+                    </div>
+                  </div>
+                  {index < services.length - 1 && <div className="border-t border-border" />}
                 </React.Fragment>
               ))
             ) : (
-              <ListItem>
-                <ListItemText primary="No services available for this vehicle" />
-              </ListItem>
+              <div className="py-2.5 text-xs text-muted-foreground">
+                No services available for this vehicle
+              </div>
             )}
-          </List>
-        </Box>
+          </div>
+        </div>
       )}
 
       {/* Add Service Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog}>
-        <DialogTitle>Add New Service</DialogTitle>
-        <DialogContent>
-          <TextField
-            margin="dense"
-            name="serviceCode"
-            label="Service Code"
-            fullWidth
-            variant="outlined"
-            value={newService.serviceCode}
-            onChange={handleInputChange}
-          />
-          <TextField
-            margin="dense"
-            name="description"
-            label="Description"
-            fullWidth
-            variant="outlined"
-            value={newService.description}
-            onChange={handleInputChange}
-          />
-          <TextField
-            margin="dense"
-            name="startDate"
-            label="Start Date"
-            type="date"
-            fullWidth
-            variant="outlined"
-            value={newService.startDate}
-            onChange={handleInputChange}
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            margin="dense"
-            name="endDate"
-            label="End Date (Optional)"
-            type="date"
-            fullWidth
-            variant="outlined"
-            value={newService.endDate}
-            onChange={handleInputChange}
-            InputLabelProps={{ shrink: true }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button onClick={handleAddService} variant="contained">Add</Button>
-        </DialogActions>
-      </Dialog>
-    </>
+      {openDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-lg border border-border p-5 w-full max-w-md">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-base font-semibold">Add New Service</h3>
+              <button onClick={handleCloseDialog} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-0.5">Service Code</label>
+                <input
+                  type="text"
+                  name="serviceCode"
+                  className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md"
+                  value={newService.serviceCode}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-0.5">Description</label>
+                <input
+                  type="text"
+                  name="description"
+                  className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md"
+                  value={newService.description}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-0.5">Start Date</label>
+                <input
+                  type="date"
+                  name="startDate"
+                  className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md"
+                  value={newService.startDate}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-0.5">End Date (Optional)</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  className="w-full px-2.5 py-1.5 text-sm border border-input rounded-md"
+                  value={newService.endDate}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-1.5 mt-5">
+              <button onClick={handleCloseDialog} className="px-3 py-1.5 text-sm border border-input rounded-md hover:bg-accent">
+                Cancel
+              </button>
+              <button onClick={handleAddService} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

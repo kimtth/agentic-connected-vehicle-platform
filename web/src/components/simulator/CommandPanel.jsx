@@ -1,77 +1,10 @@
 import { useState } from 'react';
-import { 
-  Paper, Typography, Grid, Button, Box 
-} from '@mui/material';
-import { styled } from '@mui/material/styles';
-import { 
-  Lock, LockOpen, PowerSettingsNew, Stop, 
-  DirectionsCar, Lightbulb, Warning, AcUnit, WbSunny,
-  KeyboardArrowUp, KeyboardArrowDown, LocalHospital,
-  BatteryChargingFull, Navigation
-} from '@mui/icons-material';
-
-const StyledPaper = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(2),
-  height: '100%',
-  backgroundColor: theme.palette.background.paper,
-  display: 'flex',
-  flexDirection: 'column',
-  overflow: 'hidden',
-}));
-
-const CommandButton = styled(Button)(({ theme }) => ({
-  width: '100%',
-  textAlign: 'left',
-  justifyContent: 'flex-start',
-  padding: theme.spacing(1.5),
-  backgroundColor: theme.palette.action.hover,
-  color: theme.palette.text.primary,
-  '&:hover': {
-    backgroundColor: theme.palette.primary.main,
-    color: theme.palette.primary.contrastText,
-    transform: 'translateY(-2px)',
-    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
-  }
-}));
-
-const EmergencyCommandButton = styled(Button)(({ theme }) => ({
-  width: '100%',
-  textAlign: 'left',
-  justifyContent: 'flex-start',
-  padding: theme.spacing(1.5),
-  backgroundColor: theme.palette.error.main,
-  color: theme.palette.error.contrastText,
-  '&:hover': {
-    backgroundColor: theme.palette.error.dark,
-    transform: 'translateY(-2px)',
-    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
-  }
-}));
-
-const EmergencyButton = styled(Button)(({ theme }) => ({
-  backgroundColor: 'rgba(135, 180, 253, 1)',
-  color: theme.palette.getContrastText('rgb(178, 207, 255)'),
-  '&:hover': {
-    backgroundColor: 'rgba(178, 208, 255, 0.82)',
-  },
-  fontWeight: 'bold',
-  minHeight: '48px',
-}));
-
-const CustomCommandSection = styled(Box)(({ theme }) => ({
-  marginTop: theme.spacing(1),
-  flexShrink: 0,
-}));
-
-const ScrollableContent = styled(Box)(({ theme }) => ({
-  flex: 1,
-  display: 'flex',
-  flexDirection: 'column',
-  overflow: 'hidden',
-  marginBottom: theme.spacing(1),
-  height: '100%',
-  minHeight: 0, 
-}));
+import {
+  Lock, Unlock, Power, Square,
+  Car, Lightbulb, AlertTriangle, Snowflake, Sun,
+  ChevronUp, ChevronDown, Heart,
+  BatteryCharging, Navigation, Terminal
+} from 'lucide-react';
 
 const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
   const [isSending, setIsSending] = useState(false);
@@ -82,7 +15,7 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       alert('Please connect to server first!');
       return;
     }
-    
+
     setIsSending(true);
     try {
       await onSendCommand(command);
@@ -96,7 +29,7 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
       alert('Please connect to server first!');
       return;
     }
-    
+
     setIsSending(true);
     try {
       await onSendCommand(command);
@@ -109,56 +42,58 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
   const commandCategories = {
     vehicle_features: {
       title: 'Vehicle Features',
-      icon: <DirectionsCar />,
+      icon: <Car className="h-4 w-4" />,
       commands: [
-        { command: 'LIGHTS_ON', icon: <Lightbulb />, label: 'Turn On Headlights', params: { light_type: 'headlights' } },
-        { command: 'LIGHTS_OFF', icon: <Lightbulb />, label: 'Turn Off Headlights', params: { light_type: 'headlights' } },
-        { command: 'CLIMATE_CONTROL', icon: <AcUnit />, label: 'Set Climate 20°C', params: { temperature: 20, action: 'cooling' } },
-        { command: 'CLIMATE_CONTROL', icon: <WbSunny />, label: 'Set Climate 26°C', params: { temperature: 26, action: 'heating' } },
-        { command: 'WINDOWS_UP', icon: <KeyboardArrowUp />, label: 'Windows Up', params: { windows: 'all' } },
-        { command: 'WINDOWS_DOWN', icon: <KeyboardArrowDown />, label: 'Windows Down', params: { windows: 'all' } }
+        { command: 'LIGHTS_ON', icon: <Lightbulb className="h-4 w-4" />, label: 'Turn On Headlights', params: { light_type: 'headlights' } },
+        { command: 'LIGHTS_OFF', icon: <Lightbulb className="h-4 w-4" />, label: 'Turn Off Headlights', params: { light_type: 'headlights' } },
+        { command: 'CLIMATE_CONTROL', icon: <Snowflake className="h-4 w-4" />, label: 'Set Climate 20°C', params: { temperature: 20, action: 'cooling' } },
+        { command: 'CLIMATE_CONTROL', icon: <Sun className="h-4 w-4" />, label: 'Set Climate 26°C', params: { temperature: 26, action: 'heating' } },
+        { command: 'WINDOWS_UP', icon: <ChevronUp className="h-4 w-4" />, label: 'Windows Up', params: { windows: 'all' } },
+        { command: 'WINDOWS_DOWN', icon: <ChevronDown className="h-4 w-4" />, label: 'Windows Down', params: { windows: 'all' } }
       ]
     },
     remote_access: {
       title: 'Remote Access',
-      icon: <Lock />,
+      icon: <Lock className="h-4 w-4" />,
       commands: [
-        { command: 'LOCK_DOORS', icon: <Lock />, label: 'Lock Doors', params: { doors: 'all' } },
-        { command: 'UNLOCK_DOORS', icon: <LockOpen />, label: 'Unlock Doors', params: { doors: 'all' } },
-        { command: 'START_ENGINE', icon: <PowerSettingsNew />, label: 'Start Engine', params: { remote: true } },
-        { command: 'STOP_ENGINE', icon: <Stop />, label: 'Stop Engine', params: { remote: true } },
-        { command: 'HORN_LIGHTS', icon: <Warning />, label: 'Horn & Lights', params: { duration: 10 } }
+        { command: 'LOCK_DOORS', icon: <Lock className="h-4 w-4" />, label: 'Lock Doors', params: { doors: 'all' } },
+        { command: 'UNLOCK_DOORS', icon: <Unlock className="h-4 w-4" />, label: 'Unlock Doors', params: { doors: 'all' } },
+        { command: 'START_ENGINE', icon: <Power className="h-4 w-4" />, label: 'Start Engine', params: { remote: true } },
+        { command: 'STOP_ENGINE', icon: <Square className="h-4 w-4" />, label: 'Stop Engine', params: { remote: true } },
+        { command: 'HORN_LIGHTS', icon: <AlertTriangle className="h-4 w-4" />, label: 'Horn & Lights', params: { duration: 10 } }
       ]
     },
     emergency: {
       title: 'Emergency & Safety',
-      icon: <LocalHospital />,
+      icon: <Heart className="h-4 w-4" />,
       emergency: true,
       commands: [
-        { command: 'SOS_REQUEST', icon: <LocalHospital />, label: 'SOS Emergency', params: { priority: 'critical' } },
-        { command: 'EMERGENCY_CALL', icon: <LocalHospital />, label: 'Emergency Call', params: { call_type: 'manual' } },
-        { command: 'COLLISION_ALERT', icon: <Warning />, label: 'Report Collision', params: { severity: 'minor' } },
-        { command: 'THEFT_NOTIFICATION', icon: <Warning />, label: 'Report Theft', params: { reported_by: 'owner' } }
+        { command: 'SOS_REQUEST', icon: <Heart className="h-4 w-4" />, label: 'SOS Emergency', params: { priority: 'critical' } },
+        { command: 'EMERGENCY_CALL', icon: <Heart className="h-4 w-4" />, label: 'Emergency Call', params: { call_type: 'manual' } },
+        { command: 'COLLISION_ALERT', icon: <AlertTriangle className="h-4 w-4" />, label: 'Report Collision', params: { severity: 'minor' } },
+        { command: 'THEFT_NOTIFICATION', icon: <AlertTriangle className="h-4 w-4" />, label: 'Report Theft', params: { reported_by: 'owner' } }
       ]
     },
     charging: {
       title: 'Charging & Energy',
-      icon: <BatteryChargingFull />,
+      icon: <BatteryCharging className="h-4 w-4" />,
       commands: [
-        { command: 'START_CHARGING', icon: <BatteryChargingFull />, label: 'Start Charging', params: {} },
-        { command: 'STOP_CHARGING', icon: <Stop />, label: 'Stop Charging', params: {} },
-        { command: 'SET_CHARGING_SCHEDULE', icon: <BatteryChargingFull />, label: 'Set Charge Schedule', 
-          params: { schedule: { start_time: '22:00', end_time: '06:00' } } }
+        { command: 'START_CHARGING', icon: <BatteryCharging className="h-4 w-4" />, label: 'Start Charging', params: {} },
+        { command: 'STOP_CHARGING', icon: <Square className="h-4 w-4" />, label: 'Stop Charging', params: {} },
+        {
+          command: 'SET_CHARGING_SCHEDULE', icon: <BatteryCharging className="h-4 w-4" />, label: 'Set Charge Schedule',
+          params: { schedule: { start_time: '22:00', end_time: '06:00' } }
+        }
       ]
     },
     information: {
       title: 'Information & Navigation',
-      icon: <Navigation />,
+      icon: <Navigation className="h-4 w-4" />,
       commands: [
-        { command: 'GET_WEATHER', icon: <Navigation />, label: 'Get Weather Info', params: {} },
-        { command: 'FIND_CHARGING_STATIONS', icon: <BatteryChargingFull />, label: 'Find Charging Stations', params: {} },
-        { command: 'GET_TRAFFIC', icon: <Navigation />, label: 'Traffic Information', params: {} },
-        { command: 'FIND_POI', icon: <Navigation />, label: 'Find Points of Interest', params: { category: 'restaurant' } }
+        { command: 'GET_WEATHER', icon: <Navigation className="h-4 w-4" />, label: 'Get Weather Info', params: {} },
+        { command: 'FIND_CHARGING_STATIONS', icon: <BatteryCharging className="h-4 w-4" />, label: 'Find Charging Stations', params: {} },
+        { command: 'GET_TRAFFIC', icon: <Navigation className="h-4 w-4" />, label: 'Traffic Information', params: {} },
+        { command: 'FIND_POI', icon: <Navigation className="h-4 w-4" />, label: 'Find Points of Interest', params: { category: 'restaurant' } }
       ]
     }
   };
@@ -173,88 +108,63 @@ const CommandPanel = ({ onSendCommand, isConnected, vehicleId }) => {
   const isEmergencyCategory = commandCategories[selectedCategory]?.emergency;
 
   return (
-    <StyledPaper elevation={3}>
-      <Typography variant="h6" gutterBottom sx={{ flexShrink: 0 }}>
-        <Box component="i" className="fas fa-terminal" sx={{ mr: 1 }} />
-        Send Commands
-      </Typography>
-      
-      <ScrollableContent>
-        {/* 60% area: primary command grid */}
-        <Box sx={{ flex: '1 1 60%', minHeight: 0, overflowY: 'auto' }}>
-          <Grid container spacing={1}>
+    <div className="bg-card rounded-lg border border-border p-4 flex flex-col h-auto">
+      <div className="flex items-center gap-2 mb-3 flex-shrink-0">
+        <Terminal className="h-5 w-5" />
+        <h2 className="text-xl font-semibold">Send Commands</h2>
+      </div>
+
+      <div className="flex flex-col gap-3 mb-2">
+        {/* Primary command grid */}
+        <div className="overflow-y-auto max-h-[300px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {commandCategories[selectedCategory]?.commands.map((cmd, index) => (
-              <Grid item xs={12} sm={6} key={index}>
-                {isEmergencyCategory ? (
-                  <EmergencyCommandButton
-                    startIcon={cmd.icon}
-                    onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
-                    disabled={isSending || !isConnected}
-                    fullWidth
-                  >
-                    {cmd.label}
-                  </EmergencyCommandButton>
-                ) : (
-                  <CommandButton
-                    startIcon={cmd.icon}
-                    onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
-                    disabled={isSending || !isConnected}
-                    fullWidth
-                  >
-                    {cmd.label}
-                  </CommandButton>
-                )}
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
-        {/* 40% area: Emergency Commands Section */}
-        <Box sx={{ flex: '0 0 40%', minHeight: 0, overflowY: 'auto', mt: 1 }}>
-          <Typography variant="subtitle2" gutterBottom color="error">
-            Emergency Commands
-          </Typography>
-          <Grid container spacing={1}>
-            <Grid item xs={12}>
-              <EmergencyCommandButton
-                startIcon={<Warning />}
-                onClick={() => onSendCommand('SOS')}
-                disabled={!isConnected}
-                fullWidth
-                sx={{
-                  backgroundColor: 'rgb(53, 69, 130)',
-                  color: '#fff',
-                  '&:hover': {
-                    backgroundColor: 'rgba(53, 68, 130, 0.65)'
-                  }
-                }}
+              <button
+                key={index}
+                onClick={() => handleSendCommand(`${cmd.command}:${JSON.stringify(cmd.params)}`)}
+                disabled={isSending || !isConnected}
+                className={`flex items-center gap-2 w-full text-left justify-start px-4 py-3 rounded-md transition-all ${isEmergencyCategory
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50'
+                    : 'bg-accent hover:bg-primary hover:text-primary-foreground hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50'
+                  }`}
               >
-                EMERGENCY SOS
-              </EmergencyCommandButton>
-            </Grid>
-            {emergencyCommands.map((cmd) => (
-              <Grid item xs={6} key={cmd.command}>
-                <EmergencyButton
-                  fullWidth
-                  size="small"
-                  onClick={() => handleEmergencyCommand(cmd.command)}
-                  disabled={!isConnected}
-                >
-                  {cmd.label}
-                </EmergencyButton>
-              </Grid>
+                {cmd.icon}
+                {cmd.label}
+              </button>
             ))}
-          </Grid>
-        </Box>
-      </ScrollableContent>
-      
-      <CustomCommandSection>
+          </div>
+        </div>
+
+        {/* Emergency Commands Section - Always Visible */}
+        <div className="flex-shrink-0 border-t border-border pt-3">
+          <div className="flex items-center gap-2 mb-3 flex-shrink-0">
+            <Terminal className="h-5 w-5" />
+            <h2 className="text-xl font-semibold">Emergency Commands</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {emergencyCommands.map((cmd) => (
+              <button
+                key={cmd.command}
+                onClick={() => handleEmergencyCommand(cmd.command)}
+                disabled={!isConnected}
+                className="flex items-center gap-2 w-full text-left justify-start px-4 py-3 rounded-md transition-all bg-accent hover:bg-primary hover:text-primary-foreground hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {cmd.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex-shrink-0">
         {vehicleId && (
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+          <p className="text-xs text-muted-foreground">
             Target: Vehicle {vehicleId}
-          </Typography>
+          </p>
         )}
-      </CustomCommandSection>
-    </StyledPaper>
+      </div>
+    </div>
   );
 };
 

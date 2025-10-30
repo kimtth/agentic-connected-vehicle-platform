@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, Paper, Typography, Box,
-  CircularProgress
-} from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import { fetchNotifications, subscribeToNotificationsStream } from '../api/notifications';
 
 const NotificationLog = ({ vehicleId }) => {
@@ -48,50 +44,50 @@ const NotificationLog = ({ vehicleId }) => {
   const formatType = (t) => t ? t.replace(/_/g, ' ') : 'N/A';
 
   return (
-    <>
-      <Typography variant="h6" component="h2" gutterBottom>
-        Notification Log
-      </Typography>
+    <div className="p-5">
+      <h1 className="text-xl font-semibold mb-3">Notification Log</h1>
       
       {loading && notifications.length === 0 ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <CircularProgress size={24} />
-        </Box>
+        <div className="flex justify-center p-6">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
       ) : (
-        <TableContainer component={Paper} sx={{ maxHeight: 800 }}>
-          <Table stickyHeader aria-label="notification log table" size="small" className="notification-log-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Message</TableCell>
-                <TableCell>Read</TableCell>
-                <TableCell>Timestamp</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {notifications.length > 0 ? (
-                notifications.map((n) => (
-                  <TableRow key={n.id}>
-                    <TableCell>{safeSubstring(n.id, 0, 8)}</TableCell>
-                    <TableCell>{formatType(n.type)}</TableCell>
-                    <TableCell>{n.message || 'N/A'}</TableCell>
-                    <TableCell>{n.read ? 'Yes' : 'No'}</TableCell>
-                    <TableCell>{n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} align="center">
-                    No notifications found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
+          <div className="max-h-[700px] overflow-auto">
+            <table className="w-full">
+              <thead className="bg-muted sticky top-0 z-10">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium">ID</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium">Type</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium">Message</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium">Read</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {notifications.length > 0 ? (
+                  notifications.map((n) => (
+                    <tr key={n.id} className="hover:bg-muted/50 transition-colors">
+                      <td className="px-3 py-2 text-xs">{safeSubstring(n.id, 0, 8)}</td>
+                      <td className="px-3 py-2 text-xs">{formatType(n.type)}</td>
+                      <td className="px-3 py-2 text-xs">{n.message || 'N/A'}</td>
+                      <td className="px-3 py-2 text-xs">{n.read ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-2 text-xs">{n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : 'N/A'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                      No notifications found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
-    </>
+    </div>
   );
 };
 

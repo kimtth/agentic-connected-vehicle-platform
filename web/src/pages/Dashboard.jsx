@@ -1,46 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Container,
-  Grid,
-  Paper,
-  Typography,
-  Box,
-  Card,
-  CardContent,
-  CardActionArea,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Divider,
-  Chip,
-  Alert,
-  Button,
-  LinearProgress,
-  CircularProgress
-} from '@mui/material';
-import {
-  Speed as SpeedIcon,
-  BatteryChargingFull as BatteryIcon,
-  Thermostat as TempIcon,
-  DirectionsCar as CarIcon,
-  Notifications as NotificationIcon,
-  Build as ServiceIcon,
-  SupportAgent,
-  LocalGasStation,
-  EnergySavingsLeaf,
-  AcUnit,
-  Refresh as RefreshIcon
-} from '@mui/icons-material';
-import { RecordVoiceOver } from '@mui/icons-material'; // added
+import { 
+  Rocket, Settings, Bell, RefreshCw,
+  MessageCircle, Volume2, AlertTriangle, Loader2
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
 import { fetchNotifications } from '../api/notifications';
-import { useTheme } from '@mui/material/styles';
 
 const Dashboard = ({ selectedVehicle }) => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const [vehicleStatus, setVehicleStatus] = useState({
     speed: 0,
@@ -93,432 +61,233 @@ const Dashboard = ({ selectedVehicle }) => {
     refreshDashboard();
   }, [refreshDashboard]);
 
-  useEffect(() => {
-    // Apply theme class to body for CSS variables
-    document.body.setAttribute('data-theme', theme?.palette?.mode || 'dark');
-    
-    return () => {
-      document.body.removeAttribute('data-theme');
-    };
-  }, [theme?.palette?.mode]);
-
   const quickStats = [
-    {
-      label: 'Current Speed',
-      rawValue: vehicleStatus.speed,
-      icon: <SpeedIcon />,
-      color: 'primary',
-      unit: 'km/h'
-    },
-    {
-      label: 'Battery Level',
-      rawValue: vehicleStatus.battery,
-      icon: <BatteryIcon />,
-      color: 'success',
-      unit: '%',
-      showProgress: true
-    },
-    {
-      label: 'Engine Temp',
-      rawValue: vehicleStatus.engineTemp,
-      icon: <TempIcon />,
-      color: 'warning',
-      unit: '°C'
-    },
-    {
-      label: 'Oil Level',
-      rawValue: vehicleStatus.oilRemaining,
-      icon: <LocalGasStation />,
-      color: 'info',
-      unit: '%',
-      showProgress: true
-    }
+    { label: 'Current Speed', rawValue: vehicleStatus.speed, icon: '🚗', unit: 'km/h' },
+    { label: 'Battery Level', rawValue: vehicleStatus.battery, icon: '🔋', unit: '%', showProgress: true },
+    { label: 'Engine Temp', rawValue: vehicleStatus.engineTemp, icon: '🌡️', unit: '°C' },
+    { label: 'Oil Level', rawValue: vehicleStatus.oilRemaining, icon: '⛽', unit: '%', showProgress: true }
   ];
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-          <CircularProgress />
-        </Box>
-      </Container>
+      <div className="p-6">
+        <div className="flex justify-center my-8">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Alert severity="error">{error}</Alert>
-      </Container>
+      <div className="p-6">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-md bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+          <AlertTriangle className="h-5 w-5" />
+          <span>{error}</span>
+        </div>
+      </div>
     );
   }
 
   if (!selectedVehicle) {
     return (
-      <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Alert severity="info">Please select a vehicle to view the dashboard.</Alert>
-      </Container>
+      <div className="p-6">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+          <span>Please select a vehicle to view the dashboard.</span>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ 
-      py: 3,
-      overflow: 'hidden',
-      '&::-webkit-scrollbar': { display: 'none' },
-      msOverflowStyle: 'none',
-      scrollbarWidth: 'none',
-    }}>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" gutterBottom>
+    <div className="p-5">
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold mb-3">
           Vehicle Dashboard
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary">
+        </h1>
+        <p className="text-sm text-muted-foreground mb-3">
           {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.vehicleId})
-        </Typography>
-        <Box sx={{ mt: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={refreshDashboard}
-            disabled={loading || !selectedVehicle}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </Button>
-        </Box>
-      </Box>
+        </p>
+        <button 
+          className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={refreshDashboard} 
+          disabled={loading || !selectedVehicle}
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
 
-      <Grid container spacing={3}>
-        {/* Enhanced Quick Stats */}
-        <Grid item xs={12}>
-          <Grid container spacing={2}>
-            {quickStats.map((stat, index) => (
-              <Grid item xs={12} sm={6} md={3} key={index}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ color: `${stat.color}.main`, mr: 2 }}>
-                        {stat.icon}
-                      </Box>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle2" color="text.secondary">
-                          {stat.label}
-                        </Typography>
-                        <Typography variant="h5" component="div">
-                          {typeof stat.rawValue === 'number' ? stat.rawValue : 0}{stat.unit}
-                        </Typography>
-                      </Box>
-                    </Box>
-                    {stat.showProgress && (
-                      <LinearProgress
-                        variant="determinate"
-                        value={stat.rawValue || 0}
-                        sx={{ height: 8, borderRadius: 4 }}
-                        color={stat.color}
-                      />
-                    )}
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                      Last updated: {vehicleStatus.timestamp ? new Date(vehicleStatus.timestamp).toLocaleTimeString() : '-'}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        </Grid>
-
-                {/* Enhanced Quick Actions */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-              <ServiceIcon sx={{ mr: 1 }} />
-              Quick Actions
-            </Typography>
-            <Grid container spacing={3} sx={{ mt: 1 }}>
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardActionArea
-                    component="div"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate('/agent-chat')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/agent-chat'); } }}
-                  >
-                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
-                      <SupportAgent sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                      <Typography variant="h6" component="div" gutterBottom>
-                        Agent Chat
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Get assistance and control your vehicle with AI-powered chat
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        sx={{ mt: 2 }}
-                        startIcon={<SupportAgent />}
-                      >
-                        Start Chat
-                      </Button>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardActionArea
-                    component="div"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate('/simulator')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/simulator'); } }}
-                  >
-                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
-                      <CarIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                      <Typography variant="h6" component="div" gutterBottom>
-                        Car Simulator
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Test and simulate vehicle commands and responses
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        sx={{ mt: 2 }}
-                        startIcon={<CarIcon />}
-                      >
-                        Launch Simulator
-                      </Button>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardActionArea
-                    component="div"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate('/services')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/services'); } }}
-                  >
-                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
-                      <ServiceIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                      <Typography variant="h6" component="div" gutterBottom>
-                        Service Status
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        View upcoming maintenance and service details
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        sx={{ mt: 2 }}
-                        startIcon={<ServiceIcon />}
-                      >
-                        View Services
-                      </Button>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardActionArea
-                    component="div"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`); } }}
-                  >
-                    <CardContent sx={{ textAlign: 'center', p: 3, flexGrow: 1 }}>
-                      <RecordVoiceOver sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-                      <Typography variant="h6" component="div" gutterBottom>
-                        Voice Control
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Use real-time speech & avatar assistant
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        sx={{ mt: 2 }}
-                        startIcon={<RecordVoiceOver />}
-                      >
-                        Launch
-                      </Button>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-            </Grid>
-
-            {/* Vehicle Controls */}
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Vehicle Controls
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<EnergySavingsLeaf />}
-                    onClick={() => navigate(`/agent-chat?query=enable eco mode&vehicleId=${selectedVehicle.vehicleId}`)}
-                  >
-                    Eco Mode
-                  </Button>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<AcUnit />}
-                    onClick={() => navigate(`/agent-chat?query=adjust climate control&vehicleId=${selectedVehicle.vehicleId}`)}
-                  >
-                    Climate Control
-                  </Button>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<SpeedIcon />}
-                    onClick={() => navigate(`/agent-chat?query=run vehicle diagnostics&vehicleId=${selectedVehicle.vehicleId}`)}
-                  >
-                    Diagnostics
-                  </Button>
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    startIcon={<NotificationIcon />}
-                    onClick={() => navigate('/notifications')}
-                  >
-                    View Alerts
-                  </Button>
-                </Grid>
-              </Grid>
-              
-              {/* Emergency Controls */}
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Emergency Controls
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => navigate(`/agent-chat?query=initiate emergency call&vehicleId=${selectedVehicle.vehicleId}`)}
-                      sx={{ color: 'warning.main', borderColor: 'warning.main' }}
-                    >
-                      Emergency Call
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      color="error"
-                      onClick={() => navigate(`/agent-chat?query=activate SOS&vehicleId=${selectedVehicle.vehicleId}`)}
-                      sx={{ color: 'error.main', borderColor: 'error.main' }}
-                    >
-                      SOS Assistance
-                    </Button>
-                  </Grid>
-                </Grid>
-              </Box>
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* Vehicle Metrics Chart */}
-        <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3, height: '400px' }}>
-            <Typography variant="h6" gutterBottom>
-              Vehicle Metrics
-            </Typography>
-            <VehicleMetrics vehicleStatus={vehicleStatus} />
-          </Paper>
-        </Grid>
-
-        {/* Recent Notifications */}
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, height: '400px', overflow: 'auto' }}>
-            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-              <NotificationIcon sx={{ mr: 1 }} />
-              Recent Notifications
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-
-            {notifications.length > 0 ? (
-              <List dense>
-                {notifications.map((notification, index) => (
-                  <div key={notification.id || index}>
-                    <ListItem sx={{ px: 0 }}>
-                      <ListItemIcon>
-                        <Box
-                          sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            bgcolor: notification.severity === 'error' ? 'error.main' :
-                              notification.severity === 'warning' ? 'warning.main' : 'info.main'
-                          }}
-                        />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={notification.message || notification.title}
-                        secondary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
-                              {notification.timestamp ? new Date(notification.timestamp).toLocaleString() : 'Recent'}
-                            </Typography>
-                            {notification.severity && (
-                              <Chip
-                                label={notification.severity}
-                                size="small"
-                                color={notification.severity === 'error' ? 'error' :
-                                  notification.severity === 'warning' ? 'warning' : 'default'}
-                                variant="outlined"
-                              />
-                            )}
-                          </Box>
-                        }
-                        secondaryTypographyProps={{ component: 'div' }}
-                      />
-                    </ListItem>
-                    {index < notifications.length - 1 && <Divider />}
-                  </div>
-                ))}
-              </List>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
-                No recent notifications
-              </Typography>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        {quickStats.map((stat, index) => (
+          <div key={index} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-3xl">{stat.icon}</span>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">{stat.label}</p>
+                <p className="text-xl font-bold">
+                  {typeof stat.rawValue === 'number' ? stat.rawValue : 0}{stat.unit}
+                </p>
+              </div>
+            </div>
+            {stat.showProgress && (
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-300" 
+                  style={{ width: `${stat.rawValue || 0}%` }}
+                />
+              </div>
             )}
-            <Button
-              fullWidth
-              variant="text"
-              color="primary"
-              sx={{ mt: 2 }}
-              onClick={() => navigate('/notifications')}
-            >
-              View All Notifications
-            </Button>
-          </Paper>
-        </Grid>
+            <p className="text-[10px] text-muted-foreground mt-1.5">
+              Last updated: {vehicleStatus.timestamp ? new Date(vehicleStatus.timestamp).toLocaleTimeString() : '-'}
+            </p>
+          </div>
+        ))}
+      </div>
 
+      <div className="p-4 bg-card rounded-lg border mb-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Settings className="h-4 w-4" />
+          <h2 className="text-lg font-bold">Quick Actions</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/agent-chat')}>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <MessageCircle className="h-10 w-10" />
+              <div>
+                <h3 className="text-base font-bold mb-1.5">Agent Chat</h3>
+                <p className="text-xs text-muted-foreground">Get assistance and control your vehicle with AI-powered chat</p>
+              </div>
+              <button className="mt-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
+                <MessageCircle className="h-3.5 w-3.5" /> Start Chat
+              </button>
+            </div>
+          </div>
 
-      </Grid>
-    </Box>
+          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/simulator')}>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Rocket className="h-10 w-10" />
+              <div>
+                <h3 className="text-base font-bold mb-1.5">Car Simulator</h3>
+                <p className="text-xs text-muted-foreground">Test and simulate vehicle commands and responses</p>
+              </div>
+              <button className="mt-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
+                <Rocket className="h-3.5 w-3.5" /> Launch Simulator
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/services')}>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Settings className="h-10 w-10" />
+              <div>
+                <h3 className="text-base font-bold mb-1.5">Service Status</h3>
+                <p className="text-xs text-muted-foreground">View upcoming maintenance and service details</p>
+              </div>
+              <button className="mt-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
+                <Settings className="h-3.5 w-3.5" /> View Services
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`)}>
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Volume2 className="h-10 w-10" />
+              <div>
+                <h3 className="text-base font-bold mb-1.5">Voice Control</h3>
+                <p className="text-xs text-muted-foreground">Use real-time speech & avatar assistant</p>
+              </div>
+              <button className="mt-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
+                <Volume2 className="h-3.5 w-3.5" /> Launch
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <h3 className="text-base font-bold mb-2">Vehicle Controls</h3>
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <button className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent" onClick={() => navigate(`/agent-chat?query=enable eco mode&vehicleId=${selectedVehicle.vehicleId}`)}>
+              🌿 Eco Mode
+            </button>
+            <button className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent" onClick={() => navigate(`/agent-chat?query=adjust climate control&vehicleId=${selectedVehicle.vehicleId}`)}>
+              ❄️ Climate Control
+            </button>
+            <button className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent" onClick={() => navigate(`/agent-chat?query=run vehicle diagnostics&vehicleId=${selectedVehicle.vehicleId}`)}>
+              🔧 Diagnostics
+            </button>
+            <button className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent inline-flex items-center gap-1.5" onClick={() => navigate('/notifications')}>
+              <Bell className="h-3.5 w-3.5" /> View Alerts
+            </button>
+            <div className="h-5 w-px bg-border mx-1" />
+            <button className="px-3 py-1.5 text-sm rounded-md border border-orange-500 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950" onClick={() => navigate(`/agent-chat?query=initiate emergency call&vehicleId=${selectedVehicle.vehicleId}`)}>
+              📞 Emergency Call
+            </button>
+            <button className="px-3 py-1.5 text-sm rounded-md border border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-950" onClick={() => navigate(`/agent-chat?query=activate SOS&vehicleId=${selectedVehicle.vehicleId}`)}>
+              🆘 SOS Assistance
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5">
+        <div className="lg:col-span-2 p-4 bg-card rounded-lg border h-[350px]">
+          <h2 className="text-lg font-bold mb-3">Vehicle Metrics</h2>
+          <VehicleMetrics vehicleStatus={vehicleStatus} />
+        </div>
+
+        <div className="p-4 bg-card rounded-lg border h-[350px] overflow-auto">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell className="h-4 w-4" />
+            <h2 className="text-lg font-bold">Recent Notifications</h2>
+          </div>
+          <div className="h-px bg-border mb-3" />
+
+          {notifications.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {notifications.map((notification, index) => (
+                <div key={notification.id || index} className="p-2.5 bg-muted rounded-md">
+                  <div className="flex items-start gap-1.5">
+                    <div 
+                      className="w-1.5 h-1.5 rounded-full mt-1"
+                      style={{ 
+                        background: notification.severity === 'error' ? '#ef4444' : 
+                                   notification.severity === 'warning' ? '#f97316' : '#3b82f6'
+                      }}
+                    />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium mb-0.5">
+                        {notification.message || notification.title}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">
+                          {notification.timestamp ? new Date(notification.timestamp).toLocaleString() : 'Recent'}
+                        </span>
+                        {notification.severity && (
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                            notification.severity === 'error' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                            notification.severity === 'warning' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                            'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          }`}>
+                            {notification.severity}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground text-center mt-6">
+              No recent notifications
+            </p>
+          )}
+          <button className="mt-3 w-full px-3 py-1.5 text-sm rounded-md bg-secondary hover:bg-secondary/80" onClick={() => navigate('/notifications')}>
+            View All Notifications
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 

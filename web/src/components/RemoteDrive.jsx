@@ -1,15 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Paper, Grid, Typography, Button, IconButton,
-  Card, CardContent, Chip, Alert, Slider, TextField,
-  Divider
-} from '@mui/material';
-import {
-  KeyboardArrowUp, KeyboardArrowDown, KeyboardArrowLeft, KeyboardArrowRight,
-  Stop, Home, Videocam, VideocamOff, WifiTethering, WifiTetheringOff,
-  RotateRight, VolumeUp, VolumeOff
-} from '@mui/icons-material';
-import ConstructionIcon from '@mui/icons-material/Construction';
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  Square, Home, Video, VideoOff, Wifi, WifiOff,
+  RotateCw, Volume2, VolumeX, Construction
+} from 'lucide-react';
 import demoVideo from '../assets/video.mp4'; // Path expects: web/src/assets/video.mp4. Adjust if asset lives elsewhere.
 
 const RemoteDrive = () => {
@@ -175,351 +169,310 @@ const RemoteDrive = () => {
   }, [handleMove, handleStop, handleHome]);
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Alert
-        icon={<ConstructionIcon fontSize="inherit" />}
-        severity="info"
-        sx={{ mb: 2 }}
-      >
-        Under construction demo mode – all controls are simulated.
-      </Alert>
-      <Typography variant="h4" gutterBottom>
-        Remote Drive Control
-      </Typography>
+    <div className="p-5">
+      <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md p-2.5 mb-3">
+        <Construction className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+        <span className="text-xs text-blue-900 dark:text-blue-100">Under construction demo mode – all controls are simulated.</span>
+      </div>
+      <h1 className="text-xl font-semibold mb-3">Remote Drive Control</h1>
       
-      <Grid container spacing={3}>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
         {/* Video Feed Section */}
-        <Grid item xs={12} lg={8}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h6">Video Feed</Typography>
-                <Box>
-                  <Chip
-                    icon={videoConnected ? <WifiTethering /> : <WifiTetheringOff />}
-                    label={videoConnected ? 'Connected' : 'Disconnected'}
-                    color={videoConnected ? 'success' : 'default'}
-                    size="small"
-                    sx={{ mr: 1 }}
-                  />
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={connect}
-                    startIcon={<Videocam />}
-                  >
-                    Connect
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={disconnect}
-                    startIcon={<VideocamOff />}
-                    sx={{ ml: 1 }}
-                  >
-                    Disconnect
-                  </Button>
-                </Box>
-              </Box>
-              
-              <Paper sx={{ position: 'relative', paddingTop: '56.25%' }}>
-                {videoConnected ? (
-                  <Box
-                    component="video"
-                    src={videoUrl}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    onError={() => setVideoError('Failed to load demo video')}
-                    sx={{
-                      position: 'absolute', top: 0, left: 0,
-                      width: '100%', height: '100%',
-                      objectFit: 'cover',
-                      filter: buzzerOn ? 'hue-rotate(45deg)' : 'none'
-                    }}
-                  />
-                ) : (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: '50%', left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      textAlign: 'center'
-                    }}
-                  >
-                    <VideocamOff sx={{ fontSize: 64, color: 'grey.500' }} />
-                    <Typography color="grey.500" sx={{ mt: 2 }}>
-                      No video feed
-                    </Typography>
-                  </Box>
-                )}
-              </Paper>
-              
-              {videoError && (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  {videoError}
-                </Alert>
+        <div className="lg:col-span-6">
+          <div className="bg-card rounded-lg border border-border p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-base font-semibold">Video Feed</h2>
+              <div className="flex items-center gap-1.5">
+                <span className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs ${
+                  videoConnected ? 'bg-green-100 dark:bg-green-950 text-green-800 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'
+                }`}>
+                  {videoConnected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                  {videoConnected ? 'Connected' : 'Disconnected'}
+                </span>
+                <button
+                  onClick={connect}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-xs"
+                >
+                  <Video className="h-3.5 w-3.5" />
+                  Connect
+                </button>
+                <button
+                  onClick={disconnect}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 border border-input rounded-md hover:bg-accent text-xs"
+                >
+                  <VideoOff className="h-3.5 w-3.5" />
+                  Disconnect
+                </button>
+              </div>
+            </div>
+            
+            <div className="relative pt-[56.25%] bg-black rounded-md overflow-hidden">
+              {videoConnected ? (
+                <video
+                  src={videoUrl}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  onError={() => setVideoError('Failed to load demo video')}
+                  className="absolute top-0 left-0 w-full h-full object-cover"
+                  style={{ filter: buzzerOn ? 'hue-rotate(45deg)' : 'none' }}
+                />
+              ) : (
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                  <VideoOff className="h-16 w-16 text-gray-500 mx-auto" />
+                  <p className="text-gray-500 mt-4">No video feed</p>
+                </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+            
+            {videoError && (
+              <div className="mt-4 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md text-red-900 dark:text-red-100">
+                {videoError}
+              </div>
+            )}
+          </div>
 
-          <Card sx={{ mt: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Activity Log
-              </Typography>
-              
-              {/* Telemetry moved here */}
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Telemetry
-                </Typography>
-                <Box sx={{ display:'flex', flexWrap:'wrap', gap:1 }}>
-                  <Chip
-                    label={ultrasonic != null ? `Distance: ${ultrasonic}cm` : 'Distance: --'}
-                    color={ultrasonic != null ? 'primary' : 'default'}
-                    size="small"
-                  />
-                  <Chip
-                    label={light ? `Light L:${light.left}V R:${light.right}V` : 'Light: --'}
-                    size="small"
-                  />
-                  <Chip
-                    label={power != null ? `Power: ${power}%` : 'Power: --'}
-                    color={power != null ? (power > 30 ? 'success':'warning') : 'default'}
-                    size="small"
-                  />
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  Live telemetry only available when WS gateway passes raw server lines.
-                </Typography>
-              </Box>
-              
-              <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', p: 1 }}>
-                {activityLog.map((log, index) => (
-                  <Box key={index} sx={{ mb: 0.5 }}>
-                    <Typography
-                      variant="caption"
-                      color={
-                        log.type === 'error' ? 'error' :
-                        log.type === 'success' ? 'success.main' :
-                        log.type === 'warning' ? 'warning.main' :
-                        'text.secondary'
-                      }
-                    >
-                      [{log.timestamp}] {log.message}
-                    </Typography>
-                  </Box>
-                ))}
-                {activityLog.length === 0 && (
-                  <Typography variant="caption" color="text.secondary">
-                    No activity yet
-                  </Typography>
-                )}
-              </Paper>
+          <div className="mt-3 bg-card rounded-lg border border-border p-4">
+            <h2 className="text-base font-semibold mb-3">Activity Log</h2>
+            
+            <div className="mb-3">
+              <h3 className="text-xs font-medium text-muted-foreground mb-1.5">Telemetry</h3>
+              <div className="flex flex-wrap gap-2">
+                <span className={`px-2 py-1 text-xs rounded ${
+                  ultrasonic != null ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                }`}>
+                  Distance: {ultrasonic != null ? `${ultrasonic}cm` : '--'}
+                </span>
+                <span className="px-2 py-1 text-xs rounded bg-muted">
+                  Light {light ? `L:${light.left}V R:${light.right}V` : '--'}
+                </span>
+                <span className={`px-2 py-1 text-xs rounded ${
+                  power != null ? (power > 30 ? 'bg-green-100 dark:bg-green-950 text-green-800 dark:text-green-200' : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-800 dark:text-yellow-200') : 'bg-muted'
+                }`}>
+                  Power: {power != null ? `${Math.round(power)}%` : '--'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Live telemetry only available when WS gateway passes raw server lines.
+              </p>
+            </div>
+            
+            <div className="border border-border rounded-md max-h-[200px] overflow-auto p-2">
+              {activityLog.map((log, index) => (
+                <div key={index} className="mb-1">
+                  <span className={`text-xs ${
+                    log.type === 'error' ? 'text-red-600 dark:text-red-400' :
+                    log.type === 'success' ? 'text-green-600 dark:text-green-400' :
+                    log.type === 'warning' ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-muted-foreground'
+                  }`}>
+                    [{log.timestamp}] {log.message}
+                  </span>
+                </div>
+              ))}
+              {activityLog.length === 0 && (
+                <span className="text-xs text-muted-foreground">No activity yet</span>
+              )}
+            </div>
 
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="h6" gutterBottom>
-                Server Configuration
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    label="Video Server URL"
-                    value={videoServerUrl}
-                    onChange={(e) => setVideoServerUrl(e.target.value)}
-                    fullWidth
-                    helperText="WebSocket URL for video stream"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    label="Control Server URL"
-                    value={controlServerUrl}
-                    onChange={(e) => setControlServerUrl(e.target.value)}
-                    fullWidth
-                    helperText="HTTP URL for remote control"
-                  />
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Grid>
+            <div className="border-t border-border my-4" />
+            <h2 className="text-xl font-semibold mb-4">Server Configuration</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Video Server URL</label>
+                <input
+                  type="text"
+                  value={videoServerUrl}
+                  onChange={(e) => setVideoServerUrl(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md"
+                />
+                <p className="text-xs text-muted-foreground mt-1">WebSocket URL for video stream</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Control Server URL</label>
+                <input
+                  type="text"
+                  value={controlServerUrl}
+                  onChange={(e) => setControlServerUrl(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md"
+                />
+                <p className="text-xs text-muted-foreground mt-1">HTTP URL for remote control</p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Control Panel */}
-        <Grid item xs={12} lg={4}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Movement Controls
-              </Typography>
+        <div className="lg:col-span-6">
+          <div className="bg-card rounded-lg border border-border p-6">
+            <h2 className="text-xl font-semibold mb-4">Movement Controls</h2>
+            
+            <div className="flex justify-center mb-6">
+              <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm ${
+                controlConnected ? 'bg-green-100 dark:bg-green-950 text-green-800 dark:text-green-200' : 'bg-muted'
+              }`}>
+                {controlConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                {controlConnected ? 'Control Active' : 'Control Inactive'}
+              </span>
+            </div>
+
+            {/* Direction Pad */}
+            <div className="flex flex-col items-center mb-6">
+              <button
+                onMouseDown={() => handleMove('forward')}
+                onMouseUp={handleStop}
+                onMouseLeave={handleStop}
+                className="p-2 hover:bg-accent rounded-lg transition-colors"
+              >
+                <ChevronUp className="h-10 w-10" />
+              </button>
               
-              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-                <Chip
-                  icon={controlConnected ? <WifiTethering /> : <WifiTetheringOff />}
-                  label={controlConnected ? 'Control Active' : 'Control Inactive'}
-                  color={controlConnected ? 'success' : 'default'}
-                />
-              </Box>
-
-              {/* Direction Pad */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
-                <IconButton size="large"
-                  onMouseDown={() => handleMove('forward')}
+              <div className="flex gap-8">
+                <button
+                  onMouseDown={() => handleMove('left')}
                   onMouseUp={handleStop}
                   onMouseLeave={handleStop}
+                  className="p-2 hover:bg-accent rounded-lg transition-colors"
                 >
-                  <KeyboardArrowUp sx={{ fontSize: 40 }} />
-                </IconButton>
+                  <ChevronLeft className="h-10 w-10" />
+                </button>
                 
-                <Box sx={{ display: 'flex', gap: 4 }}>
-                  <IconButton size="large"
-                    onMouseDown={() => handleMove('left')}
-                    onMouseUp={handleStop}
-                    onMouseLeave={handleStop}
-                  >
-                    <KeyboardArrowLeft sx={{ fontSize: 40 }} />
-                  </IconButton>
-                  
-                  <IconButton size="large" onClick={handleStop} color="error">
-                    <Stop sx={{ fontSize: 40 }} />
-                  </IconButton>
-                  
-                  <IconButton size="large"
-                    onMouseDown={() => handleMove('right')}
-                    onMouseUp={handleStop}
-                    onMouseLeave={handleStop}
-                  >
-                    <KeyboardArrowRight sx={{ fontSize: 40 }} />
-                  </IconButton>
-                </Box>
+                <button onClick={handleStop} className="p-2 hover:bg-red-100 dark:hover:bg-red-950 rounded-lg transition-colors text-red-600">
+                  <Square className="h-10 w-10" />
+                </button>
                 
-                <IconButton size="large"
-                  onMouseDown={() => handleMove('backward')}
+                <button
+                  onMouseDown={() => handleMove('right')}
                   onMouseUp={handleStop}
                   onMouseLeave={handleStop}
+                  className="p-2 hover:bg-accent rounded-lg transition-colors"
                 >
-                  <KeyboardArrowDown sx={{ fontSize: 40 }} />
-                </IconButton>
-              </Box>
+                  <ChevronRight className="h-10 w-10" />
+                </button>
+              </div>
+              
+              <button
+                onMouseDown={() => handleMove('backward')}
+                onMouseUp={handleStop}
+                onMouseLeave={handleStop}
+                className="p-2 hover:bg-accent rounded-lg transition-colors"
+              >
+                <ChevronDown className="h-10 w-10" />
+              </button>
+            </div>
 
-              <Divider sx={{ my: 2 }} />
+            <div className="border-t border-border my-4" />
 
               {/* Speed Control */}
-              <Box sx={{ mb: 3 }}>
-                <Typography gutterBottom>
-                  Speed: {speed}%
-                </Typography>
-                <Slider
+              <div className="mb-6">
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-medium">Speed: {speed}%</span>
+                  <div className="flex gap-2 text-xs text-muted-foreground">
+                    <span>0</span>
+                    <span>50</span>
+                    <span>100</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
                   value={speed}
-                  onChange={(e, v) => setSpeed(v)}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
                   min={0}
                   max={100}
-                  marks={[
-                    { value: 0, label: '0' },
-                    { value: 50, label: '50' },
-                    { value: 100, label: '100' }
-                  ]}
+                  className="w-full"
                 />
-              </Box>
+              </div>
 
-              <Divider sx={{ my: 2 }} />
+              <div className="border-t border-border my-4" />
 
               {/* Servo Controls */}
-              <Box sx={{ mb: 3 }}>
-                <Typography gutterBottom>
-                  Camera Controls
-                </Typography>
+              <div className="mb-6">
+                <h3 className="text-sm font-medium mb-3">Camera Controls</h3>
                 
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" gutterBottom>
-                    Horizontal (Servo 1): {servo1}°
-                  </Typography>
-                  <Slider
+                <div className="mb-4">
+                  <label className="text-sm mb-2 block">Horizontal (Servo 1): {servo1}°</label>
+                  <input
+                    type="range"
                     value={servo1}
-                    onChange={(e, v) => handleServoChange(1, v)}
+                    onChange={(e) => handleServoChange(1, Number(e.target.value))}
                     min={0}
                     max={180}
+                    className="w-full"
                   />
-                </Box>
+                </div>
                 
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" gutterBottom>
-                    Vertical (Servo 2): {servo2}°
-                  </Typography>
-                  <Slider
+                <div className="mb-4">
+                  <label className="text-sm mb-2 block">Vertical (Servo 2): {servo2}°</label>
+                  <input
+                    type="range"
                     value={servo2}
-                    onChange={(e, v) => handleServoChange(2, v)}
+                    onChange={(e) => handleServoChange(2, Number(e.target.value))}
                     min={80}
                     max={180}
+                    className="w-full"
                   />
-                </Box>
+                </div>
                 
-                <Button
-                  variant="outlined"
-                  startIcon={<Home />}
+                <button
                   onClick={handleHome}
-                  fullWidth
+                  className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-input rounded-md hover:bg-accent"
                 >
+                  <Home className="h-4 w-4" />
                   Reset Camera Position
-                </Button>
-                <Button
-                  sx={{ mt: 1 }}
-                  variant={demoLoop ? 'contained' : 'outlined'}
-                  color={demoLoop ? 'success' : 'primary'}
+                </button>
+                <button
                   onClick={toggleDemoLoop}
-                  fullWidth
+                  className={`flex items-center justify-center gap-2 w-full px-4 py-2 rounded-md mt-2 ${
+                    demoLoop ? 'bg-green-600 text-white hover:bg-green-700' : 'border border-input hover:bg-accent'
+                  }`}
                 >
                   {demoLoop ? 'Stop Demo Loop' : 'Start Demo Loop'}
-                </Button>
-              </Box>
+                </button>
+              </div>
 
-              <Divider sx={{ my: 2 }} />
+              <div className="border-t border-border my-4" />
 
               {/* Additional Controls */}
-              <Box sx={{ mb: 2 }}>
-                <Typography gutterBottom>
-                  Accessories
-                </Typography>
+              <div className="mb-4">
+                <h3 className="text-sm font-medium mb-3">Accessories</h3>
                 
-                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                  <Button
-                    variant={buzzerOn ? 'contained' : 'outlined'}
-                    startIcon={buzzerOn ? <VolumeUp /> : <VolumeOff />}
+                <div className="flex gap-2">
+                  <button
                     onClick={toggleBuzzer}
-                    fullWidth
+                    className={`flex items-center justify-center gap-2 flex-1 px-4 py-2 rounded-md ${
+                      buzzerOn ? 'bg-primary text-primary-foreground' : 'border border-input hover:bg-accent'
+                    }`}
                   >
+                    {buzzerOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                     Buzzer
-                  </Button>
+                  </button>
                   
-                  <Button
-                    variant={ledsOn ? 'contained' : 'outlined'}
-                    startIcon={<RotateRight />}
+                  <button
                     onClick={toggleLeds}
-                    fullWidth
+                    className={`flex items-center justify-center gap-2 flex-1 px-4 py-2 rounded-md ${
+                      ledsOn ? 'bg-primary text-primary-foreground' : 'border border-input hover:bg-accent'
+                    }`}
                   >
+                    <RotateCw className="h-4 w-4" />
                     LEDs
-                  </Button>
-                </Box>
-              </Box>
+                  </button>
+                </div>
+              </div>
 
-              <Divider sx={{ my: 2 }} />
+              <div className="border-t border-border my-4" />
 
-              {/* Keyboard Shortcuts */}
-              <Box>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Keyboard Controls:
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  W/S/A/D - Move | Space - Stop | H - Home
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    </Box>
+            {/* Keyboard Shortcuts */}
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Keyboard Controls:</p>
+              <p className="text-xs text-muted-foreground">
+                W/S/A/D - Move | Space - Stop | H - Home
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

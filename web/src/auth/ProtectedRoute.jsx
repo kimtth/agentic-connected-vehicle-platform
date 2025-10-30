@@ -1,5 +1,4 @@
 import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
-import { Box, Typography, Container } from '@mui/material';
 
 const ProtectedRoute = ({ children }) => {
   return (
@@ -8,26 +7,19 @@ const ProtectedRoute = ({ children }) => {
         {children}
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        <Container maxWidth="sm">
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            minHeight: '100vh',
-            textAlign: 'center'
-          }}>
-            <Typography variant="h4" gutterBottom>
+        <div className="container mx-auto max-w-2xl">
+          <div className="flex flex-col items-center justify-center min-h-screen text-center">
+            <h1 className="text-5xl font-bold mb-4">
               Welcome to Connected Car Platform
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            </h1>
+            <p className="text-lg text-muted-foreground mb-6">
               Please sign in using the button in the header to access the application
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
+            </p>
+            <p className="text-sm text-muted-foreground">
               Click "Sign In" in the top-right corner to continue
-            </Typography>
-          </Box>
-        </Container>
+            </p>
+          </div>
+        </div>
       </UnauthenticatedTemplate>
     </>
   );
