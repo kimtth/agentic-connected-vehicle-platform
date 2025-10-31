@@ -9,6 +9,12 @@ from loguru import logger
 from typing import Any
 
 
+def is_dev_mode() -> bool:
+    """Check if running in development mode - detects Azure environment."""
+    azure_vars = ["WEBSITE_SITE_NAME", "WEBSITE_INSTANCE_ID", "MSI_ENDPOINT", "IDENTITY_ENDPOINT"]
+    return not any(os.getenv(var) for var in azure_vars)
+
+
 DEFAULT_LOG_LEVEL = "DEBUG"
 
 # Default format for standard output

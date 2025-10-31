@@ -18,13 +18,13 @@ from azure.core.exceptions import AzureError, ClientAuthenticationError
 from azure.identity.aio import (
     DefaultAzureCredential,
     ManagedIdentityCredential,
-    AzureDeveloperCliCredential
+    AzureCliCredential
 )
 from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
 import traceback
 from azure.cosmos import CosmosClient as SyncCosmosClient  # for fallback probe
 
-from utils.logging_config import get_logger
+from utils.logging_config import get_logger, is_dev_mode
 from models.status import VehicleStatus
 from models.vehicle_profile import VehicleProfile
 from models.service import Service
@@ -68,7 +68,7 @@ def _safe_atexit_cleanup():
             except RuntimeError:
                 # No event loop available, skip cleanup
                 pass
-    except Exception as e:
+    except Exception:
         # Silently ignore cleanup errors during shutdown
         pass
 
@@ -371,34 +371,53 @@ class CosmosDBClient:
         found_vars = {var: os.getenv(var) for var in azure_env_vars if os.getenv(var)}
         is_azure = len(found_vars) > 0
 
-        env_type = os.getenv("ENV_TYPE", "").lower()
-        if env_type in ["dev", "development", "local"] and env_type != "":
-            logger.info(f"Azure environment check: {is_azure} | env_type={env_type}")
+        if is_dev_mode():
             is_azure = False
-        
-        logger.info(f"Azure environment check: {is_azure}")
-        logger.info(f"Found Azure environment variables: {found_vars}")
         
         return is_azure
 
+
+
     async def _connect_with_aad(self):
         """AAD authentication. In Azure: plain ManagedIdentityCredential().
-        Local dev: AzureDeveloperCliCredential (tenant-aware) then fallback to DefaultAzureCredential."""
+        Local dev: Try AzureCliCredential first (fastest), then AzureDeveloperCliCredential, then DefaultAzureCredential."""
         try:
             if self._is_azure_environment():
                 self._credential = ManagedIdentityCredential()
             else:
                 tenant_id = os.getenv("AZURE_TENANT_ID") or os.getenv("AZD_TENANT_ID") or os.getenv("AZURE_AD_TENANT_ID")
+                # Try Azure CLI first (fastest for local dev if user is logged in via az login)
+                cli_failed = False
+                
                 try:
-                    self._credential = AzureDeveloperCliCredential(tenant_id=tenant_id)
-                    await self._credential.get_token("https://management.azure.com/.default")
-                except Exception as devcli_err:
-                    logger.warning(f"DevCLI unavailable ({devcli_err}); fallback DefaultAzureCredential")
+                    logger.debug("Attempting authentication with AzureCliCredential...")
+                    cli_cred = AzureCliCredential(tenant_id=tenant_id, process_timeout=10)
+                    # Test the credential with a timeout
+                    token_task = asyncio.create_task(cli_cred.get_token("https://cosmos.azure.com/.default"))
+                    await asyncio.wait_for(token_task, timeout=30)
+                    self._credential = cli_cred
+                    logger.info("Successfully authenticated with Azure CLI")
+                except asyncio.TimeoutError:
+                    logger.debug("AzureCliCredential timed out after 12 seconds")
+                    cli_failed = True
+                except Exception as cli_error:
+                    logger.debug(f"AzureCliCredential failed: {cli_error}")
+                    cli_failed = True
+                
+                # If both failed, fallback to DefaultAzureCredential but exclude what we already tried
+                if cli_failed:
+                    logger.debug("Falling back to DefaultAzureCredential (excluding already-tried methods)...")
                     self._credential = DefaultAzureCredential(
-                        exclude_developer_cli_credential=True,
+                        exclude_cli_credential=True,  # Already tried
+                        exclude_developer_cli_credential=True,  # Already tried
+                        exclude_powershell_credential=True,  # Often slow
                         exclude_interactive_browser_credential=True,
                     )
-            self.client = CosmosClient(self.endpoint, credential=self._credential)
+            
+            self.client = CosmosClient(
+                self.endpoint, 
+                credential=self._credential
+            )
             self.database = self.client.get_database_client(self.database_name)
             self._initialize_containers()
             return True
@@ -408,31 +427,23 @@ class CosmosDBClient:
             raise
 
     async def _connect_with_master_key(self):
-        """Connect using master key authentication with proper configuration"""
+        """Connect using master key authentication"""
         try:
-            logger.info("Connecting to Cosmos DB with master key authentication")
-
-            # Create client with minimal configuration
-            self.client = CosmosClient(self.endpoint, credential=self.key)
-
-            # Test connection
+            self.client = CosmosClient(
+                self.endpoint, 
+                credential=self.key
+            )
             self.database = self.client.get_database_client(self.database_name)
-
             self._initialize_containers()
-            logger.info("Successfully connected to Cosmos DB with master key")
             return True
         except AzureError as e:
             error_msg = str(e).lower()
             if "authorization is disabled" in error_msg or "forbidden" in error_msg:
-                logger.warning("Master key auth disabled. Falling back to AAD auth.")
                 self.use_aad_auth = True
                 return await self._connect_with_aad()
-            else:
-                logger.error(f"Master key authentication failed: {str(e)}")
-                await self._cleanup_client()
-                raise
-        except Exception as e:
-            logger.error(f"Master key authentication failed: {str(e)}")
+            await self._cleanup_client()
+            raise
+        except Exception:
             await self._cleanup_client()
             raise
 

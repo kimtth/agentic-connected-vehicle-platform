@@ -1,0 +1,87 @@
+services:
+  # Azure Cosmos DB Emulator
+  cosmosdb:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+    # The Cosmos DB Emulator is an evaluation version and is only valid for 180 days after its release.
+    # The "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest" is not working due to "The evaluation period has expired".
+    container_name: cosmosdb-emulator
+    platform: linux/amd64
+    ports:
+      - "8081:8081"
+      - "10250-10255:10250-10255"
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+      - PROTOCOL=https  # Use HTTPS with certificate installation
+    volumes:
+      - cosmosdb-data:/tmp/cosmos/appdata
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:8081"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  vehicle-platform:
+    image: agentic-vehicle-platform:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Frontend build-time variables
+        REACT_APP_AZURE_CLIENT_ID: ${REACT_APP_AZURE_CLIENT_ID}
+        REACT_APP_AZURE_TENANT_ID: ${REACT_APP_AZURE_TENANT_ID}
+        REACT_APP_AZURE_SCOPE: ${REACT_APP_AZURE_SCOPE}
+        REACT_APP_API_DEV_BASE_URL: ${REACT_APP_API_DEV_BASE_URL}
+        NODE_ENV: ${NODE_ENV:-production}
+    ports:
+      - "8000:8000"
+    depends_on:
+      cosmosdb:
+        condition: service_healthy
+    environment:
+      # Backend runtime variables
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
+      - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_CHAT_MODEL_NAME=${OPENAI_CHAT_MODEL_NAME}
+      - COSMOS_DB_ENDPOINT=${COSMOS_DB_ENDPOINT:-https://cosmosdb:8081}
+      - COSMOS_DB_KEY=${COSMOS_DB_KEY:-C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==}
+      - COSMOS_DB_DATABASE=${COSMOS_DB_DATABASE:-VehiclePlatformDB}
+      - COSMOS_DB_CONTAINER_VEHICLES=${COSMOS_DB_CONTAINER_VEHICLES:-vehicles}
+      - COSMOS_DB_CONTAINER_SERVICES=${COSMOS_DB_CONTAINER_SERVICES:-services}
+      - COSMOS_DB_CONTAINER_COMMANDS=${COSMOS_DB_CONTAINER_COMMANDS:-commands}
+      - COSMOS_DB_CONTAINER_NOTIFICATIONS=${COSMOS_DB_CONTAINER_NOTIFICATIONS:-notifications}
+      - COSMOS_DB_CONTAINER_STATUS=${COSMOS_DB_CONTAINER_STATUS:-vehiclestatus}
+      - COSMOS_DB_USE_AAD=${COSMOS_DB_USE_AAD:-false}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_AUTH_REQUIRED=${AZURE_AUTH_REQUIRED:-true}
+      - API_TEST_MODE=${API_TEST_MODE:-false}
+      - ENABLE_MCP=${ENABLE_MCP:-false}
+      - MCP_SERVER_HOST=${MCP_SERVER_HOST:-127.0.0.1}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # SSL verification - entrypoint will handle emulator certificate installation
+      # For production, these should be unset to enable full SSL verification
+      - PYTHONHTTPSVERIFY=0
+      - REQUESTS_CA_BUNDLE=""
+      - CURL_CA_BUNDLE=""
+      - SSL_CERT_FILE=""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  cosmosdb-data:
+    driver: local

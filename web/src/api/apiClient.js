@@ -89,13 +89,9 @@ async function addAuthHeaders(config) {
       const token = await tokenProvider();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-      } else if (process.env.NODE_ENV === 'development') {
-        console.debug('[apiClient] No token available from provider');
       }
     } catch (e) {
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[apiClient] Token provider error:', e?.message);
-      }
+      // Token provider failed, continue without auth
     }
   }
   
@@ -107,23 +103,10 @@ api.interceptors.request.use(addAuthHeaders, (error) => Promise.reject(error));
 
 agentClient.interceptors.request.use(
   async (config) => {
-    config._isAgentClient = true; // Flag for X-Client-App header
-    const result = await addAuthHeaders(config);
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🚀 Agent API Request:', {
-        url: config.url,
-        method: config.method,
-        data: config.data,
-        timeout: config.timeout
-      });
-    }
-    return result;
+    config._isAgentClient = true;
+    return await addAuthHeaders(config);
   },
-  (error) => {
-    console.error('❌ Agent API Request Error:', error);
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Add retry interceptor for automatic endpoint correction
@@ -131,105 +114,30 @@ createRetryInterceptor(api);
 
 // Response interceptor for main API
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error('API error:', error);
-    
-    // Handle authentication errors
-    if (error.code === 'USER_NOT_AUTHENTICATED') {
-      console.error('Authentication required - user must be logged in');
-      error.message = 'Please log in to access this feature';
-      return Promise.reject(error);
-    }
-    
-    // Handle CORS errors
-    if (error.code === 'ERR_NETWORK' && error.message.includes('CORS')) {
-      console.error('CORS error - backend may not be configured for cross-origin requests');
-      error.message = 'Unable to connect to server. Please ensure the backend is running and configured for CORS.';
-      error.isCorsError = true;
-      return Promise.reject(error);
-    }
-    
-    // Handle specific error cases
+    // Enhance error messages for common cases
     if (error.code === 'ECONNABORTED') {
-      console.error('Request timeout - the server took too long to respond');
-      error.message = 'Request timeout - please try again';
-    } else if (error.response) {
-      // Server responded with error status
-      const status = error.response.status;
-      const data = error.response.data;
-      
-      if (status === 404) {
-        console.error('Resource not found');
-        error.message = data?.detail || 'Resource not found';
-      } else if (status === 405) {
-        console.error('Method not allowed - check API endpoint configuration');
-        error.message = 'Operation not supported by the server';
-      } else if (status === 500) {
-        console.error('Internal server error - possible backend endpoint issue');
-        error.message = data?.detail || 'Server error - the backend may have an issue with this endpoint';
-      } else if (status === 502) {
-        console.error('Bad Gateway - backend server may be down');
-        error.message = 'Backend service unavailable - please try again later';
-      } else if (status === 503) {
-        console.error('Service Unavailable - backend may be restarting');
-        error.message = 'Service temporarily unavailable - please try again in a moment';
-      } else if (status >= 400 && status < 500) {
-        console.error('Client error:', data);
-        error.message = data?.detail || `Client error: ${status}`;
-      } else if (status >= 500) {
-        console.error('Server error:', data);
-        error.message = data?.detail || 'Server error - please try again later';
-      }
-    } else if (error.request) {
-      // Network error - could be CORS
-      console.error('Network error - unable to reach server (possible CORS issue)');
-      error.message = 'Unable to connect to server - please check your connection and ensure backend is running';
+      error.message = 'Request timeout';
+    } else if (error.response?.data?.detail) {
+      error.message = error.response.data.detail;
+    } else if (error.code === 'ERR_NETWORK') {
+      error.message = 'Network error';
       error.isNetworkError = true;
-    } else {
-      // Other error
-      console.error('Unexpected error:', error.message);
     }
-    
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for agent client with enhanced error handling
+// Response interceptor for agent client
 agentClient.interceptors.response.use(
-  (response) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ Agent API Response:', {
-        url: response.config.url,
-        status: response.status,
-        data: response.data
-      });
-    }
-    return response;
-  },
+  (response) => response,
   (error) => {
-    // Enhanced error handling for agent operations
-    if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-      console.error('⏱️ Request timeout - the operation took too long');
+    if (error.code === 'ECONNABORTED') {
       error.isTimeout = true;
     } else if (error.code === 'ERR_NETWORK') {
-      console.error('🌐 Network error - unable to reach the server (possible CORS issue)');
       error.isNetworkError = true;
-      error.userMessage = 'Unable to connect to the server. Please ensure the backend is running on port 8000 and configured for CORS.';
     }
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.error('❌ Agent API Response Error:', {
-        url: error.config?.url,
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        isCorsError: error.message?.includes('CORS')
-      });
-    }
-    
     return Promise.reject(error);
   }
 );

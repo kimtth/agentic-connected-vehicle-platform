@@ -587,6 +587,59 @@ class MyCustomPlugin:
 
 ## Production Deployment
 
+### Docker Deployment
+
+#### Building Docker Image
+
+The project includes multi-stage Docker builds for optimized production images:
+
+```powershell
+# Simple build
+.\docker-build.ps1
+
+# Build with specific tag
+.\docker-build.ps1 -Tag v1.0.0
+
+# Build without cache
+.\docker-build.ps1 -NoBuildCache
+
+# Build and push to Azure Container Registry
+.\docker-build.ps1 -Tag v1.0.0 -Registry myregistry.azurecr.io -Push
+```
+
+Or manually with docker commands:
+
+```bash
+# Build with environment variables
+docker build -t agentic-vehicle-platform:latest \
+  --build-arg REACT_APP_AZURE_CLIENT_ID=<your-client-id> \
+  --build-arg REACT_APP_AZURE_TENANT_ID=<your-tenant-id> \
+  --build-arg REACT_APP_AZURE_SCOPE=api://<your-client-id>/access_as_user \
+  -f Dockerfile .
+
+# Run container
+docker run -p 8000:8000 --env-file .env.docker agentic-vehicle-platform:latest
+```
+
+#### Using Docker Compose
+
+```bash
+# Create .env.docker file with your values
+# (Copy from vehicle/.env & web/.env or create from scratch)
+
+# Build and start services
+docker-compose --env-file .env.docker up -d --build
+
+# View logs
+docker-compose --env-file .env.docker logs -f
+
+# Stop services (-v: --volumes, Also removes named volumes)
+docker-compose --env-file .env.docker down -v
+
+# Check status
+docker-compose --env-file .env.docker ps
+```
+
 ### Azure App Service Deployment
 ```bash
 # Create App Service plan
@@ -597,6 +650,28 @@ az webapp create --resource-group rg-connected-car --plan plan-connected-car --n
 
 # Deploy application
 az webapp up --name app-connected-car --resource-group rg-connected-car
+```
+
+### Azure Container Instances Deployment
+```bash
+# Login to Azure Container Registry
+az acr login --name myregistry
+
+# Build and push
+.\docker-build.ps1 -Tag v1.0.0 -Registry myregistry.azurecr.io -Push
+
+# Deploy to Azure Container Instances
+az container create \
+  --resource-group rg-connected-car \
+  --name aci-vehicle-platform \
+  --image myregistry.azurecr.io/agentic-vehicle-platform:v1.0.0 \
+  --cpu 2 --memory 4 \
+  --registry-login-server myregistry.azurecr.io \
+  --registry-username <username> \
+  --registry-password <password> \
+  --dns-name-label vehicle-platform \
+  --ports 8000 \
+  --environment-variables $(cat .env.docker | grep -v '^#' | xargs)
 ```
 
 ### Security Configuration

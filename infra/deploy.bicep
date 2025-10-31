@@ -373,10 +373,7 @@ resource webApp 'Microsoft.Web/sites@2024-11-01' = {
           value: 'true'
         }
         // === App & Platform runtime flags ===
-        {
-          name: 'ENV_TYPE'
-          value: 'production'
-        }
+
         {
           name: 'MCP_SERVER_HOST'
           value: '127.0.0.1'

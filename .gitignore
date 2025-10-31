@@ -313,7 +313,8 @@ dist
 
 # Custom
 .env
-poetry.lock
+.env.docker
+.env.local
 /backend/a2a_sk/samples
 /backend/a2a_sk/semantic_kernel_(framework)
 *.lock
@@ -327,5 +328,12 @@ memo.md
 /vehicle/.vscode
 /web/.vscode
 /vehicle/.vscode
-*.sh
 /temp
+
+# Keep template files
+!.env.template
+!.env.sample
+!.env.example
+!poetry.lock
+!package-lock.json
+vehicle/sample_deploy.sh

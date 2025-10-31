@@ -60,9 +60,8 @@ from utils.logging_config import configure_logging
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables first
-env_type = os.getenv("ENV_TYPE", "dev").lower()
-if env_type.startswith("dev") or env_type in ("local",):
+# Load environment variables from .env file if present (for local development)
+if Path(".env").exists():
     load_dotenv(override=True)
 
 # Configure logging with single instance check
@@ -129,55 +128,14 @@ async def lifespan(app):
     # Connect
     try:
         if hasattr(client, "connect"):
-            logger.info("Attempting Cosmos DB connection...")
-
-            # Log environment variables for debugging (without sensitive values)
-            logger.info("Environment diagnostic information:")
-            logger.info(
-                f"COSMOS_DB_ENDPOINT configured: {bool(os.getenv('COSMOS_DB_ENDPOINT'))}"
-            )
-            logger.info(f"COSMOS_DB_KEY configured: {bool(os.getenv('COSMOS_DB_KEY'))}")
-            logger.info(f"COSMOS_DB_USE_AAD: {os.getenv('COSMOS_DB_USE_AAD', 'false')}")
-            logger.info(
-                f"COSMOS_DB_DATABASE: {os.getenv('COSMOS_DB_DATABASE', 'VehiclePlatformDB')}"
-            )
-
-            # Log Azure environment variables
-            azure_vars = [
-                "WEBSITE_SITE_NAME",
-                "WEBSITE_INSTANCE_ID",
-                "MSI_ENDPOINT",
-                "IDENTITY_ENDPOINT",
-                "AZURE_CLIENT_ID",
-            ]
-            for var in azure_vars:
-                logger.info(f"{var}: {bool(os.getenv(var))}")
-
+            logger.info("Connecting to Cosmos DB...")
             connected = await client.connect()
             if connected:
-                logger.info("Cosmos DB connected successfully")
+                logger.info("Cosmos DB connected")
             else:
                 logger.warning("Cosmos DB connection failed")
-                # Log more details about the failure
-                if hasattr(client, "connection_error") and client.connection_error:
-                    logger.error(f"Connection error details: {client.connection_error}")
-                # Also check if client has any other diagnostic info
-                if hasattr(client, "endpoint"):
-                    logger.error(f"Client endpoint: {client.endpoint}")
-                if hasattr(client, "use_aad_auth"):
-                    logger.error(f"Client AAD auth: {client.use_aad_auth}")
     except Exception as e:
-        logger.error(f"Cosmos DB connection failed with exception: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        logger.error(f"Exception details: {repr(e)}")
-
-        # Log full traceback for debugging
-        import traceback
-
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-
-        # Don't fail startup, but log the issue
-        logger.error("App will continue but Cosmos DB operations may fail")
+        logger.error(f"Cosmos DB connection error: {e}")
 
     yield
     logger.info("Shutting down the application...")
@@ -977,9 +935,6 @@ if __name__ == "__main__":
     _SERVER_INSTANCE_STARTED = True
 
     host = os.getenv("API_HOST", "0.0.0.0")
-    # Safe ENV_TYPE handling (default to development)
-    env_type = os.getenv("ENV_TYPE", "").lower()
-    logger.info(f"ENV_TYPE: {env_type}")
     # Azure App Service behavior:
     # - Externally, App Service always listens on 80 (HTTP) / 443 (HTTPS).
     # - Internally, your app must bind to the port specified in the PORT env variable.

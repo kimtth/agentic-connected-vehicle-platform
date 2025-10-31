@@ -27,7 +27,7 @@ An AI agent-driven car management system: control, diagnostics, and insights via
 - Backend Python attributes: snake_case.
 - Do not manually recase dict keys—always return model instances.
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Development)
 
 ```bash
 # Authenticate with Azure (if needed for cloud services)
@@ -58,6 +58,42 @@ python main.py
 
 ## Deployment
 
+The deployment is recommended to use Azure App Service, since AzureDefaultIdentity requires access to an identity configured in Azure. When running locally in a container, instead of directly using the azure identity, it uses the Cosmos DB Emulator with key-based authentication.
+
+### Docker Deployment (Local/Container)
+
+```powershell
+# 1. Copy and configure environment
+copy .env.docker.sample .env.docker
+# Edit .env.docker - update AI service credentials
+# Cosmos DB Emulator settings are pre-configured
+
+# 2. Start all services (includes Cosmos DB emulator)
+docker-compose --env-file .env.docker up -d --build
+
+# 3. Seed test data
+curl -X POST http://localhost:8000/api/dev/seed
+
+# Access:
+# - Application: http://localhost:8000
+# - Cosmos Data Explorer: https://localhost:8081/_explorer/index.html
+```
+
+**Note:** [Cosmos DB Emulator](https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-develop-emulator) uses HTTPS with a self-signed certificate. SSL verification is disabled in the container for development. Cosmos DB Emulator container is only valid for 180 days after its release. 
+
+> [!WARNING]  
+> Do not use the Cosmos DB Emulator. None of the solutions in the documentation can prevent the SSL error: `[SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)')]`
+
+#### Using Azure Cosmos DB (Production)
+
+In production, Azure Cosmos DB is assumed to use a Managed Identity and Entra ID identity in Azure.
+
+```cmd
+COSMOS_DB_USE_AAD=true
+```
+
+### Azure Deployment
+
 ```bash
 # (Optional) Create Azure Resource Group in your subscription
 az group create --name <resource-group-name> --location <location-name>
@@ -73,7 +109,8 @@ cd ..
 # Deploy your FastAPI web app to Azure App Service
 # (this script should internally call `az webapp deploy`)
 # If you encounter any issues, use the Visual Studio Code Azure extension to deploy your web app to Azure.
-run_webapp_deploy.cmd
+# Provide a source path (e.g. the project folder or a zip) to avoid "no source" errors.
+az webapp deploy --resource-group <resource-group-name> --name <app-name> --src-path . --type zip
 
 # Set the startup command in your Azure Web App configuration:
 az webapp config set --resource-group <resource-group-name> --name <app-name> --startup-file "python main.py"
@@ -81,7 +118,6 @@ az webapp config set --resource-group <resource-group-name> --name <app-name> --
 # Azure Portal: Add your webapp URL to Entra ID > Authentification > Single-page application > Redirect URIs
 
 # Assing Data Contributor role to Cosmos DB: Webapp > Identity > System assigned > On
-az cosmosdb sql role assignment create --account-name <cosmos-db-account-name> --resource-group <resource-group-name> --scope / --principal-id <web-app-principal-id> --role-definition-id 00000000-0000-0000-0000-000000000002
 ```
 
 Note: 

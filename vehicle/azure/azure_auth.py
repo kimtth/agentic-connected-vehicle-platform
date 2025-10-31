@@ -112,8 +112,8 @@ class AzureADMiddleware(BaseHTTPMiddleware):
                 or request.cookies.get("token")
             )
 
-        if not raw and os.getenv("ENV_TYPE") == "development":
-            # Dev fallback only
+        if not raw:
+            # Dev fallback: only if DEV_BEARER_TOKEN is explicitly set
             raw = os.getenv("DEV_BEARER_TOKEN")
 
         if raw:
