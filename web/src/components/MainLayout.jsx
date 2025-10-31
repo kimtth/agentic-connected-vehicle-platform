@@ -32,7 +32,7 @@ const MainLayout = ({ children, vehicles = [], selectedVehicle, onVehicleChange,
     { path: '/agent-chat', icon: MessageCircle, text: 'Agent Chat' },
     { path: '/simulator', icon: Rocket, text: 'Car Simulator' },
     { path: '/remote-drive', icon: Component, text: 'Remote Drive' },
-    { path: '/voice-control', icon: Volume2, text: 'Voice Control' },
+    { path: '/vehicle-assistant', icon: Volume2, text: 'Vehicle Assistant' },
     { path: '/services', icon: Settings, text: 'Services' },
     { path: '/notifications', icon: Bell, text: 'Notifications' },
   ];

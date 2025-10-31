@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import VehicleMetrics from '../components/simulator/VehicleMetrics';
 import { fetchVehicleStatus } from '../api/status';
 import { fetchNotifications } from '../api/notifications';
+import { fetchFleetMetrics } from '../api/vehicles';
 
 const Dashboard = ({ selectedVehicle }) => {
   const navigate = useNavigate();
@@ -23,18 +24,39 @@ const Dashboard = ({ selectedVehicle }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [fleetMetrics, setFleetMetrics] = useState({
+    totalVehicles: 0,
+    activeVehicles: 0,
+    lowBattery: 0,
+    maintenanceNeeded: 0,
+    avgBattery: 0,
+    totalDistance: 0
+  });
 
   const refreshDashboard = useCallback(async () => {
-    if (!selectedVehicle) {
-      setLoading(false);
-      return;
-    }
-    const vehicleId = selectedVehicle.vehicleId;
     try {
       setLoading(true);
       setError(null);
+      
+      // Fetch fleet metrics using the vehicles API
+      const metrics = await fetchFleetMetrics();
+      setFleetMetrics({
+        totalVehicles: metrics.totalVehicles ?? 0,
+        activeVehicles: metrics.activeVehicles ?? 0,
+        lowBattery: metrics.lowBattery ?? 0,
+        maintenanceNeeded: metrics.maintenanceNeeded ?? 0,
+        avgBattery: Math.round(metrics.avgBattery ?? 0),
+        totalDistance: Math.round(metrics.totalDistance ?? 0)
+      });
+      
+      if (!selectedVehicle) {
+        setLoading(false);
+        return;
+      }
+      
+      const vehicleId = selectedVehicle.vehicleId;
       // Fetch status
-      const status = await fetchVehicleStatus(vehicleId).catch(() => null);
+      const status = await fetchVehicleStatus(vehicleId);
       if (status) {
         setVehicleStatus({
           speed: status.speed ?? 0,
@@ -48,10 +70,11 @@ const Dashboard = ({ selectedVehicle }) => {
         });
       }
       // Fetch notifications
-      const notificationData = await fetchNotifications(vehicleId).catch(() => []);
+      const notificationData = await fetchNotifications(vehicleId);
       setNotifications(Array.isArray(notificationData) ? notificationData.slice(0, 5) : []);
-    } catch {
-      setError('Failed to load dashboard data. Is the backend running on port 8000?');
+    } catch (err) {
+      console.error('Dashboard error:', err);
+      setError(`Failed to load dashboard data: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -89,25 +112,73 @@ const Dashboard = ({ selectedVehicle }) => {
     );
   }
 
-  if (!selectedVehicle) {
-    return (
-      <div className="p-6">
-        <div className="flex items-center gap-3 px-4 py-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-          <span>Please select a vehicle to view the dashboard.</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="p-5">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold mb-3">
-          Vehicle Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground mb-3">
-          {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.vehicleId})
-        </p>
+      {/* Fleet Manager Overview */}
+      <div className="mb-4 p-3 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border border-primary/20">
+        <h2 className="text-base font-bold mb-2 flex items-center gap-2">
+          <Rocket className="h-4 w-4" />
+          Fleet Overview
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <Rocket className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-lg font-bold">{fleetMetrics.totalVehicles}</p>
+              <p className="text-[10px] text-muted-foreground">Total Vehicles</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <Rocket className="h-5 w-5 text-green-600" />
+            <div>
+              <p className="text-lg font-bold text-green-600">{fleetMetrics.activeVehicles}</p>
+              <p className="text-[10px] text-muted-foreground">Active Now</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <AlertTriangle className="h-5 w-5 text-orange-600" />
+            <div>
+              <p className="text-lg font-bold text-orange-600">{fleetMetrics.lowBattery}</p>
+              <p className="text-[10px] text-muted-foreground">Low Battery</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <Settings className="h-5 w-5 text-red-600" />
+            <div>
+              <p className="text-lg font-bold text-red-600">{fleetMetrics.maintenanceNeeded}</p>
+              <p className="text-[10px] text-muted-foreground">Need Service</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-lg font-bold">{fleetMetrics.avgBattery}%</p>
+              <p className="text-[10px] text-muted-foreground">Avg Battery</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-background/50 rounded">
+            <RefreshCw className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-lg font-bold">{fleetMetrics.totalDistance.toLocaleString()}</p>
+              <p className="text-[10px] text-muted-foreground">Total km</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {!selectedVehicle ? (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+          <span>Please select a vehicle to view detailed dashboard.</span>
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold mb-3">
+              Vehicle Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground mb-3">
+              {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.vehicleId})
+            </p>
         <button 
           className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={refreshDashboard} 
@@ -189,11 +260,11 @@ const Dashboard = ({ selectedVehicle }) => {
             </div>
           </div>
 
-          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/voice-control?vehicleId=${selectedVehicle.vehicleId}`)}>
+          <div className="rounded-lg border bg-card p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate(`/vehicle-assistant?vehicleId=${selectedVehicle.vehicleId}`)}>
             <div className="flex flex-col items-center gap-2 text-center">
               <Volume2 className="h-10 w-10" />
               <div>
-                <h3 className="text-base font-bold mb-1.5">Voice Control</h3>
+                <h3 className="text-base font-bold mb-1.5">Vehicle Assistant</h3>
                 <p className="text-xs text-muted-foreground">Use real-time speech & avatar assistant</p>
               </div>
               <button className="mt-1.5 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5">
@@ -287,6 +358,8 @@ const Dashboard = ({ selectedVehicle }) => {
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

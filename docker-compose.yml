@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Connected Car Platform Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Frontend build args (Azure AD config)
+        - REACT_APP_AZURE_CLIENT_ID=${REACT_APP_AZURE_CLIENT_ID}
+        - REACT_APP_AZURE_TENANT_ID=${REACT_APP_AZURE_TENANT_ID}
+        - REACT_APP_AZURE_SCOPE=${REACT_APP_AZURE_SCOPE}
+        - REACT_APP_API_DEV_BASE_URL=${REACT_APP_API_DEV_BASE_URL}
+    container_name: connected-car-platform
+    ports:
+      - "8000:8000"
+    environment:
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+      
+      # Cosmos DB Configuration (use your Azure Cosmos DB)
+      - COSMOS_DB_ENDPOINT=${COSMOS_DB_ENDPOINT}
+      - COSMOS_DB_KEY=${COSMOS_DB_KEY}
+      - COSMOS_DB_DATABASE=${COSMOS_DB_DATABASE:-VehiclePlatformDB}
+      - COSMOS_DB_USE_AAD=${COSMOS_DB_USE_AAD:-false}
+      
+      # Azure OpenAI
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      
+      # Azure Speech
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
+      - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION}
+      
+      # Azure AD Authentication
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_AUTH_REQUIRED=${AZURE_AUTH_REQUIRED:-false}
+      
+      # MCP Configuration
+      - ENABLE_MCP=${ENABLE_MCP:-true}
+      - MCP_SERVER_HOST=127.0.0.1
+      
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge

@@ -56,7 +56,27 @@ cd ../vehicle
 python main.py
 ```
 
-## Deployment
+## 🐳 Docker Deployment (Key Authentification)
+
+```bash
+# 1. Copy and configure environment
+copy .env.docker.sample .env.docker
+# Edit .env.docker - update your values
+
+# 2. Start application
+docker-compose --env-file .env.docker up -d --build
+# docker-compose --env-file .env.docker down -v
+
+# 3. Seed test data
+curl -X POST http://localhost:8000/api/dev/seed
+
+# Access:
+# - Application: http://localhost:8000
+```
+
+For detailed Docker instructions, troubleshooting, and production deployment, see [DOCKER.md](./DOCKER.md).
+
+## ☁️ Azure Deployment
 
 ```bash
 # (Optional) Create Azure Resource Group in your subscription
@@ -99,8 +119,8 @@ For full API reference, architecture, and examples, see the project documentatio
 ### Vehicle Simulation & Control
 ![Car Simulator](./doc/car_simulator.png)
 
-### In-Vehicle Assistant
-![In-Vehicle Assistant](./doc/in-vehicle-assistant.png)
+### Vehicle Assistant
+![Vehicle Assistant](./doc/vehicle-assistant.png)
 
 ### Remote Drive Control 
 ![Remote Drive Control](./doc/remote_drive.png)
