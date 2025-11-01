@@ -2,7 +2,8 @@
 
 An AI agent-driven car management system: control, diagnostics, and insights via agents.
 
-> **Important:** The code in this repository was developed during a hackathon and implemented within a limited timeline. It is intended for demonstration purposes only.
+> [!IMPORTANT]  
+> The code in this repository was developed during a hackathon and implemented within a limited timeline. It is intended for demonstration purposes only.
 
 ## ✨ Features
 - 🗣️ Natural-language agent interface for intuitive commands and queries
@@ -17,7 +18,7 @@ An AI agent-driven car management system: control, diagnostics, and insights via
 - Backend: Python 3.12+, FastAPI, Semantic Kernel
 - DB: Azure Cosmos DB (AAD auth)
 - AI: Azure OpenAI (fallback to OpenAI if configured)
-- Frontend: React, Material-UI
+- Frontend: React
 - MCP: Weather, Traffic, POI, Navigation via FastMCP (sample data in plugin/sample_data.py)
 
 > Full architecture, agent specs, and API list: see [PROJECT.md](./PROJECT.md).
@@ -56,7 +57,28 @@ cd ../vehicle
 python main.py
 ```
 
-## Deployment
+## 🐳 Docker Deployment
+
+> [!TIP]   
+> This Dockerfile does not support accessing Cosmos DB using a managed identity; it only works with Cosmos DB key authentication.
+
+```bash
+# 1. Copy and configure environment
+copy .env.docker.sample .env.docker
+# Edit .env.docker - update your values
+
+# 2. Start application
+docker-compose --env-file .env.docker up -d --build
+# docker-compose --env-file .env.docker down -v
+
+# 3. Seed test data
+curl -X POST http://localhost:8000/api/dev/seed
+
+# Access:
+# - Application: http://localhost:8000
+```
+
+## ☁️ Azure Deployment
 
 ```bash
 # (Optional) Create Azure Resource Group in your subscription
@@ -70,18 +92,13 @@ cd infra
 powershell ./run_infra_deploy.ps1
 cd ..
 
-# Deploy your FastAPI web app to Azure App Service
-# (this script should internally call `az webapp deploy`)
-# If you encounter any issues, use the Visual Studio Code Azure extension to deploy your web app to Azure.
-run_webapp_deploy.cmd
-
 # Set the startup command in your Azure Web App configuration:
 az webapp config set --resource-group <resource-group-name> --name <app-name> --startup-file "python main.py"
 
 # Azure Portal: Add your webapp URL to Entra ID > Authentification > Single-page application > Redirect URIs
 
 # Assing Data Contributor role to Cosmos DB: Webapp > Identity > System assigned > On
-az cosmosdb sql role assignment create --account-name <cosmos-db-account-name> --resource-group <resource-group-name> --scope / --principal-id <web-app-principal-id> --role-definition-id 00000000-0000-0000-0000-000000000002
+# az cosmosdb sql role assignment create --account-name <cosmos-db-account-name> --resource-group <resource-group-name> --scope / --principal-id <web-app-principal-id> --role-definition-id 00000000-0000-0000-0000-000000000002
 ```
 
 Note: 
@@ -99,15 +116,16 @@ For full API reference, architecture, and examples, see the project documentatio
 ### Vehicle Simulation & Control
 ![Car Simulator](./doc/car_simulator.png)
 
-### In-Vehicle Assistant
-![In-Vehicle Assistant](./doc/in-vehicle-assistant.png)
+### Vehicle Assistant
+![Vehicle Assistant](./doc/vehicle-assistant.png)
 
 ### Remote Drive Control 
 ![Remote Drive Control](./doc/remote_drive.png)
 
-> UI only: The `gateway.py` module needs to be implemented to connect with the server of [this machine](https://github.com/Freenove/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi). 
-
-- The original code is implemented in the Python GUI client. To expose the controls to the frontend, a `gateway.py` is required to convert and transport the payload for use in the UI. Refer to the original client application in `doc/remote-client` for details on controlling the machine.
+> [!NOTE]  
+> Remote Drive Control — developed UI only: The `gateway.py` module needs to be implemented to connect with the server of [this machine](https://github.com/Freenove/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi). It is intended to showcase how the vehicle can be controlled through the vehicle API.  
+>  
+> The original code is implemented in the Python GUI client. To expose the controls to the frontend, a `gateway.py` is required to convert and transport the payload for use in the UI. 
 
 ## Create Test Data (Dev Seed)
 
@@ -155,6 +173,11 @@ VS Code REST Client
 Note: This endpoint is for development only. Do not expose it in production.
 
 ## 🔐 Entra ID (formerly Azure AD) Authentication — App Registration & Access Token
+
+This step is required for API authentication in the backend and sign-in handling in the frontend.
+API authentication will be skipped If `API_TEST_MODE` is set to `true`.
+This environment variable is for development purposes only.
+
 Set your backend env (vehicle/.env):
 ```env
 AZURE_TENANT_ID=<tenant-guid>

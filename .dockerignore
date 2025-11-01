@@ -1,0 +1,80 @@
+# Version Control
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+*.egg
+.pytest_cache
+.coverage
+htmlcov
+.venv
+venv
+env
+ENV
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files (use build args instead)
+.env
+.env.*
+!.env.sample
+
+# Documentation
+*.md
+!README.md
+doc/
+temp/
+memo.md
+
+# Build artifacts
+web/build
+vehicle/public
+
+# Tests
+vehicle/tests
+web/src/**/*.test.js
+web/src/**/*.test.jsx
+
+# CI/CD
+.github
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+!Dockerfile
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

@@ -40,6 +40,7 @@ from models.api_responses import (
     CreateNotificationResponse,
     MarkNotificationReadResponse,
     GenericDetailResponse,
+    FleetMetrics,
 )
 from models.notification import Notification as NotificationModel
 from dotenv import load_dotenv
@@ -61,9 +62,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables first
-env_type = os.getenv("ENV_TYPE", "dev").lower()
-if env_type.startswith("dev") or env_type in ("local",):
-    load_dotenv(override=True)
+load_dotenv(override=True)
 
 # Configure logging with single instance check
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -87,34 +86,18 @@ _SERVER_INSTANCE_STARTED = False
 
 
 def _stop_mcp_processes(timeout: float = 5.0):
-    """Gracefully stop MCP subprocesses."""
-    try:
-        for p in MCP_PROCESSES:
-            try:
-                if p.is_alive():
-                    logger.info(f"Stopping MCP process PID {p.pid}...")
-                    p.terminate()
-                    p.join(timeout)
-                    if p.is_alive():
-                        logger.warning(
-                            f"MCP process PID {p.pid} did not terminate, killing..."
-                        )
-                        p.kill()
-                        p.join(2.0)
-            except Exception as e:
-                logger.debug(f"Error stopping MCP process: {e}")
-    except Exception:
-        pass
+    for p in MCP_PROCESSES:
+        if p.is_alive():
+            p.terminate()
+            p.join(timeout)
+            if p.is_alive():
+                p.kill()
 
 
 # Ensure cleanup on unexpected interpreter exit (best-effort)
 @atexit.register
 def _cleanup_at_exit():
-    try:
-        # Stop MCP servers first
-        _stop_mcp_processes()
-    except Exception:
-        pass
+    _stop_mcp_processes()
 
 
 @asynccontextmanager
@@ -126,77 +109,14 @@ async def lifespan(app):
         logger.info("Cosmos DB client instantiated (lifespan)")
     client = app.state.cosmos_client
 
-    # Connect
-    try:
-        if hasattr(client, "connect"):
-            logger.info("Attempting Cosmos DB connection...")
-
-            # Log environment variables for debugging (without sensitive values)
-            logger.info("Environment diagnostic information:")
-            logger.info(
-                f"COSMOS_DB_ENDPOINT configured: {bool(os.getenv('COSMOS_DB_ENDPOINT'))}"
-            )
-            logger.info(f"COSMOS_DB_KEY configured: {bool(os.getenv('COSMOS_DB_KEY'))}")
-            logger.info(f"COSMOS_DB_USE_AAD: {os.getenv('COSMOS_DB_USE_AAD', 'false')}")
-            logger.info(
-                f"COSMOS_DB_DATABASE: {os.getenv('COSMOS_DB_DATABASE', 'VehiclePlatformDB')}"
-            )
-
-            # Log Azure environment variables
-            azure_vars = [
-                "WEBSITE_SITE_NAME",
-                "WEBSITE_INSTANCE_ID",
-                "MSI_ENDPOINT",
-                "IDENTITY_ENDPOINT",
-                "AZURE_CLIENT_ID",
-            ]
-            for var in azure_vars:
-                logger.info(f"{var}: {bool(os.getenv(var))}")
-
-            connected = await client.connect()
-            if connected:
-                logger.info("Cosmos DB connected successfully")
-            else:
-                logger.warning("Cosmos DB connection failed")
-                # Log more details about the failure
-                if hasattr(client, "connection_error") and client.connection_error:
-                    logger.error(f"Connection error details: {client.connection_error}")
-                # Also check if client has any other diagnostic info
-                if hasattr(client, "endpoint"):
-                    logger.error(f"Client endpoint: {client.endpoint}")
-                if hasattr(client, "use_aad_auth"):
-                    logger.error(f"Client AAD auth: {client.use_aad_auth}")
-    except Exception as e:
-        logger.error(f"Cosmos DB connection failed with exception: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        logger.error(f"Exception details: {repr(e)}")
-
-        # Log full traceback for debugging
-        import traceback
-
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-
-        # Don't fail startup, but log the issue
-        logger.error("App will continue but Cosmos DB operations may fail")
+    if hasattr(client, "connect"):
+        await client.connect()
 
     yield
-    logger.info("Shutting down the application...")
-    try:
-        if hasattr(client, "close"):
-            await client.close()
-        # Defensive: close any exposed aiohttp session if present
-        session = getattr(client, "session", None)
-        if session:
-            closer = getattr(session, "close", None)
-            if closer:
-                res = closer()
-                if asyncio.iscoroutine(res):
-                    await res
-    except Exception as e:
-        logger.error(f"Shutdown error: {e}")
-    finally:
-        if os.getenv("ENABLE_MCP", "true").lower() == "true":
-            _stop_mcp_processes()
+    if hasattr(client, "close"):
+        await client.close()
+    if os.getenv("ENABLE_MCP", "true").lower() == "true":
+        _stop_mcp_processes()
 
 
 app = FastAPI(title="Connected Car Platform", lifespan=lifespan)
@@ -232,10 +152,8 @@ def _load_optional_routers():
         try:
             module = import_module(modpath)
             app.include_router(module.router, prefix="/api", tags=[name])
-            logger.info(f"Loaded router: {name}")
-        except Exception as e:
-            logger.warning(f"Router not available ({name}): {e}")
-            logger.debug("Full import traceback for router '%s'", name, exc_info=True)
+        except ImportError:
+            pass
     app.state.routers_loaded = True
 
 
@@ -257,30 +175,11 @@ def _cosmos_status():
 
 @app.middleware("http")
 async def log_user_requests(request: Request, call_next):
-    """Log API calls with authenticated user and correlation id."""
     corr_id = request.headers.get("X-Client-Request-Id") or str(uuid4())
-    user_id = request.headers.get("X-User-Name", "anonymous")
-
-    # Always set user_id on request state for consistency
-    request.state.user_id = user_id
-
-    # Log the request (even for anonymous users in development)
-    if (
-        user_id != "anonymous"
-        or os.getenv("LOG_ANONYMOUS_REQUESTS", "false").lower() == "true"
-    ):
-        logger.info(
-            f"[INFO] User request: {user_id}, Correlation ID: {corr_id}, API Endpoint: {request.url.path}, Request Method: {request.method}"
-        )
-
-    try:
-        response = await call_next(request)
-        response.headers.setdefault("X-Client-Request-Id", corr_id)
-        return response
-    except Exception as e:
-        logger.error(f"Error in request middleware: {str(e)}")
-        # Re-raise the exception to let FastAPI handle it properly
-        raise
+    request.state.user_id = request.headers.get("X-User-Name", "anonymous")
+    response = await call_next(request)
+    response.headers.setdefault("X-Client-Request-Id", corr_id)
+    return response
 
 
 @app.get("/api/info", response_model=InfoResponse)
@@ -317,11 +216,8 @@ def health_check():
     response_model=list[CommandHistoryItem],
 )
 async def get_vehicle_command_history(vehicle_id: str):
-    """Get command history for a specific vehicle"""
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        logger.warning("Cosmos DB not available, returning empty command history")
+    if not await client.ensure_connected():
         return []
     commands = await client.list_commands(vehicle_id)
     history = [
@@ -341,18 +237,13 @@ async def get_vehicle_command_history(vehicle_id: str):
 # Submit a command (simulate external system)
 @app.post("/api/command", response_model=CommandSubmitResponse)
 async def submit_command(command: Command, background_tasks: BackgroundTasks):
-    """Submit a command to a vehicle"""
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        logger.warning(
-            "Cosmos DB not available, command will be processed without persistence"
-        )
+    await client.ensure_connected()
     command_id = str(uuid.uuid4())
     command.command_id = command_id
     command.status = "pending"
     command.timestamp = datetime.now(timezone.utc).isoformat()
-    command_data = command.model_dump(by_alias=True)  # use camelCase per CamelModel
+    command_data = command.model_dump(by_alias=True)
     await client.create_command(command_data)
     background_tasks.add_task(process_command_async, command_data)
     return CommandSubmitResponse(command_id=command_id)
@@ -360,42 +251,23 @@ async def submit_command(command: Command, background_tasks: BackgroundTasks):
 
 # Get command log
 @app.get("/api/commands", response_model=list[Command])
-async def get_commands(vehicle_id: str = None):  # renamed query param
-    """Get all commands with optional filtering by vehicle ID"""
+async def get_commands(vehicle_id: str = None):
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        logger.warning("Cosmos DB not available, returning empty command list")
+    if not await client.ensure_connected():
         return []
-    try:
-        return await client.list_commands(vehicle_id)
-    except Exception as e:
-        logger.error(f"Error retrieving commands: {str(e)}")
-        return []
+    return await client.list_commands(vehicle_id)
 
 
 # Get vehicle status (from Cosmos DB only)
 @app.get("/api/vehicles/{vehicle_id}/status", response_model=VehicleStatus)
 async def get_vehicle_status(vehicle_id: str):
-    """Get the current status of a vehicle"""
     client = get_cosmos_client()
-    try:
-        cosmos_connected = await client.ensure_connected()
-        if not cosmos_connected:
-            raise HTTPException(status_code=503, detail="Database service unavailable")
-
-        status = await client.get_vehicle_status(vehicle_id)
-        if not status:
-            raise HTTPException(
-                status_code=404, detail=f"Vehicle {vehicle_id} not found"
-            )
-
-        return status
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting vehicle status: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    if not await client.ensure_connected():
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+    status = await client.get_vehicle_status(vehicle_id)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"Vehicle {vehicle_id} not found")
+    return status
 
 
 # Stream vehicle status updates
@@ -404,48 +276,16 @@ async def stream_vehicle_status(vehicle_id: str):
     """Stream real-time status updates for a vehicle"""
 
     async def status_stream_generator():
-        agen = None
         client = get_cosmos_client()
-        cosmos_connected = await client.ensure_connected()
-        if not cosmos_connected:
-            error_status = {
-                "error": "Database service unavailable",
-                "vehicle_id": vehicle_id,
-            }
-            yield f"data: {json.dumps(error_status)}\n\n"
+        if not await client.ensure_connected():
+            yield "data: {{\"error\": \"Database service unavailable\"}}\n\n"
             return
         try:
-            agen = client.subscribe_to_vehicle_status(vehicle_id)
-            async for status in agen:
-                try:
-                    if isinstance(status, BaseModel):
-                        payload = status.model_dump(by_alias=True)
-                    else:
-                        payload = status
-                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                except Exception as e:
-                    logger.error(
-                        "Error serializing vehicle status for SSE: %s (type=%s)",
-                        e,
-                        type(status),
-                    )
-                    yield 'data: {"error":"serialization"}\n\n'
+            async for status in client.subscribe_to_vehicle_status(vehicle_id):
+                payload = status.model_dump(by_alias=True) if isinstance(status, BaseModel) else status
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
-            # Normal client disconnect; suppress error noise
-            logger.debug("SSE client disconnected for vehicle %s", vehicle_id)
-        except Exception as e:
-            logger.error(f"Error in Cosmos DB status streaming: {str(e)}")
-            error_status = {
-                "error": "Status streaming unavailable",
-                "vehicle_id": vehicle_id,
-            }
-            yield f"data: {json.dumps(error_status)}\n\n"
-        finally:
-            if agen and hasattr(agen, "aclose"):
-                try:
-                    await agen.aclose()
-                except Exception as close_err:
-                    logger.debug(f"Ignored stream close error: {close_err}")
+            pass
 
     response = StreamingResponse(
         status_stream_generator(), media_type="text/event-stream"
@@ -462,60 +302,94 @@ async def stream_vehicle_status(vehicle_id: str):
 
 # Get notifications
 @app.get("/api/notifications", response_model=list[Notification])
-async def get_notifications(vehicle_id: str = None):  # renamed query param
-    """Get all notifications with optional filtering by vehicle ID"""
+async def get_notifications(vehicle_id: str = None):
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        logger.warning("Cosmos DB not available, returning empty notification list")
+    if not await client.ensure_connected():
         return []
-    try:
-        return await client.list_notifications(vehicle_id)
-    except Exception as e:
-        logger.error(f"Error retrieving notifications: {str(e)}")
-        return []
+    return await client.list_notifications(vehicle_id)
 
 
 # Add a vehicle profile
 @app.post("/api/vehicle", response_model=VehicleProfile)
 async def add_vehicle(profile: VehicleProfile):
-    """Add a new vehicle profile (returns camelCase keys)."""
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
+    if not await client.ensure_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable")
-    # Ensure camelCase externally
     return await client.create_vehicle(profile.model_dump(by_alias=True))
 
 
 # List all vehicles
 @app.get("/api/vehicles", response_model=list[VehicleProfile])
 async def list_vehicles():
-    """List all vehicles"""
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
+    if not await client.ensure_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable")
+    return await client.list_vehicles()
 
-    try:
-        vehicles = await client.list_vehicles()
-        return vehicles
-    except Exception as e:
-        logger.error(f"Error retrieving vehicles from Cosmos DB: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve vehicles")
+
+# Get fleet metrics
+@app.get("/api/vehicles/metrics", response_model=FleetMetrics)
+async def get_fleet_metrics():
+    """Get aggregated metrics for all vehicles in the fleet"""
+    client = get_cosmos_client()
+    if not await client.ensure_connected():
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+    
+    vehicles = await client.list_vehicles()
+    if not vehicles:
+        return FleetMetrics(
+            total_vehicles=0,
+            active_vehicles=0,
+            low_battery=0,
+            maintenance_needed=0,
+            avg_battery=0,
+            total_distance=0
+        )
+    
+    # Fetch status for all vehicles
+    statuses = []
+    for vehicle in vehicles:
+        try:
+            status = await client.get_vehicle_status(vehicle.vehicle_id)
+            if status:
+                statuses.append(status)
+        except Exception:
+            continue
+    
+    if not statuses:
+        return FleetMetrics(
+            total_vehicles=len(vehicles),
+            active_vehicles=0,
+            low_battery=0,
+            maintenance_needed=0,
+            avg_battery=0,
+            total_distance=0
+        )
+    
+    # Calculate metrics
+    active_count = sum(1 for s in statuses if (s.speed or 0) > 0)
+    low_battery_count = sum(1 for s in statuses if (s.battery or 100) < 20)
+    maintenance_count = sum(1 for s in statuses if (s.oil_remaining or 100) < 30 or (s.engine_temp or 0) > 100)
+    avg_battery = sum((s.battery or 0) for s in statuses) / len(statuses)
+    total_distance = sum((s.odometer or 0) for s in statuses)
+    
+    return FleetMetrics(
+        total_vehicles=len(vehicles),
+        active_vehicles=active_count,
+        low_battery=low_battery_count,
+        maintenance_needed=maintenance_count,
+        avg_battery=round(avg_battery, 1),
+        total_distance=round(total_distance, 1)
+    )
 
 
 # GET a single vehicle by ID (for fetchVehicleById)
 @app.get("/api/vehicles/{vehicle_id}", response_model=VehicleProfile)
 async def get_vehicle(vehicle_id: str):
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected() if client else False
-    if not cosmos_connected:
+    if not await client.ensure_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable")
-    try:
-        vehicle = await client.get_vehicle(vehicle_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    vehicle = await client.get_vehicle(vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail=f"Vehicle {vehicle_id} not found")
     return vehicle
@@ -568,153 +442,61 @@ async def delete_service(vehicle_id: str, serviceId: str):
 # Update vehicle status
 @app.put("/api/vehicle/{vehicle_id}/status", response_model=VehicleStatus)
 async def update_vehicle_status(vehicle_id: str, status: VehicleStatus):
-    """Update the status of a vehicle"""
     client = get_cosmos_client()
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
+    if not await client.ensure_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable")
-
-    # Validate vehicleId
-    if not vehicle_id or not vehicle_id.strip():
-        raise HTTPException(status_code=400, detail="Vehicle ID cannot be empty")
-
-    # Ensure vehicleId in path matches the one in the status object
     if status.vehicle_id != vehicle_id:
         raise HTTPException(
             status_code=400, detail="Vehicle ID in path does not match status object"
         )
-
-    # Convert status to dict for storage
     status_data = status.model_dump(by_alias=True)
-
-    # Add timestamp
     status_data["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-    try:
-        result = await client.update_vehicle_status(vehicle_id, status_data)
-        logger.info(f"Successfully updated vehicle {vehicle_id} status in Cosmos DB")
-        return result
-
-    except Exception as e:
-        logger.error(f"Error updating vehicle status for {vehicle_id}: {str(e)}")
-
-        # Determine appropriate HTTP status code based on error type
-        if "not found" in str(e).lower():
-            raise HTTPException(
-                status_code=404, detail=f"Vehicle {vehicle_id} not found"
-            )
-        elif "validation" in str(e).lower():
-            raise HTTPException(
-                status_code=400, detail=f"Invalid status data: {str(e)}"
-            )
-        else:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to update status: {str(e)}"
-            )
+    return await client.update_vehicle_status(vehicle_id, status_data)
 
 
 # Partial status update
 @app.patch("/api/vehicle/{vehicle_id}/status", response_model=VehicleStatus)
 async def patch_vehicle_status(vehicle_id: str, status_update: dict):
-    """Update specific fields of a vehicle's status"""
     client = get_cosmos_client()
-    # Ensure Cosmos DB is connected
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
+    if not await client.ensure_connected():
         raise HTTPException(status_code=503, detail="Database service unavailable")
-
-    # Validate vehicleId
-    if not vehicle_id:
-        raise HTTPException(status_code=400, detail="Vehicle ID is required")
-
-    try:
-        # First get current status
-        current_status = await get_vehicle_status(vehicle_id)
-
-        # If no current status exists, create a default one
-        if not current_status:
-            current_status = {"vehicle_id": vehicle_id}
-        current_status.update(status_update)
-        current_status["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-        # Store updated status in Cosmos DB
-        result = await client.update_vehicle_status(vehicle_id, current_status)
-        return result
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        logger.error(f"Error updating vehicle status: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update status: {str(e)}"
-        )
+    current_status = await get_vehicle_status(vehicle_id)
+    if not current_status:
+        current_status = {"vehicle_id": vehicle_id}
+    current_status.update(status_update)
+    current_status["timestamp"] = datetime.now(timezone.utc).isoformat()
+    return await client.update_vehicle_status(vehicle_id, current_status)
 
 
 # Async background task to process commands
 async def process_command_async(command_data):
-    """Process a command asynchronously"""
-    try:
-        client = get_cosmos_client()
-    except Exception:
-        logger.error("Cannot process command: Cosmos client not initialized")
+    client = get_cosmos_client()
+    if not await client.ensure_connected():
         return
-
-    # Ensure Cosmos DB is connected
-    cosmos_connected = await client.ensure_connected()
-    if not cosmos_connected:
-        logger.error("Cannot process command: Database service unavailable")
-        return
-
-    # Extract command details
     command_id = command_data.get("command_id", "") or command_data.get("commandId", "")
     vehicle_id = command_data.get("vehicle_id", "") or command_data.get("vehicleId", "")
-    try:
-        await client.update_command(
-            command_id=command_id,
-            updated_data={"status": "processing"},
-        )
-    except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to update command status in Cosmos DB: {str(cosmos_error)}"
-        )
-    try:
-        await client.update_command(
-            command_id=command_id,
-            updated_data={
-                "status": "completed",
-                "completion_time": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-    except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to update command completion in Cosmos DB: {str(cosmos_error)}"
-        )
-    try:
-        commandType = (
-            command_data.get("commandType")
-            or command_data.get("command_type")
-            or "unknown"
-        )
-
-        notif = NotificationModel(
-            id=str(uuid.uuid4()),
-            vehicle_id=vehicle_id,
-            type="command_executed",
-            message=f"Command {commandType} executed successfully.",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            read=False,
-            severity="low",
-            source="System",
-            action_required=False,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
-        await client.create_notification(notif.model_dump())
-    except Exception as cosmos_error:
-        logger.warning(
-            f"Failed to create notification in Cosmos DB: {str(cosmos_error)}"
-        )
-    logger.info(f"Successfully processed command {command_id} for vehicle {vehicle_id}")
+    await client.update_command(command_id=command_id, updated_data={"status": "processing"})
+    await client.update_command(
+        command_id=command_id,
+        updated_data={
+            "status": "completed",
+            "completion_time": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    commandType = command_data.get("commandType") or command_data.get("command_type") or "unknown"
+    notif = NotificationModel(
+        id=str(uuid.uuid4()),
+        vehicle_id=vehicle_id,
+        type="command_executed",
+        message=f"Command {commandType} executed successfully.",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        read=False,
+        severity="low",
+        source="System",
+        action_required=False,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    await client.create_notification(notif.model_dump())
 
 
 # Create a notification (for createNotification)
@@ -761,35 +543,24 @@ async def delete_notification(notification_id: str):
 @app.get("/api/notifications/stream")
 async def stream_notifications(vehicle_id: str):
     client = get_cosmos_client()
-    connected = await client.ensure_connected()
+    if not await client.ensure_connected():
+        async def gen():
+            yield "data: {{\"error\": \"db_unavailable\"}}\n\n"
+        return StreamingResponse(gen(), media_type="text/event-stream")
 
     async def gen():
-        if not connected:
-            # Early DB unavailable signal
-            yield f"data: {json.dumps({'error': 'db_unavailable'})}\n\n"
-            return
-
         last_ts = None
         while True:
             try:
                 notifications = await client.list_notifications(vehicle_id)
-                fresh = []
-                for n in notifications:
-                    ts = getattr(n, "timestamp", None)
-                    if last_ts is None or (ts and ts > last_ts):
-                        fresh.append(n)
+                fresh = [n for n in notifications if last_ts is None or (getattr(n, "timestamp", None) and n.timestamp > last_ts)]
                 if fresh:
-                    last_ts = max(
-                        [f.timestamp for f in fresh if f.timestamp], default=last_ts
-                    )
-                    for f in reversed(fresh):  # oldest first
+                    last_ts = max([f.timestamp for f in fresh if f.timestamp], default=last_ts)
+                    for f in reversed(fresh):
                         yield f"data: {json.dumps(f.model_dump(by_alias=True))}\n\n"
                 await asyncio.sleep(3)
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"Notification stream error: {e}")
-                await asyncio.sleep(5)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -889,34 +660,14 @@ def _collect_mcp_status() -> dict:
 
 
 def _check_port_availability(host: str, port: int) -> None:
-    """Check if the specified port is available for binding.
-
-    Args:
-        host: Host address to bind to
-        port: Port number to check
-
-    Raises:
-        SystemExit: If port is already in use
-    """
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-    except OSError:
-        logger.error(
-            f"Port {port} is already in use. Another server instance may be running."
-        )
-        sys.exit(1)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, port))
 
 
 def _start_mcp_process(func, name: str):
-    """Start an MCP sidecar server in its own process and track it."""
-    try:
-        p = multiprocessing.Process(target=func, name=name, daemon=True)
-        p.start()
-        MCP_PROCESSES.append(p)
-        logger.info(f"Started {name} (PID {p.pid})")
-    except Exception as e:
-        logger.warning(f"Failed to start {name}: {e}")
+    p = multiprocessing.Process(target=func, name=name, daemon=True)
+    p.start()
+    MCP_PROCESSES.append(p)
 
 
 # React frontend static files serving setup: Assumes build output is in ./public folder
@@ -969,6 +720,24 @@ async def serve_react_app(full_path: str):
 
 
 if __name__ == "__main__":
+    # Suppress Windows-specific ConnectionResetError during shutdown
+    if sys.platform == "win32":
+        def suppress_connection_reset(loop, context):
+            """Suppress ConnectionResetError on Windows during shutdown"""
+            if "exception" in context:
+                exc = context["exception"]
+                if isinstance(exc, ConnectionResetError):
+                    # This is expected during Windows socket cleanup
+                    return
+            loop.default_exception_handler(context)
+        
+        # Set custom exception handler for asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            loop.set_exception_handler(suppress_connection_reset)
+        except RuntimeError:
+            pass  # No event loop yet, will be created by uvicorn
+    
     # Prevent multiple server instances
     if _SERVER_INSTANCE_STARTED:
         logger.warning("Server instance already started, skipping...")
@@ -977,9 +746,6 @@ if __name__ == "__main__":
     _SERVER_INSTANCE_STARTED = True
 
     host = os.getenv("API_HOST", "0.0.0.0")
-    # Safe ENV_TYPE handling (default to development)
-    env_type = os.getenv("ENV_TYPE", "").lower()
-    logger.info(f"ENV_TYPE: {env_type}")
     # Azure App Service behavior:
     # - Externally, App Service always listens on 80 (HTTP) / 443 (HTTPS).
     # - Internally, your app must bind to the port specified in the PORT env variable.
@@ -1014,6 +780,14 @@ if __name__ == "__main__":
             workers=1,  # Single worker process
             log_level=log_level.lower(),
         )
+    except KeyboardInterrupt:
+        logger.info("Server shutdown by user (Ctrl+C)")
+    except ConnectionResetError as e:
+        # Windows-specific error during shutdown - safe to ignore
+        if "WinError 10054" in str(e):
+            logger.debug(f"Connection reset during shutdown (expected on Windows): {e}")
+        else:
+            logger.error(f"Connection error: {e}")
     except Exception as e:
         logger.critical(f"API server failed to start: {e}")
         raise

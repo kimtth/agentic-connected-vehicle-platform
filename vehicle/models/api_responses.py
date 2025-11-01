@@ -69,3 +69,12 @@ class MarkNotificationReadResponse(BaseSchemaModel):
 
 class GenericDetailResponse(BaseSchemaModel):
     detail: str
+
+
+class FleetMetrics(BaseSchemaModel):
+    total_vehicles: int
+    active_vehicles: int
+    low_battery: int
+    maintenance_needed: int
+    avg_battery: float
+    total_distance: float
