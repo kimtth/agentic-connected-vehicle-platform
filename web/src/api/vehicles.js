@@ -106,6 +106,29 @@ export const fetchVehicleStatus = async (vehicleId) => {
 };
 
 /**
+ * Fetches fleet metrics (aggregated data for all vehicles)
+ * @returns {Promise<Object>} - Fleet metrics object
+ */
+export const fetchFleetMetrics = async () => {
+  try {
+    return await retryRequest(async () => {
+      const response = await api.get('/api/vehicles/metrics');
+      return response.data;
+    });
+  } catch (error) {
+    if (error.code === 'USER_NOT_AUTHENTICATED') {
+      console.error('Authentication required: User must be logged in to fetch fleet metrics');
+      throw new Error('Please log in to access fleet metrics');
+    } else if (error.response?.status === 503) {
+      console.error('Database service unavailable for fleet metrics');
+      throw new Error('Database service unavailable - please try again later');
+    }
+    console.error('Error fetching fleet metrics:', error);
+    throw error;
+  }
+};
+
+/**
  * Adds a new vehicle
  * @param {Object} vehicleData - The vehicle data to add
  * @returns {Promise<Object>} - Added vehicle object

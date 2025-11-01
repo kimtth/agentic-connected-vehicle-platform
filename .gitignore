@@ -329,3 +329,4 @@ memo.md
 /vehicle/.vscode
 *.sh
 /temp
+.env.docker

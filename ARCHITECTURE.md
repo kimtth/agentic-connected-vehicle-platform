@@ -504,6 +504,33 @@ Validation steps:
    - **Frontend UI**: http://localhost:3000
    - **API Documentation**: http://localhost:8000/docs
 
+### Docker Deployment (Local/Container)
+
+For local development or containerized deployment:
+
+```bash
+# 1. Copy and configure environment
+copy .env.docker.sample .env.docker
+# Edit .env.docker - update Azure OpenAI, Speech, and Cosmos DB credentials
+
+# 2. Start application
+docker-compose --env-file .env.docker up -d --build
+
+# 3. Seed test data
+curl -X POST http://localhost:8000/api/dev/seed
+
+# Access:
+# - Application: http://localhost:8000
+# - API Docs: http://localhost:8000/docs
+```
+
+**Docker Features:**
+- Multi-stage optimized builds
+- Non-root user security
+- Health checks for monitoring
+- Automatic frontend + backend integration
+- Production-ready configuration
+
 ### Manual Configuration
 
 If you prefer manual setup, create a `.env` file in the `vehicle/` directory:

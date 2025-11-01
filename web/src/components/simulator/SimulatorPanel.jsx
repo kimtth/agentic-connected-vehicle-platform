@@ -3,6 +3,7 @@ import { Car } from 'lucide-react';
 import CommandPanel from './CommandPanel';
 import LogsPanel from './LogsPanel';
 import VehicleMetrics from './VehicleMetrics';
+import SteeringWheelVisual from './SteeringWheelVisual';
 import { 
   fetchVehicleStatus, 
   subscribeToVehicleStatus, 
@@ -271,7 +272,7 @@ const SimulatorPanel = ({ vehicleId }) => {
   console.log('SimulatorPanel - vehicleStatus:', vehicleStatus);
 
   return (
-    <div className="max-w-[1600px] mx-auto h-[calc(100vh-160px)] overflow-hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+    <div className="max-w-[1920px] mx-auto h-[calc(100vh-160px)] overflow-hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
       <div className="bg-gradient-to-b from-primary to-primary/90 dark:from-[#0B1220] dark:to-[#05080F] text-primary-foreground dark:text-foreground p-3 flex justify-between items-center border-b border-border">
         <div className="flex items-center gap-2">
           <Car className="h-5 w-5" />
@@ -300,24 +301,38 @@ const SimulatorPanel = ({ vehicleId }) => {
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 md:gap-4 lg:gap-6">
-          <div className="h-auto">
+        
+        {/* Unified Single Screen Layout */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {/* Left Column - Consolidated Steering Wheel & Dashboard */}
+          <div className="xl:col-span-2 space-y-4">
+            {/* Steering Wheel Visual with integrated gauges */}
+            <div className="h-[500px]">
+              <SteeringWheelVisual 
+                speed={vehicleStatus?.speed || 0} 
+                isConnected={isConnected}
+                vehicleStatus={vehicleStatus}
+              />
+            </div>
+            
+            {/* Vehicle Metrics */}
+            <VehicleMetrics vehicleStatus={vehicleStatus} />
+          </div>
+
+          {/* Right Column - Controls & Logs */}
+          <div className="space-y-4">
             <CommandPanel 
               onSendCommand={handleSendCommand} 
               isConnected={isConnected}
               vehicleId={vehicleId}
             />
-          </div>
-          <div className="h-auto">
+            
             <LogsPanel 
               logs={logs} 
               isConnected={isConnected} 
               onToggleConnection={toggleConnection}
               vehicleId={vehicleId}
             />
-          </div>
-          <div className="lg:col-span-2">
-            <VehicleMetrics vehicleStatus={vehicleStatus} />
           </div>
         </div>
       </div>

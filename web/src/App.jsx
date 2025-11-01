@@ -7,7 +7,7 @@ import { fetchVehicles } from './api/vehicles';
 // Import pages
 import Dashboard from './pages/Dashboard';
 import AgentChat from './components/AgentChat';
-import VoiceControl from './components/VoiceControl';
+import VehicleAssistant from './components/VehicleAssistant';
 import Simulator from './pages/Simulator';
 import NotificationLog from './components/NotificationLog';
 import ServiceInfo from './components/ServiceInfo';
@@ -105,9 +105,9 @@ function App() {
               <AgentChat vehicleId={selectedVehicle?.vehicleId} />
             </ProtectedRoute>
           } />
-          <Route path="/voice-control" element={
+          <Route path="/vehicle-assistant" element={
             <ProtectedRoute>
-              <VoiceControl />
+              <VehicleAssistant />
             </ProtectedRoute>
           } />
           <Route path="/simulator" element={
