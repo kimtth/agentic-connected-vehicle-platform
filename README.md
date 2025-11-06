@@ -21,7 +21,7 @@ An AI agent-driven car management system: control, diagnostics, and insights via
 - Frontend: React
 - MCP: Weather, Traffic, POI, Navigation via FastMCP (sample data in plugin/sample_data.py)
 
-> Full architecture, agent specs, and API list: see [PROJECT.md](./PROJECT.md).
+> Full architecture, agent specs, and API list: see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ### Data / Naming Conventions
 - External (API, frontend, Cosmos stored docs): camelCase via Pydantic CamelModel.
